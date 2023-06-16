@@ -14,13 +14,17 @@ public class ProceduralCone : MonoBehaviour
     // Grid settings
     public float cellSize = 1;
     public Vector3 gridOffset;
-    public int gridSizeX = 3;
-    public int gridSizeY = 3;
+    public int gridSizeX = 3; //face count of polygon shape
+    public int gridSizeY = 3; //vertical face loops
 
     // Cone settings
     public float baseRadius = 2f;
     public float topRadius = 1f;
     public float height = 3f;
+
+    public void Debug001(int i){
+        Debug.Log(i);
+    }
 
     void Awake()
     {
@@ -31,12 +35,55 @@ public class ProceduralCone : MonoBehaviour
         coll.sharedMesh = mesh;
     }
 
-    void Update()
+    void Start()
     {
         MakeProceduralCone();
         UpdateMesh();
     }
 
+    void Update() {
+        MakeProceduralCone();
+        UpdateMesh();
+    }
+
+    public void SetBaseRadius(float br){
+        baseRadius = br;
+        Debug.Log("br: " + br);
+        MakeProceduralCone();
+        UpdateMesh();
+    }
+
+    public float GetBaseRadius(){
+        return baseRadius;
+    }
+
+    public void SetTopRadius(float tr){
+        topRadius = tr;
+        Debug.Log("tr: " + tr);
+        MakeProceduralCone();
+        UpdateMesh();
+    }
+
+    public float GetTopRadius(){
+        return topRadius;
+    }
+
+    public void SetHeight(float h){
+        height = h;
+        Debug.Log("h: " + h);
+        MakeProceduralCone();
+        UpdateMesh();
+    }
+
+    public float GetHeight(){
+        return height;
+    }
+
+
+
+    
+
+    
     void MakeProceduralCone(){
         // Set array sizes
         vertices = new Vector3[(gridSizeX + 1) * (gridSizeY + 1)];
@@ -66,7 +113,7 @@ public class ProceduralCone : MonoBehaviour
                 float zPos = curRadius * Mathf.Cos(angle);
 
                 // Calculate the outward-pointing normal vector
-                Vector3 vertexPosition = new Vector3(xPos, yPos, zPos) + gridOffset;
+                Vector3 vertexPosition = (new Vector3(xPos, yPos, zPos) * vertexOffset) + gridOffset;
                 Vector3 vertexNormal = (vertexPosition - gridOffset).normalized * -1;
                 vertices[v] = vertexPosition;
                 normals[v] = vertexNormal;
@@ -82,10 +129,6 @@ public class ProceduralCone : MonoBehaviour
         {
             for (int y = 0; y < gridSizeY; y++)
             {
-                // triangles[t] = v;
-                // triangles[t + 1] = triangles[t + 4] = v + 1;
-                // triangles[t + 2] = triangles[t + 3] = v + (gridSizeY + 1);
-                // triangles[t + 5] = v + (gridSizeY + 1) + 1;
 
                 triangles[t] = v;
                 triangles[t + 1] = v + (gridSizeY + 1);
@@ -103,8 +146,14 @@ public class ProceduralCone : MonoBehaviour
         }
     }
 
+
+
     void UpdateMesh()
     {
+        if (mesh == null || vertices == null || triangles == null || normals == null)
+            return;
+
+        
         mesh.Clear();
 
         mesh.vertices = vertices;

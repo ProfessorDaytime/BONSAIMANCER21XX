@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 1306763660922904048}
   - component: {fileID: 1306763660922904051}
   - component: {fileID: 3222818672117129632}
-  - component: {fileID: -9127864716389909656}
+  - component: {fileID: -5136293615415508326}
   m_Layer: 0
   m_Name: pf_procCone
   m_TagString: Untagged
@@ -113,13 +113,21 @@ MeshCollider:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1306763660922904054}
   m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
   m_IsTrigger: 0
+  m_ProvidesContacts: 0
   m_Enabled: 1
-  serializedVersion: 4
+  serializedVersion: 5
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 0}
---- !u!114 &-9127864716389909656
+--- !u!114 &-5136293615415508326
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
