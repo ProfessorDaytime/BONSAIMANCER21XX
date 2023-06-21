@@ -370,10 +370,12 @@
 -analyzer:"C:/Program Files/Unity/Hub/Editor/2022.3.1f1/Editor/Data/Tools/Unity.SourceGenerators/Unity.Properties.SourceGenerator.dll"
 -analyzer:"C:/Program Files/Unity/Hub/Editor/2022.3.1f1/Editor/Data/Tools/Unity.SourceGenerators/Unity.SourceGenerators.dll"
 "Assets/Scripts/BezierSpline.cs"
+"Assets/Scripts/cleanup.cs"
 "Assets/Scripts/CubeMeshData.cs"
 "Assets/Scripts/Old Proc Meshes/scr_ProceduralMesh.cs"
 "Assets/Scripts/Old Proc Meshes/scr_YValue.cs"
 "Assets/Scripts/ProceduralCone.cs"
+"Assets/Scripts/ProceduralConeBackup.cs"
 "Assets/Scripts/ProceduralCube.cs"
 "Assets/Scripts/ProceduralGrid.cs"
 "Assets/Scripts/scr_Cyl_001.cs"
@@ -381,6 +383,7 @@
 "Assets/Scripts/TreeGenPT002.cs"
 "Assets/Scripts/TreeGenPT003.cs"
 "Assets/Scripts/TreeGenPT004.cs"
+"Assets/Scripts/TreeRoot.cs"
 -langversion:9.0
 
 /deterministic

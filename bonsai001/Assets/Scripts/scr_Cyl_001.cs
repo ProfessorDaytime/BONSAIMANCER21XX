@@ -22,10 +22,13 @@ public class scr_Cyl_001 : MonoBehaviour
 
             if (Physics.Raycast(ray, out hit)) {
 
-                Debug.Log(hit);
+                // Debug.Log(hit);
                 if (hit.transform.name == this.name) {
-                    ProceduralCone coneScript = hit.transform.GetComponent<ProceduralCone>();
-                    Debug.Log("BR " + coneScript.GetBaseRadius() + " TR " + coneScript.GetTopRadius() + " H " + coneScript.GetHeight());
+                    ProceduralCone coneScript = hit.transform.parent.GetComponent<ProceduralCone>();
+
+                    coneScript.GenerateCone();
+                    // Debug.Log("BR " + coneScript.GetBaseRadius() + " TR " + coneScript.GetTopRadius() + " H " + coneScript.GetHeight());
+                    
                     Destroy(hit.transform.gameObject);
 
                 }

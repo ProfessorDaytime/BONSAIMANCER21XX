@@ -6,11 +6,14 @@ public class TreeGenPT004 : MonoBehaviour
 {
     // Parameter variables
     Vector3 lastPos;
-    float coneHeight = 2f;
+    float coneHeight = .5f;
     float baseRadius = 0.25f;
-    float ratio = 0.88f;
-    float growthDuration = 60f; // Time in seconds to generate the tree
+    float ratio = 0.2f;
+    float growthDuration = 1000f; // Time in seconds to generate the tree
+    float coneDuration = 10f;
     float spawnHeight = 3f; // Height at which new cones are spawned
+    
+    float elapsedTime = 0f;
 
     [SerializeField]
     GameObject conePrefab;
@@ -34,14 +37,13 @@ public class TreeGenPT004 : MonoBehaviour
         // Generate the first cone
         GenerateCone(-1);
 
-        // Generate additional cones over time
-        float elapsedTime = 0f;
+        
         while (elapsedTime < growthDuration)
         {
             yield return null; // Wait for the next frame
 
             // Calculate the progress based on elapsed time
-            float progress = elapsedTime / growthDuration;
+            float progress = elapsedTime / coneDuration;
 
             // Update cone properties gradually
             float targetBaseRadius = Mathf.Lerp(0.25f, 1f, progress);
@@ -57,7 +59,7 @@ public class TreeGenPT004 : MonoBehaviour
                 ProceduralCone topConeScript = topCone.GetComponent<ProceduralCone>();
                 float topConeHeight = topConeScript.GetHeight();
 
-                if (topConeHeight >= spawnHeight)
+                if ((topConeHeight - lastPos.y) >= spawnHeight)
                 {
                     GenerateCone(cones.Count); // Generate a new cone
                 }
@@ -73,10 +75,10 @@ public class TreeGenPT004 : MonoBehaviour
         cones.Add(newCone);
 
         scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
-        stemPiece.transform.position = lastPos;
+        stemPiece.transform.position = lastPos + new Vector3(0,coneHeight,0);
 
         ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
-        coneScript.Debug001(d);
+        // coneScript.Debug001(d);
 
         // Set cone properties to their initial values
         coneScript.SetBaseRadius(baseRadius);
@@ -89,6 +91,7 @@ public class TreeGenPT004 : MonoBehaviour
         // coneHeight = (coneHeight == 4f) ? 2f : 4f; // Reset coneHeight if it reaches 4f
         stemPiece.transform.SetParent(parent);
         parent = stemPiece.transform;
+        elapsedTime = 0f;
     }
 
     void UpdateConeProperties(float targetBaseRadius, float targetTopRadius, float targetHeight)

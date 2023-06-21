@@ -41,16 +41,19 @@
   </ItemGroup>
   <ItemGroup>
      <Compile Include="Assets\Scripts\TreeGenPT004.cs" />
+     <Compile Include="Assets\Scripts\TreeRoot.cs" />
      <Compile Include="Assets\Scripts\Old Proc Meshes\scr_YValue.cs" />
      <Compile Include="Assets\Scripts\ProceduralCone.cs" />
      <Compile Include="Assets\Scripts\BezierSpline.cs" />
      <Compile Include="Assets\Scripts\ProceduralGrid.cs" />
+     <Compile Include="Assets\Scripts\ProceduralConeBackup.cs" />
      <Compile Include="Assets\Scripts\Old Proc Meshes\scr_ProceduralMesh.cs" />
      <Compile Include="Assets\Scripts\TreeGen.cs" />
      <Compile Include="Assets\Scripts\CubeMeshData.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT003.cs" />
      <Compile Include="Assets\Scripts\scr_Cyl_001.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT002.cs" />
+     <Compile Include="Assets\Scripts\cleanup.cs" />
      <Compile Include="Assets\Scripts\ProceduralCube.cs" />
     <Reference Include="UnityEngine">
         <HintPath>C:\Program Files\Unity\Hub\Editor\2022.3.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>

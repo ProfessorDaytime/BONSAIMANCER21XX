@@ -44,7 +44,7 @@ public class TreeGenPT002 : MonoBehaviour
         stemPiece.transform.position = lastPos;
 
         ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
-        coneScript.Debug001(d);
+        // coneScript.Debug001(d);
 
         // Set cone properties
         coneScript.SetBaseRadius(baseRadius);
