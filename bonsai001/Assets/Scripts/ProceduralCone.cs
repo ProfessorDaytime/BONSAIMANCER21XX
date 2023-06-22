@@ -42,7 +42,7 @@ public class ProceduralCone : MonoBehaviour
     float growH = 4f;
 
     // float growthDuration = 1000f; // Time in seconds to generate the tree
-    float coneDuration = 600f; // how fast a single cone grows
+    float coneDuration = 4f; // how fast a single cone grows
     float elapsedTime = 0f;
     bool doneGrowing = false;
 
