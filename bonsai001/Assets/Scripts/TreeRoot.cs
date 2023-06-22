@@ -39,7 +39,8 @@ public class TreeRoot : MonoBehaviour
         stemPiece.transform.position = this.transform.position + new Vector3(0,1,0);
 
         ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
-        coneScript.treeSpot = "a0";
+        coneScript.treeSpot = 0;
+        coneScript.treeBranch = 0;
 
         // Set cone properties to their initial values
         // coneScript.SetConeProperties(baseRadius,topRadius, height, 4f, 10f, 12f);

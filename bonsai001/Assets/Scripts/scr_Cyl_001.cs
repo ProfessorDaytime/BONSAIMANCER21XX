@@ -26,7 +26,7 @@ public class scr_Cyl_001 : MonoBehaviour
                 if (hit.transform.name == this.name) {
                     ProceduralCone coneScript = hit.transform.parent.GetComponent<ProceduralCone>();
 
-                    coneScript.GenerateCone();
+                    // coneScript.GenerateCone();
                     // Debug.Log("BR " + coneScript.GetBaseRadius() + " TR " + coneScript.GetTopRadius() + " H " + coneScript.GetHeight());
                     
                     Destroy(hit.transform.gameObject);

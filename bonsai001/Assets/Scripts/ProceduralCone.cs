@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer),typeof(MeshCollider))]
@@ -16,7 +17,8 @@ public class ProceduralCone : MonoBehaviour
     public Vector3 gridOffset; //this can move things around, but the parent transform might be more useful
     public int gridSizeX = 24; //face count of polygon shape
     public int gridSizeY = 5; //vertical face loops
-    public string treeSpot;
+    public int treeSpot;
+    public int treeBranch;
 
     // Cone settings
     float baseRadius;// = .25f; //radius for the bottom of the cone
@@ -39,35 +41,38 @@ public class ProceduralCone : MonoBehaviour
     float growTR = 17.6f;
     float growH = 4f;
 
-
     // float growthDuration = 1000f; // Time in seconds to generate the tree
-    float coneDuration = 4f; // how fast a single cone grows
+    float coneDuration = 600f; // how fast a single cone grows
     float elapsedTime = 0f;
     bool doneGrowing = false;
 
     //It will reference a prefab of itself to create more.  I hope this is the right way to do it
     [SerializeField]
     GameObject conePrefab;
-
-    // public ProceduralCone ChildCone;
-
-    // Transform parent;
-
-
+    [SerializeField]
+    GameObject conePrefab2;
 
     void Awake()
     {
+        MakeProceduralCone();
         // create the mesh filter
-        mesh = this.GetComponent<MeshFilter>().mesh;
-        // create the mesh collider
-        coll = this.GetComponent<MeshCollider>();
-        coll.sharedMesh = null; //nulls out the mesh for the mesh collider so it isn't fucky
-        coll.sharedMesh = mesh; //assigns the mesh as the collider's shared mesh
+        // this.mesh = this.GetComponent<MeshFilter>().mesh;
+        
 
         Debug.Log("Awake");
         
         //Start the child generation coroutine
         StartCoroutine(Grow());
+    }
+
+    void CreateMesh(){
+        mesh = new Mesh();
+        GetComponent<MeshFilter>().mesh = mesh;
+
+        // create the mesh collider
+        coll = this.GetComponent<MeshCollider>();
+        coll.sharedMesh = null; //nulls out the mesh for the mesh collider so it isn't fucky
+        coll.sharedMesh = mesh; //assigns the mesh as the collider's shared mesh
     }
 
     IEnumerator Grow(){
@@ -85,6 +90,9 @@ public class ProceduralCone : MonoBehaviour
 
             // Debug.Log("progress: " + progress + " br: " + br + " tr: " + tr + " h: " + h + " position: " + this.transform.position + " Target BR: " + targetBaseRadius + " Target TR: " + targetTopRadius + " Target Height:" + targetHeight);
             
+            
+
+
             UpdateConeProperties(br, tr, h);
 
             if (h >= targetHeight){
@@ -124,7 +132,7 @@ public class ProceduralCone : MonoBehaviour
         growTR = gTR;
         growH = gH;
 
-        Debug.Log("SCP BR: " + br + " TR: " + tr + " H " + h);
+        // Debug.Log("SCP BR: " + br + " TR: " + tr + " H " + h);
 
         SetTargetConeProperties();        
         MakeProceduralCone();
@@ -135,100 +143,120 @@ public class ProceduralCone : MonoBehaviour
         targetBaseRadius = baseRadius * growBR;
         targetTopRadius = topRadius * growTR;
         targetHeight = 100f;
-        Debug.Log("STargetCP TBR: " + targetBaseRadius + " TTR: " + targetTopRadius + " TH: " + targetHeight);
+        // Debug.Log("STargetCP TBR: " + targetBaseRadius + " TTR: " + targetTopRadius + " TH: " + targetHeight);
     }
 
     public void GenerateCone()
     {
-        GameObject newCone = Instantiate(conePrefab);//, this.transform.position + this.transform.up, this.transform.rotation, this.transform);
-
-        string tsLetters;
-        int tsNumbers;
-
-        int.TryParse(treeSpot, out tsNumbers);
-        Debug.Log("Tree Spot number: " + tsNumbers);
-
-
-
-        scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
-        stemPiece.transform.position =  this.transform.position + (this.transform.up * height * 0.5f);
-
-        ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
-        // newCone.SetConeProperties(topRadius,topRadius * trRatio, .025f);
-
-        // Set cone properties to their initial values
-        Debug.Log("New BR: " + topRadius + " new TR: " + topRadius);
-        coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 4.0f);
-
-        stemPiece.transform.SetParent(this.transform);
 
         int branch = Random.Range(0,10);
         
-        // if(branch >= 3){
-        //     Debug.Log("Branch");
-        //     float yRot = Random.Range(0,360);
-
-        //     GameObject newCone2 = Instantiate(conePrefab);//, this.transform.position + this.transform.up, this.transform.rotation, this.transform);
-
-        //     scr_Cyl_001 stemPiece2 = newCone2.GetComponent<scr_Cyl_001>();
-        //     stemPiece2.transform.position =  this.transform.position + (this.transform.up * height * 0.5f);
-        //     stemPiece2.transform.eulerAngles = new Vector3(30,yRot,30);
-
-        //     ProceduralCone coneScript2 = newCone2.GetComponent<ProceduralCone>();
+        if(branch >= 7){
+            GameObject newCone = Instantiate(conePrefab);
+            GameObject newCone2 = Instantiate(conePrefab2);//, this.transform.position + this.transform.up, this.transform.rotation, this.transform);
             
-        //     coneScript2.SetConeProperties(topRadius * .5f,topRadius * .5f, 1f, 1.0f, 0.88f, 4.0f);
+            float yRot = Random.Range(0,360);
+            float xRot = Random.Range(15, 45);
+            float zRot = Random.Range(15, 45);
+            
+        
+            scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
+            scr_Cyl_001 stemPiece2 = newCone2.GetComponent<scr_Cyl_001>();
+            stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
+            stemPiece2.transform.position =  this.transform.position + (this.transform.up * height * 0.5f);
+            stemPiece2.transform.eulerAngles = new Vector3(xRot,yRot,zRot);
 
-        //     stemPiece2.transform.SetParent(this.transform);
-        // } 
+            ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
+            ProceduralCone coneScript2 = newCone2.GetComponent<ProceduralCone>();
+
+            // Set cone properties to their initial values
+            // Debug.Log("New BR: " + topRadius + " new TR: " + topRadius);
+            coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 4.0f);
+            coneScript2.SetConeProperties(topRadius * .5f,topRadius * .5f, 1f, 1.0f, 0.88f, 1.0f);
+            coneScript.treeSpot = this.treeSpot + 1;
+            coneScript.treeBranch = this.treeBranch;
+            coneScript2.treeSpot = this.treeSpot + 1;
+            coneScript2.treeBranch = this.treeBranch + 1;
+
+            stemPiece.transform.SetParent(this.transform);
+            stemPiece2.transform.SetParent(this.transform);
+        } 
+        
+        else{
+            GameObject newCone = Instantiate(conePrefab);
+            
+        
+            scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
+            stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
+
+            ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
+
+            // Set cone properties to their initial values
+            coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 4.0f);
+            coneScript.treeSpot = this.treeSpot + 1;
+            coneScript.treeBranch = this.treeBranch;
+
+            stemPiece.transform.SetParent(this.transform);
+        }
+
+        
+
+        
 
 
     }
     
    
-    public void SetBaseRadius(float br){
-        baseRadius = br;
-        // Debug.Log("br: " + br);
-        MakeProceduralCone();
-        UpdateMesh();
-    }
+    // public void SetBaseRadius(float br){
+    //     baseRadius = br;
+    //     // Debug.Log("br: " + br);
+    //     MakeProceduralCone();
+    //     UpdateMesh();
+    // }
 
-    public float GetBaseRadius(){
-        return baseRadius;
-    }
+    // public float GetBaseRadius(){
+    //     return baseRadius;
+    // }
 
-    public void SetTopRadius(float tr){
-        topRadius = tr;
-        // Debug.Log("tr: " + tr);
-        MakeProceduralCone();
-        UpdateMesh();
-    }
+    // public void SetTopRadius(float tr){
+    //     topRadius = tr;
+    //     // Debug.Log("tr: " + tr);
+    //     MakeProceduralCone();
+    //     UpdateMesh();
+    // }
 
-    public float GetTopRadius(){
-        return topRadius;
-    }
+    // public float GetTopRadius(){
+    //     return topRadius;
+    // }
 
-    public void SetHeight(float h){
-        height = h;
-        // Debug.Log("h: " + h);
-        MakeProceduralCone();
-        UpdateMesh();
-    }
+    // public void SetHeight(float h){
+    //     height = h;
+    //     // Debug.Log("h: " + h);
+    //     MakeProceduralCone();
+    //     UpdateMesh();
+    // }
 
-    public float GetHeight(){
-        return height;
-    }
+    // public float GetHeight(){
+    //     return height;
+    // }
 
 
     
     void MakeProceduralCone(){
+
+        CreateMesh();
+
         // Set array sizes
-        vertices = new Vector3[(gridSizeX + 1) * (gridSizeY + 1)];
-        triangles = new int[gridSizeX * gridSizeY * 6];
-        normals = new Vector3[vertices.Length];
+        this.vertices = new Vector3[(gridSizeX + 1) * (gridSizeY + 1)];
+        this.triangles = new int[gridSizeX * gridSizeY * 6];
+        this.normals = new Vector3[vertices.Length];
 
         // Set tracker integers
         int v = 0; //v is for vertices
         int t = 0; //t is for triangles
+
+
+        Debug.Log("MakeProceduralCone:   branch: " + treeBranch + " spot: " + treeSpot + " vertices: " + this.vertices.Length);
 
         // Set vertex offset
         float vertexOffset = cellSize * 0.5f;
@@ -280,17 +308,20 @@ public class ProceduralCone : MonoBehaviour
             }
             v++;
         }
+
+
     }
 
 
 
-    void UpdateMesh()
-    {
-        if (mesh == null || vertices == null || triangles == null || normals == null)
+    void UpdateMesh(){
+        if (mesh == null || vertices == null || vertices.Length < 3 || triangles == null || normals == null)
             return;
 
-        
-        mesh.Clear(false);
+        Debug.Log("UpdateMesh:   branch: " + treeBranch + " spot: " + treeSpot + " vertices: " + this.vertices.Length);
+
+
+        mesh.Clear();
 
         mesh.vertices = vertices;
         mesh.triangles = triangles;
@@ -298,15 +329,6 @@ public class ProceduralCone : MonoBehaviour
         coll.sharedMesh = null;
         coll.sharedMesh = mesh;
     }
-
-
-
-
-
-
-
-
-
 
 
 

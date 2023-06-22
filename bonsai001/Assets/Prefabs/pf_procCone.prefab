@@ -102,11 +102,10 @@ MonoBehaviour:
   gridOffset: {x: 0, y: 0, z: 0}
   gridSizeX: 24
   gridSizeY: 3
-  baseRadius: 0.25
-  topRadius: 0.05
-  height: 0.25
-  trRatio: 0.2
+  treeSpot: 0
+  treeBranch: 0
   conePrefab: {fileID: 1306763660922904054}
+  conePrefab2: {fileID: 1306763660922904054}
 --- !u!64 &3222818672117129632
 MeshCollider:
   m_ObjectHideFlags: 0
