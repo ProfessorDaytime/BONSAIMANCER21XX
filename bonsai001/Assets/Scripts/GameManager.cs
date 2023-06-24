@@ -29,6 +29,8 @@ public class GameManager : MonoBehaviour
                 break;
             case GameState.GamePause:
                 break;
+            case GameState.Idle:
+                break;
             case GameState.Water:
                 break;
             case GameState.BranchGrow:
@@ -58,6 +60,7 @@ public enum GameState {
     Menu,
     TipPause,
     GamePause,
+    Idle,
     Water,
     BranchGrow,
     LeafGrow,
