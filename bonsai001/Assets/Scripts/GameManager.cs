@@ -11,8 +11,11 @@ public class GameManager : MonoBehaviour
 
     public static event Action<GameState> OnGameStateChanged;
 
+    public static int waterings = -1;
+
     void Awake(){
         Instance = this;
+        UpdateGameState(GameState.Water);
     }
 
     void Start(){
@@ -21,6 +24,8 @@ public class GameManager : MonoBehaviour
 
     public void UpdateGameState(GameState newState){
         state = newState;
+
+        Debug.Log("GAME STATE: " + newState);
 
         switch(newState){
             case GameState.Menu:
@@ -32,6 +37,7 @@ public class GameManager : MonoBehaviour
             case GameState.Idle:
                 break;
             case GameState.Water:
+                HandleWaterState();
                 break;
             case GameState.BranchGrow:
                 break;
@@ -50,6 +56,15 @@ public class GameManager : MonoBehaviour
         OnGameStateChanged?.Invoke(newState);
     }
     
+
+    void HandleWaterState(){
+        if(waterings < 0){
+            Debug.Log("Waterings is -1");
+        }
+    }
+
+
+
 
 
 

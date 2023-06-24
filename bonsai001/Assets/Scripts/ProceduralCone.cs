@@ -15,10 +15,11 @@ public class ProceduralCone : MonoBehaviour
     // Grid settings
     public float cellSize = 1; //could be used for scaling, but doesn't really seem like it's useful
     public Vector3 gridOffset; //this can move things around, but the parent transform might be more useful
-    public int gridSizeX = 24; //face count of polygon shape
-    public int gridSizeY = 5; //vertical face loops
+    public int gridSizeX = 16; //face count of polygon shape
+    public int gridSizeY = 4; //vertical face loops
     public int treeSpot;
     public int treeBranch;
+    public bool growState = false;
 
     // Cone settings
     float baseRadius;// = .25f; //radius for the bottom of the cone
@@ -45,7 +46,6 @@ public class ProceduralCone : MonoBehaviour
     float coneDuration = 4f; // how fast a single cone grows
     float elapsedTime = 0f;
     bool doneGrowing = false;
-    bool growState = false;
     bool cRunning = false;
 
     //It will reference a prefab of itself to create more.  I hope this is the right way to do it
@@ -63,12 +63,19 @@ public class ProceduralCone : MonoBehaviour
         GameManager.OnGameStateChanged += GameManagerOnGameStateChanged;
 
         Debug.Log("Awake");
+
+        if(growState){
+            //Start the child generation coroutine
+            StartCoroutine(Grow());
+        }
         
-        //Start the child generation coroutine
-        // StartCoroutine(Grow());
+        
     }
 
-
+    void OnDestroy()
+    {
+        GameManager.OnGameStateChanged -= GameManagerOnGameStateChanged;
+    }
 
 
     private void GameManagerOnGameStateChanged(GameState state){
@@ -193,6 +200,8 @@ public class ProceduralCone : MonoBehaviour
         coneScript.treeBranch = this.treeBranch;
         coneScript2.treeSpot = this.treeSpot + 1;
         coneScript2.treeBranch = this.treeBranch + 1;
+        coneScript.growState = true;
+        coneScript2.growState = true;
 
         stemPiece.transform.SetParent(this.transform);
         stemPiece2.transform.SetParent(this.transform);
@@ -202,17 +211,18 @@ public class ProceduralCone : MonoBehaviour
         GameObject newCone = Instantiate(conePrefab);
             
         
-            scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
-            stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
+        scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
+        stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
 
-            ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
+        ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
 
-            // Set cone properties to their initial values
-            coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 2.0f);
-            coneScript.treeSpot = this.treeSpot + 1;
-            coneScript.treeBranch = this.treeBranch;
+        // Set cone properties to their initial values
+        coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 2.0f);
+        coneScript.treeSpot = this.treeSpot + 1;
+        coneScript.treeBranch = this.treeBranch;
+        coneScript.growState = true;
 
-            stemPiece.transform.SetParent(this.transform);
+        stemPiece.transform.SetParent(this.transform);
     }
 
 
@@ -288,7 +298,7 @@ public class ProceduralCone : MonoBehaviour
         int t = 0; //t is for triangles
 
 
-        Debug.Log("MakeProceduralCone:   branch: " + treeBranch + " spot: " + treeSpot + " vertices: " + this.vertices.Length);
+        // Debug.Log("MakeProceduralCone:   branch: " + treeBranch + " spot: " + treeSpot + " vertices: " + this.vertices.Length);
 
         // Set vertex offset
         float vertexOffset = cellSize * 0.5f;

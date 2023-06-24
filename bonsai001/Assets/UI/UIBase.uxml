@@ -1,6 +1,6 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <Style src="project://database/Assets/UI/BaseUI.uss?fileID=7433441132597879392&amp;guid=f4deae364b089a44689af9c50e890772&amp;type=3#BaseUI" />
     <ui:VisualElement name="Container" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0);">
-        <ui:Label tabindex="-1" text="January 1, 20XX" display-tooltip-when-elided="true" class="header" style="color: rgb(229, 162, 16); font-size: 45px; -unity-text-align: upper-right; -unity-font: resource(&apos;FlatSkin/Font/Roboto-MediumItalic&apos;); -unity-font-style: bold-and-italic;" />
+        <ui:Label tabindex="-1" text="January 1, 21XX" display-tooltip-when-elided="true" class="header" style="color: rgb(229, 162, 16); font-size: 45px; -unity-text-align: upper-right; -unity-font: url(&apos;project://database/Assets/TextMesh%20Pro/Examples%20&amp;%20Extras/Fonts/Electronic%20Highway%20Sign.TTF?fileID=12800000&amp;guid=8a2b9e2a607dd2143b58c44bc32410b4&amp;type=3#Electronic Highway Sign&apos;); -unity-font-style: bold-and-italic; -unity-font-definition: initial;" />
     </ui:VisualElement>
 </ui:UXML>
