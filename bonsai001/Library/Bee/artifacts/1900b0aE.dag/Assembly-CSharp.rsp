@@ -372,6 +372,7 @@
 "Assets/Scripts/BezierSpline.cs"
 "Assets/Scripts/cleanup.cs"
 "Assets/Scripts/CubeMeshData.cs"
+"Assets/Scripts/GameManager.cs"
 "Assets/Scripts/MainMenu.cs"
 "Assets/Scripts/Old Proc Meshes/scr_ProceduralMesh.cs"
 "Assets/Scripts/Old Proc Meshes/scr_YValue.cs"

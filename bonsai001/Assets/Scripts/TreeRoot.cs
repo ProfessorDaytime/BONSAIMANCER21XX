@@ -44,7 +44,7 @@ public class TreeRoot : MonoBehaviour
 
         // Set cone properties to their initial values
         // coneScript.SetConeProperties(baseRadius,topRadius, height, 4f, 10f, 12f);
-        coneScript.SetConeProperties(baseRadius,baseRadius, 1f, 1.0f, 0.88f, 4.0f);
+        coneScript.SetConeProperties(baseRadius,baseRadius, 1f, 1.0f, 0.88f, 1f);
 
 
         stemPiece.transform.SetParent(this.transform);

@@ -45,6 +45,8 @@ public class ProceduralCone : MonoBehaviour
     float coneDuration = 4f; // how fast a single cone grows
     float elapsedTime = 0f;
     bool doneGrowing = false;
+    bool growState = false;
+    bool cRunning = false;
 
     //It will reference a prefab of itself to create more.  I hope this is the right way to do it
     [SerializeField]
@@ -58,11 +60,32 @@ public class ProceduralCone : MonoBehaviour
         // create the mesh filter
         // this.mesh = this.GetComponent<MeshFilter>().mesh;
         
+        GameManager.OnGameStateChanged += GameManagerOnGameStateChanged;
 
         Debug.Log("Awake");
         
         //Start the child generation coroutine
-        StartCoroutine(Grow());
+        // StartCoroutine(Grow());
+    }
+
+
+
+
+    private void GameManagerOnGameStateChanged(GameState state){
+        //Set grow tree bool
+        if(state == GameState.BranchGrow){
+            growState = true;
+            //Start the child generation coroutine
+            StartCoroutine(Grow());
+            cRunning = true;
+        } else{
+            growState = false;
+            if(cRunning){
+                StopCoroutine(Grow());
+                cRunning = false;
+            }
+        }
+
     }
 
     void CreateMesh(){
@@ -77,7 +100,7 @@ public class ProceduralCone : MonoBehaviour
 
     IEnumerator Grow(){
 
-        while (!doneGrowing){
+        while (!doneGrowing && growState){
             yield return null; // Wait for the next frame
 
             // Calculate the progress based on elapsed time
@@ -89,15 +112,13 @@ public class ProceduralCone : MonoBehaviour
             float h = Mathf.Lerp(initH, targetHeight, progress);
 
             // Debug.Log("progress: " + progress + " br: " + br + " tr: " + tr + " h: " + h + " position: " + this.transform.position + " Target BR: " + targetBaseRadius + " Target TR: " + targetTopRadius + " Target Height:" + targetHeight);
-            
-            
-
 
             UpdateConeProperties(br, tr, h);
 
             if (h >= targetHeight){
                 Debug.Log("DONE GROWING");
                 doneGrowing = true;
+
                 //Generate a child cone
                 GenerateCone();
             }
@@ -146,63 +167,74 @@ public class ProceduralCone : MonoBehaviour
         // Debug.Log("STargetCP TBR: " + targetBaseRadius + " TTR: " + targetTopRadius + " TH: " + targetHeight);
     }
 
+
+    void GenUpAndBranch(){
+        GameObject newCone = Instantiate(conePrefab);
+        GameObject newCone2 = Instantiate(conePrefab2);//, this.transform.position + this.transform.up, this.transform.rotation, this.transform);
+        
+        float yRot = Random.Range(0,360);
+        float xRot = Random.Range(15, 45);
+        float zRot = Random.Range(15, 45);
+        
+    
+        scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
+        scr_Cyl_001 stemPiece2 = newCone2.GetComponent<scr_Cyl_001>();
+        stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
+        stemPiece2.transform.position =  this.transform.position + (this.transform.up * height * 0.5f);
+        stemPiece2.transform.eulerAngles = new Vector3(xRot,yRot,zRot);
+
+        ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
+        ProceduralCone coneScript2 = newCone2.GetComponent<ProceduralCone>();
+
+        // Set cone properties to their initial values
+        coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 2.0f);
+        coneScript2.SetConeProperties(topRadius * .5f,topRadius * .5f, 1f, 1.0f, 0.88f, 1.0f);
+        coneScript.treeSpot = this.treeSpot + 1;
+        coneScript.treeBranch = this.treeBranch;
+        coneScript2.treeSpot = this.treeSpot + 1;
+        coneScript2.treeBranch = this.treeBranch + 1;
+
+        stemPiece.transform.SetParent(this.transform);
+        stemPiece2.transform.SetParent(this.transform);
+    }
+
+    void GenUp(){
+        GameObject newCone = Instantiate(conePrefab);
+            
+        
+            scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
+            stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
+
+            ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
+
+            // Set cone properties to their initial values
+            coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 2.0f);
+            coneScript.treeSpot = this.treeSpot + 1;
+            coneScript.treeBranch = this.treeBranch;
+
+            stemPiece.transform.SetParent(this.transform);
+    }
+
+
+
+
     public void GenerateCone()
     {
 
         int branch = Random.Range(0,10);
         
-        if(branch >= 7){
-            GameObject newCone = Instantiate(conePrefab);
-            GameObject newCone2 = Instantiate(conePrefab2);//, this.transform.position + this.transform.up, this.transform.rotation, this.transform);
-            
-            float yRot = Random.Range(0,360);
-            float xRot = Random.Range(15, 45);
-            float zRot = Random.Range(15, 45);
-            
+        if(this.treeSpot == 0 && this.treeBranch == 0){
+            GenUpAndBranch();
+        }
         
-            scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
-            scr_Cyl_001 stemPiece2 = newCone2.GetComponent<scr_Cyl_001>();
-            stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
-            stemPiece2.transform.position =  this.transform.position + (this.transform.up * height * 0.5f);
-            stemPiece2.transform.eulerAngles = new Vector3(xRot,yRot,zRot);
-
-            ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
-            ProceduralCone coneScript2 = newCone2.GetComponent<ProceduralCone>();
-
-            // Set cone properties to their initial values
-            // Debug.Log("New BR: " + topRadius + " new TR: " + topRadius);
-            coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 4.0f);
-            coneScript2.SetConeProperties(topRadius * .5f,topRadius * .5f, 1f, 1.0f, 0.88f, 1.0f);
-            coneScript.treeSpot = this.treeSpot + 1;
-            coneScript.treeBranch = this.treeBranch;
-            coneScript2.treeSpot = this.treeSpot + 1;
-            coneScript2.treeBranch = this.treeBranch + 1;
-
-            stemPiece.transform.SetParent(this.transform);
-            stemPiece2.transform.SetParent(this.transform);
+        
+        else if(branch >= 7){
+            GenUpAndBranch();
         } 
         
         else{
-            GameObject newCone = Instantiate(conePrefab);
-            
-        
-            scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
-            stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
-
-            ProceduralCone coneScript = newCone.GetComponent<ProceduralCone>();
-
-            // Set cone properties to their initial values
-            coneScript.SetConeProperties(topRadius,topRadius, 1f, 1.0f, 0.88f, 4.0f);
-            coneScript.treeSpot = this.treeSpot + 1;
-            coneScript.treeBranch = this.treeBranch;
-
-            stemPiece.transform.SetParent(this.transform);
+            GenUp();
         }
-
-        
-
-        
-
 
     }
     
