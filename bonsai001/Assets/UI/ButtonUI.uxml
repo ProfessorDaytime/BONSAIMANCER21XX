@@ -1,6 +1,4 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
-    <ui:Button text="Trim Tree" display-tooltip-when-elided="true" name="TrimButton" style="top: 0; height: 106px; width: 130px; background-image: none;">
-        <ui:VisualElement style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); background-image: url(&apos;project://database/Assets/Sprite/trimmer1.png?fileID=2800000&amp;guid=e961420b4e318ff4ca754da7c40703cc&amp;type=3#trimmer1&apos;);" />
-    </ui:Button>
-    <ui:Button text="Water Tree" display-tooltip-when-elided="true" name="WaterButton" style="height: 101px; width: 130px; top: -1px; background-image: url(&apos;project://database/Assets/Sprite/can1.png?fileID=2800000&amp;guid=f641f880be199fe40a8839c1010848c0&amp;type=3#can1&apos;);" />
+    <ui:Button text="&#10;" display-tooltip-when-elided="true" name="TrimButton" style="top: 0; height: 106px; width: 130px; background-image: url(&apos;project://database/Assets/Textures/Trimmer.png?fileID=1676363445&amp;guid=54510a529bc20624bbbf4a1912fe0e85&amp;type=3#Trimmer_0&apos;); cursor: initial;" />
+    <ui:Button text="&#10;" display-tooltip-when-elided="true" name="WaterButton" style="height: 101px; width: 130px; top: -1px; background-image: url(&apos;project://database/Assets/Textures/watering_can.png?fileID=1903538586&amp;guid=70e9feeaae197ff4b9cdaefae05b11ae&amp;type=3#watering_can_0&apos;); cursor: initial;" />
 </ui:UXML>

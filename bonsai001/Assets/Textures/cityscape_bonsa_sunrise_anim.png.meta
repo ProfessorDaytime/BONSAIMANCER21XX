@@ -1,0 +1,633 @@
+fileFormatVersion: 2
+guid: c7f4eb24110da3940909fd9c3d8558b2
+TextureImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 12
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 0
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 3
+    buildTarget: Server
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_0
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2108b586befc4664799decc712517fc7
+      internalID: -1337458317
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_1
+      rect:
+        serializedVersion: 2
+        x: 478
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 671610570b583fc46bfbabb66739c08f
+      internalID: 1449458486
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_2
+      rect:
+        serializedVersion: 2
+        x: 956
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 719c046c6a83f7348a8d7ad389609423
+      internalID: -715750763
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_3
+      rect:
+        serializedVersion: 2
+        x: 1434
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: fa3d0a59ad06d784ba2e0f6dbcdb9a98
+      internalID: -1784466627
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_4
+      rect:
+        serializedVersion: 2
+        x: 1912
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 12c1f6ddc1bcf7b41b80c5d2075f2d02
+      internalID: -624286292
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_5
+      rect:
+        serializedVersion: 2
+        x: 2390
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2c6fac5faa6acc046958e8ed7b68fa09
+      internalID: -1748627367
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_6
+      rect:
+        serializedVersion: 2
+        x: 2868
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: e446ca9cc5bf43d4d96b4cf1239fc310
+      internalID: 2043726977
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_7
+      rect:
+        serializedVersion: 2
+        x: 3346
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: a2e0ba605c24f144a8af440119f4b1d2
+      internalID: 2035471596
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_8
+      rect:
+        serializedVersion: 2
+        x: 3824
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: c4acfb2917160f9478ca764eec75fb25
+      internalID: -763389256
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_9
+      rect:
+        serializedVersion: 2
+        x: 4302
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: af28faef0f8f7fa4d8b52719f13ea9b8
+      internalID: 1202887284
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_10
+      rect:
+        serializedVersion: 2
+        x: 4780
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6623584a774761249a5b6abfa999ab2d
+      internalID: -1121146842
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_11
+      rect:
+        serializedVersion: 2
+        x: 5258
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 6f554860813418b4382497b59814e5a4
+      internalID: 1430129856
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_12
+      rect:
+        serializedVersion: 2
+        x: 5736
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3d909a1fca7561b418c8717e4adb2de6
+      internalID: 925872866
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_13
+      rect:
+        serializedVersion: 2
+        x: 6214
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 2ec27a944579fdb4a91d7c814c167c11
+      internalID: 1998424216
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_14
+      rect:
+        serializedVersion: 2
+        x: 6692
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 1a1668399e1349b4c90b95433b55ffe5
+      internalID: -1029394821
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_15
+      rect:
+        serializedVersion: 2
+        x: 7170
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: ec1e57b99fd49de47b1a842d0bac56b5
+      internalID: -610015148
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_16
+      rect:
+        serializedVersion: 2
+        x: 7648
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f5666ed69c86bd843a41b1f6f6f6846a
+      internalID: -604949166
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_17
+      rect:
+        serializedVersion: 2
+        x: 8126
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 74265b0db8df4884f8c820218ad0a7cb
+      internalID: 387033211
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_18
+      rect:
+        serializedVersion: 2
+        x: 8604
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 3b4e50332c19fb043976f929ef5eff9a
+      internalID: 1014405028
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_19
+      rect:
+        serializedVersion: 2
+        x: 9082
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 5efec94b4c4b68d40874cf908e44dbf0
+      internalID: 1212702533
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_20
+      rect:
+        serializedVersion: 2
+        x: 9560
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: bf214f3ebf3947e4eb55480bf6c461fa
+      internalID: 1489765549
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_21
+      rect:
+        serializedVersion: 2
+        x: 10038
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 81726ded47eb39a429705885fc7f36d0
+      internalID: -854150343
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: cityscape_bonsa_sunrise_22
+      rect:
+        serializedVersion: 2
+        x: 10516
+        y: 0
+        width: 478.26086
+        height: 224
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 488a30b714469d6448943587cd104f43
+      internalID: -1972703571
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    physicsShape: []
+    bones: []
+    spriteID: 26541e16d655b1f4089c2a54052dcb64
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    nameFileIdTable:
+      cityscape_bonsa_sunrise_0: -1337458317
+      cityscape_bonsa_sunrise_1: 1449458486
+      cityscape_bonsa_sunrise_10: -1121146842
+      cityscape_bonsa_sunrise_11: 1430129856
+      cityscape_bonsa_sunrise_12: 925872866
+      cityscape_bonsa_sunrise_13: 1998424216
+      cityscape_bonsa_sunrise_14: -1029394821
+      cityscape_bonsa_sunrise_15: -610015148
+      cityscape_bonsa_sunrise_16: -604949166
+      cityscape_bonsa_sunrise_17: 387033211
+      cityscape_bonsa_sunrise_18: 1014405028
+      cityscape_bonsa_sunrise_19: 1212702533
+      cityscape_bonsa_sunrise_2: -715750763
+      cityscape_bonsa_sunrise_20: 1489765549
+      cityscape_bonsa_sunrise_21: -854150343
+      cityscape_bonsa_sunrise_22: -1972703571
+      cityscape_bonsa_sunrise_3: -1784466627
+      cityscape_bonsa_sunrise_4: -624286292
+      cityscape_bonsa_sunrise_5: -1748627367
+      cityscape_bonsa_sunrise_6: 2043726977
+      cityscape_bonsa_sunrise_7: 2035471596
+      cityscape_bonsa_sunrise_8: -763389256
+      cityscape_bonsa_sunrise_9: 1202887284
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
