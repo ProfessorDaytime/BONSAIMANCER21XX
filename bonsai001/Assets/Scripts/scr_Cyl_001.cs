@@ -23,12 +23,15 @@ public class scr_Cyl_001 : MonoBehaviour
             if (Physics.Raycast(ray, out hit)) {
 
                 // Debug.Log(hit);
-                if (hit.transform.name == this.name) {
+                if (hit.transform.name == this.name && GameManager.canTrim) {
                     ProceduralCone coneScript = hit.transform.parent.GetComponent<ProceduralCone>();
 
+                    AudioManager.Instance.PlaySFX("Trim");
                     // coneScript.GenerateCone();
                     // Debug.Log("BR " + coneScript.GetBaseRadius() + " TR " + coneScript.GetTopRadius() + " H " + coneScript.GetHeight());
                     
+                    GameManager.canTrim = false;
+
                     Destroy(hit.transform.gameObject);
 
                 }

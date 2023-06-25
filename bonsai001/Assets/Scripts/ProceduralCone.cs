@@ -15,11 +15,12 @@ public class ProceduralCone : MonoBehaviour
     // Grid settings
     public float cellSize = 1; //could be used for scaling, but doesn't really seem like it's useful
     public Vector3 gridOffset; //this can move things around, but the parent transform might be more useful
-    public int gridSizeX = 16; //face count of polygon shape
+    public int gridSizeX = 12; //face count of polygon shape
     public int gridSizeY = 4; //vertical face loops
     public int treeSpot;
     public int treeBranch;
     public bool growState = false;
+
 
     // Cone settings
     float baseRadius;// = .25f; //radius for the bottom of the cone
@@ -43,16 +44,20 @@ public class ProceduralCone : MonoBehaviour
     float growH = 4f;
 
     // float growthDuration = 1000f; // Time in seconds to generate the tree
-    float coneDuration = 4f; // how fast a single cone grows
+    float coneDuration = 50f; // how fast a single cone grows
     float elapsedTime = 0f;
     bool doneGrowing = false;
     bool cRunning = false;
+    bool grewLeaf = false;
 
     //It will reference a prefab of itself to create more.  I hope this is the right way to do it
     [SerializeField]
     GameObject conePrefab;
     [SerializeField]
     GameObject conePrefab2;
+
+    [SerializeField]
+    GameObject leaf;
 
     void Awake()
     {
@@ -62,7 +67,9 @@ public class ProceduralCone : MonoBehaviour
         
         GameManager.OnGameStateChanged += GameManagerOnGameStateChanged;
 
-        Debug.Log("Awake");
+        // Debug.Log("Awake");
+
+        // coneDuration = GameManager.TIMESCALE;
 
         if(growState){
             //Start the child generation coroutine
@@ -81,6 +88,7 @@ public class ProceduralCone : MonoBehaviour
     private void GameManagerOnGameStateChanged(GameState state){
         //Set grow tree bool
         if(state == GameState.BranchGrow){
+            // Debug.Log("done growing: " + doneGrowing + "  growState: " + growState);
             growState = true;
             //Start the child generation coroutine
             StartCoroutine(Grow());
@@ -88,9 +96,16 @@ public class ProceduralCone : MonoBehaviour
         } else{
             growState = false;
             if(cRunning){
-                StopCoroutine(Grow());
+                // StopCoroutine(Grow());
                 cRunning = false;
             }
+        }
+        if(state == GameState.LeafGrow && GameManager.canLeaf && GameManager.newLeaves < 20 && this.transform.childCount == 0 && this.grewLeaf == false){
+            
+            Debug.Log(this.grewLeaf);
+            
+            this.grewLeaf = true;
+            GenLeaf();
         }
 
     }
@@ -105,8 +120,10 @@ public class ProceduralCone : MonoBehaviour
         coll.sharedMesh = mesh; //assigns the mesh as the collider's shared mesh
     }
 
+    
     IEnumerator Grow(){
 
+        // Debug.Log("GROW");
         while (!doneGrowing && growState){
             yield return null; // Wait for the next frame
 
@@ -123,15 +140,19 @@ public class ProceduralCone : MonoBehaviour
             UpdateConeProperties(br, tr, h);
 
             if (h >= targetHeight){
-                Debug.Log("DONE GROWING");
+                // Debug.Log("DONE GROWING");
                 doneGrowing = true;
 
+                GameManager.canLeaf = true;
                 //Generate a child cone
                 GenerateCone();
+
             }
 
             elapsedTime += Time.deltaTime;
         }
+
+
     }
 
 
@@ -174,6 +195,37 @@ public class ProceduralCone : MonoBehaviour
         // Debug.Log("STargetCP TBR: " + targetBaseRadius + " TTR: " + targetTopRadius + " TH: " + targetHeight);
     }
 
+    void GenLeaf(){
+        Debug.Log("GenLeaf");
+        // GameObject newLeaf = Instantiate(leaf);
+
+        // float yRot = Random.Range(0,360);
+        // float xRot = Random.Range(15, 45);
+        // float zRot = Random.Range(15, 45);
+
+        // newLeaf.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
+        // newLeaf.transform.eulerAngles = new Vector3(xRot,yRot,zRot);
+
+        // newLeaf.transform.SetParent(this.transform);
+
+        // GameManager.newLeaves++;
+
+        Debug.Log("Leaf Generated");
+
+        GameManager.Instance.UpdateGameState(GameState.TimeGo);
+
+        StartCoroutine(SetBranchGrowState());
+    }
+
+    IEnumerator SetBranchGrowState(){
+        yield return new WaitForSeconds (1f);
+
+        GameManager.canLeaf = false;
+
+        GameManager.Instance.UpdateGameState(GameState.BranchGrow);
+        
+        GameManager.newLeaves = 0;
+    }
 
     void GenUpAndBranch(){
         GameObject newCone = Instantiate(conePrefab);
@@ -183,7 +235,6 @@ public class ProceduralCone : MonoBehaviour
         float xRot = Random.Range(15, 45);
         float zRot = Random.Range(15, 45);
         
-    
         scr_Cyl_001 stemPiece = newCone.GetComponent<scr_Cyl_001>();
         scr_Cyl_001 stemPiece2 = newCone2.GetComponent<scr_Cyl_001>();
         stemPiece.transform.position = this.transform.position + (this.transform.up * height * 0.5f);
@@ -205,6 +256,8 @@ public class ProceduralCone : MonoBehaviour
 
         stemPiece.transform.SetParent(this.transform);
         stemPiece2.transform.SetParent(this.transform);
+
+        GameManager.branches += 2;
     }
 
     void GenUp(){
@@ -223,6 +276,8 @@ public class ProceduralCone : MonoBehaviour
         coneScript.growState = true;
 
         stemPiece.transform.SetParent(this.transform);
+
+        GameManager.branches++;
     }
 
 
@@ -248,39 +303,7 @@ public class ProceduralCone : MonoBehaviour
 
     }
     
-   
-    // public void SetBaseRadius(float br){
-    //     baseRadius = br;
-    //     // Debug.Log("br: " + br);
-    //     MakeProceduralCone();
-    //     UpdateMesh();
-    // }
 
-    // public float GetBaseRadius(){
-    //     return baseRadius;
-    // }
-
-    // public void SetTopRadius(float tr){
-    //     topRadius = tr;
-    //     // Debug.Log("tr: " + tr);
-    //     MakeProceduralCone();
-    //     UpdateMesh();
-    // }
-
-    // public float GetTopRadius(){
-    //     return topRadius;
-    // }
-
-    // public void SetHeight(float h){
-    //     height = h;
-    //     // Debug.Log("h: " + h);
-    //     MakeProceduralCone();
-    //     UpdateMesh();
-    // }
-
-    // public float GetHeight(){
-    //     return height;
-    // }
 
 
     
@@ -360,7 +383,7 @@ public class ProceduralCone : MonoBehaviour
         if (mesh == null || vertices == null || vertices.Length < 3 || triangles == null || normals == null)
             return;
 
-        Debug.Log("UpdateMesh:   branch: " + treeBranch + " spot: " + treeSpot + " vertices: " + this.vertices.Length);
+        // Debug.Log("UpdateMesh:   branch: " + treeBranch + " spot: " + treeSpot + " vertices: " + this.vertices.Length);
 
 
         mesh.Clear();

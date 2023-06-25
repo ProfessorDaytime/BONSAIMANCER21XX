@@ -13,25 +13,39 @@
         "m_CodePreviewVisible": true,
         "m_OpenUXMLFiles": [
             {
-                "m_OpenUSSFiles": [],
+                "m_OpenUSSFiles": [
+                    {
+                        "m_StyleSheet": {
+                            "fileID": 7433441132597879392,
+                            "guid": "f4deae364b089a44689af9c50e890772",
+                            "type": 3
+                        },
+                        "m_BackupStyleSheet": {
+                            "instanceID": 0
+                        },
+                        "m_OldPath": "Assets/UI/BaseUI.uss"
+                    }
+                ],
                 "m_VisualTreeAssetBackup": {
                     "instanceID": 0
                 },
-                "m_OpenendVisualTreeAssetOldPath": "Assets/UI/ButtonUI.uxml",
+                "m_OpenendVisualTreeAssetOldPath": "Assets/UI/UIBase.uxml",
                 "m_VisualTreeAsset": {
                     "fileID": 9197481963319205126,
-                    "guid": "b9a71e14d7950fb4ab1db87e3f8951cc",
+                    "guid": "5bde440d492ad91409e3298e89717097",
                     "type": 3
                 },
                 "m_ActiveStyleSheet": {
-                    "instanceID": 0
+                    "fileID": 7433441132597879392,
+                    "guid": "f4deae364b089a44689af9c50e890772",
+                    "type": 3
                 },
                 "m_Settings": {
-                    "UxmlGuid": "b9a71e14d7950fb4ab1db87e3f8951cc",
-                    "UxmlPath": "Assets/UI/ButtonUI.uxml",
+                    "UxmlGuid": "5bde440d492ad91409e3298e89717097",
+                    "UxmlPath": "Assets/UI/UIBase.uxml",
                     "CanvasX": 0,
                     "CanvasY": 0,
-                    "CanvasWidth": 350,
+                    "CanvasWidth": 666,
                     "CanvasHeight": 450,
                     "MatchGameView": false,
                     "ZoomScale": 1.0,

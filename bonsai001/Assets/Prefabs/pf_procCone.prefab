@@ -104,8 +104,10 @@ MonoBehaviour:
   gridSizeY: 3
   treeSpot: 0
   treeBranch: 0
+  growState: 0
   conePrefab: {fileID: 1306763660922904054}
   conePrefab2: {fileID: 1306763660922904054}
+  leaf: {fileID: 349046008948968205, guid: 384e3240f85962c4da08966e92607d19, type: 3}
 --- !u!64 &3222818672117129632
 MeshCollider:
   m_ObjectHideFlags: 0

@@ -33,16 +33,28 @@ public class ButtonClicker : MonoBehaviour
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
-        Debug.Log("The tree has been trimmed");
+        // Debug.Log("The tree has been trimmed");
+        GameManager.canTrim = true;
+        AudioManager.Instance.PlaySFX("Trim");
     }
 
     public void OnWaterButtonClick(ClickEvent evt){
-        if(GameManager.waterings == -1){
-            GameManager.Instance.UpdateGameState(GameState.BranchGrow);
-            GameManager.waterings++;
+        AudioManager.Instance.PlaySFX("Water");
+
+        //REMEMBER TO UNCOMMENT THIS IF STATEMENT TO PUT THE TOOLTIP BACK IN
+        if(GameManager.Instance.state == GameState.Idle){
+            GameManager.Instance.UpdateGameState(GameState.Water);
+
+            if(GameManager.waterings == -1){
+                GameManager.Instance.UpdateGameState(GameState.BranchGrow);
+                GameManager.waterings++;
+                Debug.Log("The tree has been watered");
+                // AudioManager.Instance.PlaySFX("Water");
+            }
         }
-        Debug.Log("The tree has been watered");
-    }
+        
+        
+     }
 
 
 }
