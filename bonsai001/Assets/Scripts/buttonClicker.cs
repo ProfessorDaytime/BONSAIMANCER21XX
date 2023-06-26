@@ -8,6 +8,7 @@ public class ButtonClicker : MonoBehaviour
     UIDocument buttonDocument;
     Button trimButton;
     Button waterButton;
+
     // Start is called before the first frame update
     void OnEnable(){
 
@@ -20,6 +21,7 @@ public class ButtonClicker : MonoBehaviour
         trimButton = buttonDocument.rootVisualElement.Q("TrimButton") as Button;
 
         waterButton = buttonDocument.rootVisualElement.Q("WaterButton") as Button;
+      
 
         if(trimButton != null){
             Debug.Log("TRIM BUTTON");
@@ -36,6 +38,7 @@ public class ButtonClicker : MonoBehaviour
         // Debug.Log("The tree has been trimmed");
         GameManager.canTrim = true;
         AudioManager.Instance.PlaySFX("Trim");
+        
     }
 
     public void OnWaterButtonClick(ClickEvent evt){
