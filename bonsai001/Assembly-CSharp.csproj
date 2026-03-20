@@ -61,9 +61,12 @@
      <Compile Include="Assets\Scripts\ChangeColor.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_PhoneNumberValidator.cs" />
      <Compile Include="Assets\Scripts\Leaf.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeNode.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeMeshBuilder.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexJitter.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_DigitValidator.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_FrameRateCounter.cs" />
+     <Compile Include="Assets\Scripts\Tools\ToolManager.cs" />
      <Compile Include="Assets\Scripts\MainMenu.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextConsoleSimulator.cs" />
      <Compile Include="Assets\Scripts\ProceduralCone.cs" />
@@ -77,6 +80,7 @@
      <Compile Include="Assets\Scripts\GameManager.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark02.cs" />
      <Compile Include="Assets\Scripts\ProceduralGrid.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeInteraction.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_B.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SkewTextExample.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\WarpTextExample.cs" />
@@ -93,6 +97,7 @@
      <Compile Include="Assets\Scripts\CubeMeshData.cs" />
      <Compile Include="Assets\Scripts\ToolTip.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT003.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.cs" />
      <Compile Include="Assets\Scripts\scr_Cyl_001.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT002.cs" />
      <Compile Include="Assets\Scripts\buttonClicker.cs" />

@@ -35,10 +35,8 @@ public class ButtonClicker : MonoBehaviour
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
-        // Debug.Log("The tree has been trimmed");
-        GameManager.canTrim = true;
+        ToolManager.Instance.SelectTool(ToolType.SmallClippers);
         AudioManager.Instance.PlaySFX("Trim");
-        
     }
 
     public void OnWaterButtonClick(ClickEvent evt){

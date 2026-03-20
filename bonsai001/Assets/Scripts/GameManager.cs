@@ -19,13 +19,51 @@ public class GameManager : MonoBehaviour
     public static bool canLeaf = false;
     public static bool canTrim = false;
 
+    /// <summary>
+    /// How fast the tree grows this month (0 = dormant, 1 = peak spring growth).
+    /// Drives TreeSkeleton.Update() — multiply all growth speeds by this value.
+    /// </summary>
+    public static float SeasonalGrowthRate
+    {
+        get
+        {
+            switch (month)
+            {
+                case 3:  return 0.3f;   // March   — buds break, slow start
+                case 4:  return 1.0f;   // April   — peak growth
+                case 5:  return 1.0f;   // May     — peak growth
+                case 6:  return 0.6f;   // June    — slowing
+                case 7:  return 0.5f;   // July
+                case 8:  return 0.4f;   // August  — winding down
+                default: return 0.0f;   // Sep–Feb — dormant
+            }
+        }
+    }
+
+    /// <summary>
+    /// Leaf hue (0 = green, 1 = full red). Drives Leaf material color each frame.
+    /// </summary>
+    public static float LeafHue
+    {
+        get
+        {
+            switch (month)
+            {
+                case 9:  return Mathf.Clamp01((day - 1) / 28f) * 0.3f;          // Sep: 0 → 0.3
+                case 10: return 0.3f + Mathf.Clamp01((day - 1) / 28f) * 0.7f;   // Oct: 0.3 → 1.0
+                case 11: return 1.0f;
+                default: return 0.0f;
+            }
+        }
+    }
+
     [SerializeField]
     GameObject cityDay;
     [SerializeField]
     GameObject skyLight;
 
     //Time Stuff
-    public static float TIMESCALE = 5f;
+    public static float TIMESCALE = 200f;
     // Text hourText;
     // Text dayText;
     // Text monthText;
@@ -51,7 +89,7 @@ public class GameManager : MonoBehaviour
 
 
         month = 4;
-        day = 26;
+        day = 1;
         year = 2123;
         hour = 12f;
 
@@ -62,6 +100,9 @@ public class GameManager : MonoBehaviour
     }
     
     void Update(){
+        if (Input.GetKey(KeyCode.D)) TIMESCALE = Mathf.Min(TIMESCALE + 50f * Time.deltaTime, 400f);
+        if (Input.GetKey(KeyCode.A)) TIMESCALE = Mathf.Max(TIMESCALE - 50f * Time.deltaTime, 1f);
+
         if(state == GameState.BranchGrow || state == GameState.LeafGrow || state == GameState.LeafFall || state == GameState.TimeGo){
             CalculateTime();
 
@@ -77,7 +118,7 @@ public class GameManager : MonoBehaviour
 
         }
 
-        Debug.Log(state);
+        // Debug.Log(state);
         
     }
 
@@ -99,12 +140,10 @@ public class GameManager : MonoBehaviour
             sky.intensity = 0f;
         }
         else if (hour > 5f && hour < 6f){
-            Debug.Log("Between 5 and 6 am");
             rend.color = new Color (1,1,1, hour - 5f);
             sky.intensity = hour - 5f;
         }
         else if (hour > 20f && hour < 21f){
-            Debug.Log("Between 8 and 9 pm");
             rend.color = new Color (1,1,1,1 - (hour - 20));
             sky.intensity = 1 - (hour - 20);
         }
@@ -144,7 +183,7 @@ public class GameManager : MonoBehaviour
 
     }
 
-    void TextCallFunction(){
+    public void TextCallFunction(){
         // dayText.text = "" + day;
         // hourText = "" + hour;
         // yearText = "" + year;
@@ -192,7 +231,13 @@ public class GameManager : MonoBehaviour
                 AudioManager.Instance.PlayMusic("WinterSong");
                 break;
             case 11:
-                monthName = "November";
+                // Skip winter — jump to February of next year.
+                // October (LeafFall) has already played; no reason to sit through Nov–Jan.
+                month     = 2;
+                year++;
+                monthName = "February";
+                day       = 1;
+                TextCallFunction();
                 break;
             case 12:
                 monthName = "December";
