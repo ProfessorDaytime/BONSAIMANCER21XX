@@ -897,6 +897,7 @@ GameObject:
   - component: {fileID: 963194227}
   - component: {fileID: 963194226}
   - component: {fileID: 963194230}
+  - component: {fileID: 963194231}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -990,6 +991,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 940a9a19168bff3428ef1850ef93deda, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &963194231
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 69ca17937b4a32a40941e6e74aa92f75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  target: {fileID: 1486295577}
+  sensitivity: 0.8
+  pitchMin: 5
+  pitchMax: 85
+  zoomSpeed: 2
+  zoomMin: 2
+  zoomMax: 50
+  panSpeed: 0.05
 --- !u!1 &980914154
 GameObject:
   m_ObjectHideFlags: 0
@@ -1472,7 +1493,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
       propertyPath: m_Name
-      value: Platform001
+      value: Bonsai
       objectReference: {fileID: 0}
     - target: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
       propertyPath: m_IsActive
@@ -1685,6 +1706,11 @@ MonoBehaviour:
   wireRadius: 0.012
   lineWidth: 0.08
   wireColor: {r: 0.72, g: 0.45, b: 0.2, a: 1}
+--- !u!4 &1486295577 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8046696593132258112, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
+  m_PrefabInstance: {fileID: 1486295551}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1499744398
 GameObject:
   m_ObjectHideFlags: 0

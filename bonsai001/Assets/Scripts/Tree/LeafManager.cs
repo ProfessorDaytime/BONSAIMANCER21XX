@@ -49,6 +49,8 @@ public class LeafManager : MonoBehaviour
     bool isLeafFall      = false;
     bool isGrowingSeason = false;
 
+    float fallDebugTimer = 0f;
+
     // Shared material — one colour update drives all leaves
     Material leafMat;
 
@@ -111,13 +113,35 @@ public class LeafManager : MonoBehaviour
             CleanupOrphanedLeaves();
             SpawnSpringLeaves();
         }
+
+        if (state == GameState.LeafFall)
+        {
+            if (listDirty) RebuildFlatList();
+            Debug.Log($"[Leaves] LeafFall started | nodeLeaves={nodeLeaves.Count} allLeaves={allLeaves.Count}");
+
+            // Give every live leaf a randomised fall-colour speed.
+            // Guard IsInFallSeason so restoring LeafFall (e.g. after wiring) doesn't
+            // reset the colour progress on leaves that are already turning.
+            foreach (var kvp in nodeLeaves)
+                foreach (var go in kvp.Value)
+                {
+                    if (go == null) continue;
+                    var leaf = go.GetComponent<Leaf>();
+                    if (leaf != null && !leaf.IsInFallSeason)
+                        leaf.StartLeafFallSeason(Random.Range(0.4f, 2.2f));
+                }
+
+            fallDebugTimer = 0f;
+        }
     }
 
     void Update()
     {
         if (leafMat == null) return;
 
-        UpdateLeafColour();
+        // Rebuild first so RollLeafFall always sees a current list
+        if (listDirty)
+            RebuildFlatList();
 
         // Check for new terminal nodes created mid-season (chain propagation).
         // SpawnSpringLeaves skips nodes already in the dict, so this is safe every frame.
@@ -125,10 +149,21 @@ public class LeafManager : MonoBehaviour
             SpawnSpringLeaves();
 
         if (isLeafFall)
+        {
+            fallDebugTimer += Time.deltaTime;
+            if (fallDebugTimer >= 1f)
+            {
+                fallDebugTimer = 0f;
+                float prog = 0f;
+                if (allLeaves.Count > 0)
+                {
+                    var (_, sampleGo) = allLeaves[0];
+                    if (sampleGo != null) prog = sampleGo.GetComponent<Leaf>()?.FallColorProgress ?? 0f;
+                }
+                Debug.Log($"[Leaves] LeafFall tick | allLeaves={allLeaves.Count} nodeLeaves={nodeLeaves.Count} sampleProgress={prog:F2}");
+            }
             RollLeafFall();
-
-        if (listDirty)
-            RebuildFlatList();
+        }
     }
 
     // ── Spawning ──────────────────────────────────────────────────────────────
@@ -154,12 +189,13 @@ public class LeafManager : MonoBehaviour
 
         for (int i = 0; i < leavesPerNode; i++)
         {
-            // Random offset in a sphere around the tip
-            Vector3 localPos = node.tipPosition + Random.insideUnitSphere * clusterRadius;
-            Quaternion rot   = Random.rotation;
+            // Random scatter offset in skeleton-local space, stored so Leaf.Update()
+            // can reapply it each frame and track the node when wire-bending moves it.
+            Vector3    offset   = Random.insideUnitSphere * clusterRadius;
+            Quaternion rot      = Random.rotation;
 
             var go = Instantiate(leafPrefab, skeleton.transform);
-            go.transform.localPosition = localPos;
+            go.transform.localPosition = node.tipPosition + offset;
             go.transform.rotation      = rot;
             go.transform.localScale    = Vector3.zero;  // Leaf.Update() scales it in
 
@@ -167,8 +203,11 @@ public class LeafManager : MonoBehaviour
             foreach (var r in go.GetComponentsInChildren<Renderer>())
                 r.sharedMaterial = leafMat;
 
-            var leaf          = go.AddComponent<Leaf>();
+            // Use existing Leaf component if the prefab already has one (avoids duplicate
+            // components fighting each other — the second one would reset localPosition every frame)
+            var leaf          = go.GetComponent<Leaf>() ?? go.AddComponent<Leaf>();
             leaf.ownerNode    = node;
+            leaf.tipOffset    = offset;
             leaf.targetScale  = Vector3.one * leafScale;
 
             list.Add(go);
@@ -218,16 +257,6 @@ public class LeafManager : MonoBehaviour
         listDirty = true;
     }
 
-    // ── Colour ────────────────────────────────────────────────────────────────
-
-    void UpdateLeafColour()
-    {
-        float hue   = GameManager.LeafHue;
-        // HSV: 0.33 = green, 0.0 = red
-        Color color = Color.HSVToRGB(Mathf.Lerp(0.33f, 0f, hue), 0.85f, 0.75f);
-        leafMat.color = color;
-    }
-
     // ── Leaf fall ─────────────────────────────────────────────────────────────
 
     void RollLeafFall()
@@ -235,7 +264,6 @@ public class LeafManager : MonoBehaviour
         if (allLeaves.Count == 0) return;
 
         float inGameDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
-        float chance     = baseFallChancePerDay * inGameDays;
 
         // Iterate backward so we can remove mid-loop
         for (int i = allLeaves.Count - 1; i >= 0; i--)
@@ -243,11 +271,23 @@ public class LeafManager : MonoBehaviour
             var (nodeId, go) = allLeaves[i];
             if (go == null) { allLeaves.RemoveAt(i); continue; }
 
+            var leaf = go.GetComponent<Leaf>();
+            if (leaf == null) { allLeaves.RemoveAt(i); continue; }
+
+            // Lazy fallback: if StartLeafFallSeason was missed, start it now
+            if (!leaf.IsInFallSeason)
+                leaf.StartLeafFallSeason(Random.Range(0.4f, 2.2f));
+
+            // Fall chance scales with color progress:
+            //   green  (0) → 0.2x base   (rare but possible)
+            //   brown  (1) → 3.0x base   (very likely)
+            float chance = baseFallChancePerDay * inGameDays * Mathf.Lerp(0.2f, 3f, leaf.FallColorProgress);
+
             if (Random.value < chance)
             {
-                go.GetComponent<Leaf>()?.StartFalling();
+                Debug.Log($"[Leaves] Leaf falling! progress={leaf.FallColorProgress:F2} chance={chance:F4}");
+                leaf.StartFalling();
 
-                // Remove from dict
                 if (nodeLeaves.TryGetValue(nodeId, out var list))
                 {
                     list.Remove(go);

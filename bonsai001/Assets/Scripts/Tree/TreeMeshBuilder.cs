@@ -30,6 +30,12 @@ public class TreeMeshBuilder : MonoBehaviour
     [Tooltip("Number of sides on each cylinder segment. 8 is fine for a bonsai.")]
     [SerializeField] int ringSegments = 8;
 
+    // Tight-angle geometry: when the angle between a parent and child growDirection
+    // exceeds this threshold, intermediate rings are inserted at the base of the
+    // child segment to smooth the bend instead of pinching the vertices.
+    const float BEND_THRESHOLD_DEG  = 20f;   // minimum angle that triggers extra rings
+    const float BEND_RING_FRACTION   = 0.15f; // extra rings span first 15% of the child's length
+
     // ── References ────────────────────────────────────────────────────────────
 
     TreeSkeleton  skeleton;
@@ -87,7 +93,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
         // Traverse the node graph depth-first.
         // -1 signals "generate a base ring for me" (only the root node needs this).
-        ProcessNode(skeleton.root, -1, 0f, Vector3.zero);
+        ProcessNode(skeleton.root, -1, 0f, Vector3.zero, Vector3.zero);
 
         mesh.Clear();
         mesh.SetVertices(vertices);
@@ -130,21 +136,24 @@ public class TreeMeshBuilder : MonoBehaviour
     ///   preventing the quad strips from twisting at junctions.
     ///   Pass Vector3.zero for the root — it computes a fresh frame.
     /// </param>
-    int ProcessNode(TreeNode node, int baseRingStart, float cumulativeHeight, Vector3 frameRight)
+    /// <param name="parentDir">
+    ///   The growDirection of the parent node (normalised).
+    ///   Pass Vector3.zero for the root — it skips the bend-ring logic.
+    /// </param>
+    int ProcessNode(TreeNode node, int baseRingStart, float cumulativeHeight,
+                    Vector3 frameRight, Vector3 parentDir)
     {
         // ── Resolve frame ────────────────────────────────────────────────────
-        // Parallel-transport the inherited frameRight into this node's plane.
-        // This keeps adjacent rings rotationally consistent, eliminating twist.
+        // Save the incoming frame (oriented to the parent's direction) before
+        // re-orthogonalising it to THIS node's direction.  The bend rings below
+        // need to transport through intermediate directions from incomingFrame.
 
-        Vector3 axisUp = node.growDirection.normalized;
+        Vector3 axisUp       = node.growDirection.normalized;
+        Vector3 incomingFrame = frameRight;   // frame still aligned to parent's axis
 
         if (frameRight.sqrMagnitude > 0.001f)
-        {
-            // Re-orthogonalize: project out the component along this direction.
             frameRight = Vector3.ProjectOnPlane(frameRight, axisUp).normalized;
-        }
 
-        // Fallback (root, or degenerate after projection):
         if (frameRight.sqrMagnitude < 0.001f)
         {
             frameRight = Vector3.Cross(axisUp, Vector3.up);
@@ -154,7 +163,6 @@ public class TreeMeshBuilder : MonoBehaviour
         }
 
         // ── Base ring ────────────────────────────────────────────────────────
-        // Root generates its own; all other nodes inherit their parent's tip ring.
 
         if (baseRingStart < 0)
         {
@@ -162,26 +170,92 @@ public class TreeMeshBuilder : MonoBehaviour
             AddRing(node.worldPosition, axisUp, frameRight, node.radius, cumulativeHeight);
         }
 
+        // ── Bend rings ───────────────────────────────────────────────────────
+        // When the angle from parent to this node exceeds BEND_THRESHOLD_DEG,
+        // insert intermediate rings that Slerp from parentDir to axisUp.
+        // They are placed in the first BEND_RING_FRACTION of the node's length
+        // so the bend is concentrated near the junction, matching how real wood bends.
+
+        int     currentBase  = baseRingStart;
+        Vector3 bendFrame    = incomingFrame; // transported through each intermediate dir
+
+        if (parentDir.sqrMagnitude > 0.001f)
+        {
+            float bendAngle = Vector3.Angle(parentDir, axisUp);
+
+            if (bendAngle > BEND_THRESHOLD_DEG)
+            {
+                // One ring per BEND_THRESHOLD_DEG of bend, capped at 4
+                int count = Mathf.Clamp(Mathf.FloorToInt(bendAngle / BEND_THRESHOLD_DEG), 1, 4);
+
+                for (int b = 1; b <= count; b++)
+                {
+                    float   t       = (float)b / (count + 1);
+                    Vector3 bendDir = Vector3.Slerp(parentDir, axisUp, t).normalized;
+
+                    // Parallel-transport bendFrame to bendDir
+                    bendFrame = Vector3.ProjectOnPlane(bendFrame, bendDir).normalized;
+                    if (bendFrame.sqrMagnitude < 0.001f)
+                    {
+                        bendFrame = Vector3.Cross(bendDir, Vector3.up);
+                        if (bendFrame.sqrMagnitude < 0.001f)
+                            bendFrame = Vector3.Cross(bendDir, Vector3.forward);
+                        bendFrame = bendFrame.normalized;
+                    }
+
+                    // Position: fraction of the way along this segment
+                    float   ringT  = t * BEND_RING_FRACTION;
+                    Vector3 ringPos = node.worldPosition + axisUp * (node.length * ringT);
+                    float   ringH   = cumulativeHeight + node.length * ringT;
+                    float   ringR   = Mathf.Lerp(node.radius, node.tipRadius, ringT);
+
+                    int newRing = vertices.Count;
+                    AddRing(ringPos, bendDir, bendFrame, ringR, ringH);
+
+                    // Connect the previous ring to this bend ring
+                    int bendTriStart = triangles.Count;
+                    for (int i = 0; i < ringSegments; i++)
+                    {
+                        int b0 = currentBase + i,  b1 = currentBase + i + 1;
+                        int r0 = newRing     + i,  r1 = newRing     + i + 1;
+                        triangles.Add(b0); triangles.Add(r0); triangles.Add(b1);
+                        triangles.Add(b1); triangles.Add(r0); triangles.Add(r1);
+                    }
+                    triRanges.Add((bendTriStart, triangles.Count, node));
+
+                    currentBase = newRing;
+                }
+
+                // After bend rings, re-project the transported bendFrame onto axisUp
+                // so the tip ring uses a frame consistent with the last bend ring.
+                // Without this, the tip ring falls back to an independent computation
+                // that can differ by ~90°, making the final quad strip twist visibly.
+                Vector3 transported = Vector3.ProjectOnPlane(bendFrame, axisUp).normalized;
+                if (transported.sqrMagnitude > 0.001f)
+                    frameRight = transported;
+            }
+        }
+
         // ── Tip ring ─────────────────────────────────────────────────────────
-        // Same frame as base (direction doesn't change within a node).
+        // Uses frameRight (now consistent with the last bend ring if any were inserted).
 
         float tipHeight    = cumulativeHeight + node.length;
         int   tipRingStart = vertices.Count;
         AddRing(node.tipPosition, axisUp, frameRight, node.tipRadius, tipHeight);
 
-        // ── Quads ─────────────────────────────────────────────────────────────
-        // Connect base ring to tip ring.  Two triangles per quad column.
+        // ── Quads (currentBase → tip) ─────────────────────────────────────────
+        // currentBase is either the original base ring (no bend) or the last
+        // bend ring inserted above.
 
         int triStart = triangles.Count;
 
         for (int i = 0; i < ringSegments; i++)
         {
-            int b0 = baseRingStart + i;
-            int b1 = baseRingStart + i + 1;
-            int t0 = tipRingStart  + i;
-            int t1 = tipRingStart  + i + 1;
+            int b0 = currentBase  + i;
+            int b1 = currentBase  + i + 1;
+            int t0 = tipRingStart + i;
+            int t1 = tipRingStart + i + 1;
 
-            // Winding order: counter-clockwise when viewed from outside
             triangles.Add(b0); triangles.Add(t0); triangles.Add(b1);
             triangles.Add(b1); triangles.Add(t0); triangles.Add(t1);
         }
@@ -189,11 +263,10 @@ public class TreeMeshBuilder : MonoBehaviour
         triRanges.Add((triStart, triangles.Count, node));
 
         // ── Recurse into children ─────────────────────────────────────────────
-        // Every child shares our tip ring as its base ring, and inherits frameRight
-        // so their tip rings stay aligned with ours (parallel transport continues).
+        // Pass axisUp as parentDir so each child can detect its own bend angle.
 
         foreach (var child in node.children)
-            ProcessNode(child, tipRingStart, tipHeight, frameRight);
+            ProcessNode(child, tipRingStart, tipHeight, frameRight, axisUp);
 
         return tipRingStart;
     }

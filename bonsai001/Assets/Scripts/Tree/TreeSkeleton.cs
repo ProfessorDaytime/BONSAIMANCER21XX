@@ -106,6 +106,24 @@ public class TreeSkeleton : MonoBehaviour
         ? depthsPerYear
         : Mathf.Min(maxDepth, (GameManager.year - startYear + 1) * depthsPerYear);
 
+    /// <summary>
+    /// Returns the effective depth cap for a node, capped by any trim cut point
+    /// in its ancestry.  A fresh stump only allows depthsPerYear new levels per
+    /// season, mirroring year-1 pacing.  Returns SeasonDepthCap when no
+    /// cut-point restriction applies.
+    /// </summary>
+    int CutPointDepthCap(TreeNode node)
+    {
+        TreeNode n = node;
+        while (n != null)
+        {
+            if (n.isTrimCutPoint)
+                return n.trimCutDepth + n.regrowthSeasonCount * depthsPerYear;
+            n = n.parent;
+        }
+        return SeasonDepthCap;
+    }
+
     // ── Unity ─────────────────────────────────────────────────────────────────
 
     void Awake()
@@ -173,17 +191,17 @@ public class TreeSkeleton : MonoBehaviour
 
             if (node.length >= node.targetLength)
             {
-                if (node.depth < SeasonDepthCap)
+                if (node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node))
                 {
-                    // Reached target and below depth cap — spawn children, stop growing.
+                    // Reached target and below both caps — spawn children, stop growing.
                     node.length    = node.targetLength;
                     node.isGrowing = false;
                     SpawnChildren(node);
                     structureChanged = true;
                 }
-                // else: at depth cap — keep growing past targetLength until dormancy.
-                // Next spring when the cap increases, Update() will spawn children on
-                // the first tick (length is already >= targetLength).
+                // else: at a depth cap — keep growing past targetLength until dormancy.
+                // Next spring, when caps increase, Update() will spawn children on the
+                // first tick (length is already >= targetLength).
             }
         }
 
@@ -230,6 +248,17 @@ public class TreeSkeleton : MonoBehaviour
 
     void StartNewGrowingSeason()
     {
+        // Advance trim cut points — each spring the regrowth window opens a little
+        // wider. Once the cut-point cap reaches the global SeasonDepthCap the
+        // restriction is lifted and the node is treated as normal again.
+        foreach (var node in allNodes)
+        {
+            if (!node.isTrimCutPoint) continue;
+            node.regrowthSeasonCount++;
+            if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
+                node.isTrimCutPoint = false;
+        }
+
         // Collect finished terminal nodes (last year's tips).
         // Nodes still mid-growth (node.isGrowing = true) will resume naturally via Update().
         var terminals = new List<TreeNode>();
@@ -237,7 +266,8 @@ public class TreeSkeleton : MonoBehaviour
         foreach (var node in allNodes)
         {
             if (node.isGrowing && !node.isTrimmed) resuming++;
-            if (!node.isTrimmed && node.isTerminal && !node.isGrowing && node.depth < SeasonDepthCap)
+            if (!node.isTrimmed && node.isTerminal && !node.isGrowing
+                    && node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node))
                 terminals.Add(node);
         }
 
@@ -281,6 +311,15 @@ public class TreeSkeleton : MonoBehaviour
         lastGrownYear = GameManager.year;
         GameManager.Instance.TextCallFunction();
 
+        // Advance trim cut points the same way StartNewGrowingSeason does.
+        foreach (var node in allNodes)
+        {
+            if (!node.isTrimCutPoint) continue;
+            node.regrowthSeasonCount++;
+            if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
+                node.isTrimCutPoint = false;
+        }
+
         // First: finish any segments that were mid-growth (interrupted by winter).
         foreach (var node in allNodes)
         {
@@ -295,7 +334,8 @@ public class TreeSkeleton : MonoBehaviour
         var terminals = new List<TreeNode>();
         foreach (var node in allNodes)
         {
-            if (!node.isTrimmed && node.isTerminal && !node.isGrowing && node.depth < SeasonDepthCap)
+            if (!node.isTrimmed && node.isTerminal && !node.isGrowing
+                    && node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node))
                 terminals.Add(node);
         }
         foreach (var terminal in terminals)
@@ -317,7 +357,7 @@ public class TreeSkeleton : MonoBehaviour
                 anyGrowing     = true;
                 node.length    = node.targetLength;
                 node.isGrowing = false;
-                if (node.depth < SeasonDepthCap)
+                if (node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node))
                     SpawnChildren(node);
             }
         }
@@ -485,9 +525,22 @@ public class TreeSkeleton : MonoBehaviour
             return;
         }
 
-        node.parent?.children.Remove(node);
+        TreeNode parent = node.parent;
+        parent?.children.Remove(node);
+
         var removed = new List<TreeNode>();
         RemoveSubtree(node, removed);
+
+        // If the surviving tip is now a bare stump, start its regrowth timer.
+        // Re-cutting an existing cut point resets the counter so the pacing
+        // restarts from this new cut, not from the old one.
+        if (parent != null && parent.isTerminal)
+        {
+            parent.isTrimCutPoint      = true;
+            parent.trimCutDepth        = parent.depth;
+            parent.regrowthSeasonCount = 0;
+        }
+
         OnSubtreeTrimmed?.Invoke(removed);
         RecalculateRadii(root);
         meshBuilder.SetDirty();

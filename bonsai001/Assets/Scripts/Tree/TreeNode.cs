@@ -34,6 +34,16 @@ public class TreeNode
     public bool isTrimmed;          // trimmed nodes stop growing; their mesh remains
     public bool hasLeaves;          // true once leaves have been spawned at this tip
 
+    // ── Post-trim regrowth cap ────────────────────────────────────────────────
+    // When trimming creates a fresh stump, the surviving tip is marked as a
+    // cut point. Regrowth from that point is limited to depthsPerYear levels per
+    // season (same pacing as the first year of the tree's life), preventing a
+    // hard prune from immediately regrowing to full depth in one season.
+
+    public bool isTrimCutPoint;      // this node is the exposed tip of a pruning cut
+    public int  trimCutDepth;        // node.depth at the moment the cut was made
+    public int  regrowthSeasonCount; // growing seasons elapsed since the cut
+
     // ── Graph ─────────────────────────────────────────────────────────────────
 
     public TreeNode        parent;

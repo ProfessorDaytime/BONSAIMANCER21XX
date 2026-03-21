@@ -1,77 +1,176 @@
 using UnityEngine;
 
 /// <summary>
-/// Sits on each spawned leaf instance. Handles the fall animation when triggered
-/// by LeafManager. Color is driven by LeafManager via a shared material — this
-/// component doesn't touch the material directly.
+/// Sits on each spawned leaf instance.
 ///
-/// Scale-in animation (spring bud-burst) is driven by LeafManager setting
-/// targetScale before calling Init(); this component lerps toward it.
+/// Spring  — scales in from zero over SCALE_DURATION seconds.
+/// Autumn  — independently progresses through green→yellow→orange→red→brown
+///           at a randomized speed set by LeafManager. Falls when fully brown
+///           or when LeafManager's stochastic roll triggers it.
+/// Fall    — drifts and rotates before destroying itself.
 /// </summary>
 public class Leaf : MonoBehaviour
 {
-    // ── Set by LeafManager on spawn ────────────────────────────────────────────
+    // ── Set by LeafManager on spawn ───────────────────────────────────────────
 
     [HideInInspector] public TreeNode ownerNode;
     [HideInInspector] public Vector3  targetScale = Vector3.one;
+    // Offset from ownerNode.tipPosition in skeleton-local space.
+    // Updated each frame so leaves track the node when wire-bending moves it.
+    [HideInInspector] public Vector3  tipOffset;
+
+    // ── Fall colour (set by LeafManager when autumn begins) ───────────────────
+
+    // How fast this leaf runs through the colour gradient relative to the base rate.
+    // Randomised per-leaf — creates the natural variation where some fall at yellow,
+    // others at orange/red, and the last stragglers at brown.
+    [HideInInspector] public float fallColorSpeed = 1f;
+
+    // 0 = green, 1 = fully brown.  Public read so LeafManager can weight the fall roll.
+    public float FallColorProgress => fallColorProgress;
+    public bool  IsInFallSeason    => isInFallSeason;
+
+    float fallColorProgress = 0f;
+    bool  isInFallSeason    = false;
+
+    // Gradient: green → yellow → orange → red → brown
+    static readonly Color[] FallGradient =
+    {
+        new Color(0.15f, 0.55f, 0.10f),  // green
+        new Color(0.85f, 0.82f, 0.08f),  // yellow
+        new Color(0.92f, 0.38f, 0.04f),  // orange
+        new Color(0.72f, 0.08f, 0.04f),  // red
+        new Color(0.32f, 0.16f, 0.04f),  // brown
+    };
+
+    // Number of in-game days for a speed-1 leaf to go fully green→brown.
+    const float FALL_COLOR_DAYS = 25f;
 
     // ── Scale-in ──────────────────────────────────────────────────────────────
 
-    const float SCALE_DURATION = 1.5f;   // real seconds to reach full size
+    const float SCALE_DURATION = 1.5f;
     float scaleTimer = 0f;
 
-    // ── Fall ──────────────────────────────────────────────────────────────────
+    // ── Fall animation ────────────────────────────────────────────────────────
 
-    bool    isFalling    = false;
-    float   fallTimer    = 0f;
-    Vector3 driftVelocity;
+    bool    isFalling = false;
+    float   fallTimer;
+    Vector3 driftVelocity;   // world-space, set in StartFalling after unparenting
     float   rotSpeed;
+
+    // ── Rendering ─────────────────────────────────────────────────────────────
+
+    Renderer              leafRenderer;
+    MaterialPropertyBlock propBlock;
 
     // ── Unity ─────────────────────────────────────────────────────────────────
 
-    void Update()
+    void Start()
     {
-        // ── Spring scale-in ───────────────────────────────────────────────────
-        if (scaleTimer < SCALE_DURATION)
+        leafRenderer = GetComponentInChildren<Renderer>();
+        propBlock    = new MaterialPropertyBlock();
+
+        // If the leaf prefab has a Rigidbody, make it kinematic so the physics
+        // engine doesn't override our manual transform.position changes.
+        var rb = GetComponentInChildren<Rigidbody>();
+        if (rb != null)
         {
-            scaleTimer += Time.deltaTime;
-            float t = Mathf.SmoothStep(0f, 1f, scaleTimer / SCALE_DURATION);
-            transform.localScale = targetScale * t;
+            rb.isKinematic = true;
+            rb.useGravity  = false;
         }
 
-        // ── Fall animation ────────────────────────────────────────────────────
+        UpdateLeafColor();   // initialise to green
+    }
+
+    void Update()
+    {
+        // Track owner node so wire-bending keeps leaves attached to their branch
+        if (!isFalling && ownerNode != null)
+            transform.localPosition = ownerNode.tipPosition + tipOffset;
+
+        // Spring scale-in (skip once falling so the fall animation keeps the correct scale)
+        if (!isFalling && scaleTimer < SCALE_DURATION)
+        {
+            scaleTimer += Time.deltaTime;
+            transform.localScale = targetScale * Mathf.SmoothStep(0f, 1f, scaleTimer / SCALE_DURATION);
+        }
+
+        // Autumn colour progression
+        if (isInFallSeason)
+        {
+            float inGameDays  = Time.deltaTime * GameManager.TIMESCALE / 24f;
+            fallColorProgress = Mathf.Min(1f, fallColorProgress + inGameDays * fallColorSpeed / FALL_COLOR_DAYS);
+            UpdateLeafColor();
+
+            // Fully browned — force fall regardless of LeafManager's roll
+            if (fallColorProgress >= 1f && !isFalling)
+                StartFalling();
+        }
+
+        // Fall animation
         if (!isFalling) return;
 
         fallTimer += Time.deltaTime;
 
         transform.position  += driftVelocity * Time.deltaTime;
         transform.Rotate(Vector3.forward, rotSpeed * Time.deltaTime, Space.Self);
+        driftVelocity.y     -= 1.2f * Time.deltaTime;
 
-        // Gentle gravity
-        driftVelocity.y -= 1.2f * Time.deltaTime;
-
-        if (fallTimer > 5f || transform.position.y < -10f)
+        if (fallTimer > 5f)
             Destroy(gameObject);
+    }
+
+    // ── Colour ────────────────────────────────────────────────────────────────
+
+    void UpdateLeafColor()
+    {
+        if (leafRenderer == null) return;
+
+        float t     = fallColorProgress * (FallGradient.Length - 1);
+        int   i     = Mathf.Clamp((int)t, 0, FallGradient.Length - 2);
+        Color color = Color.Lerp(FallGradient[i], FallGradient[i + 1], t - i);
+
+        leafRenderer.GetPropertyBlock(propBlock);
+        propBlock.SetColor("_Color", color);      // Standard / Unlit shaders
+        leafRenderer.SetPropertyBlock(propBlock);
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Detaches from the tree and starts the fall animation.
-    /// Called by LeafManager when this leaf's fall roll succeeds.
+    /// Called by LeafManager when the LeafFall season begins.
+    /// Each leaf gets a different speed so they colour and fall at staggered rates.
+    /// </summary>
+    public void StartLeafFallSeason(float speed)
+    {
+        isInFallSeason    = true;
+        fallColorSpeed    = speed;
+        fallColorProgress = 0f;
+        UpdateLeafColor();
+    }
+
+    /// <summary>
+    /// Detaches from the tree and begins the fall animation.
+    /// Safe to call multiple times — subsequent calls are ignored.
     /// </summary>
     public void StartFalling()
     {
+        if (isFalling) return;
         isFalling = true;
 
-        // Unparent so it drifts independently in world space
-        transform.SetParent(null, worldPositionStays: true);
+        // Snap to full size if the leaf hasn't finished scaling in yet
+        if (scaleTimer < SCALE_DURATION)
+        {
+            scaleTimer           = SCALE_DURATION;
+            transform.localScale = targetScale;
+        }
 
+        transform.SetParent(null, worldPositionStays: true);
         driftVelocity = new Vector3(
             Random.Range(-0.3f, 0.3f),
             Random.Range(-0.2f, 0f),
             Random.Range(-0.3f, 0.3f)
         );
-        rotSpeed = Random.Range(-120f, 120f);
+        rotSpeed = Random.Range(-60f, 60f);
     }
 }
