@@ -82,6 +82,7 @@
      <Compile Include="Assets\Scripts\ProceduralGrid.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeInteraction.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_B.cs" />
+     <Compile Include="Assets\Scripts\Tree\WireRenderer.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SkewTextExample.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\WarpTextExample.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshProFloatingText.cs" />
@@ -91,6 +92,7 @@
      <Compile Include="Assets\Scripts\Old Proc Meshes\scr_ProceduralMesh.cs" />
      <Compile Include="Assets\Scripts\TreeGen.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\CameraController.cs" />
+     <Compile Include="Assets\Scripts\Tree\LeafManager.cs" />
      <Compile Include="Assets\Scripts\Sound.cs" />
      <Compile Include="Assets\Shader\CameraFilterPack_TV_ARCADE.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark03.cs" />

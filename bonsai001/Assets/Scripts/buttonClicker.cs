@@ -8,6 +8,8 @@ public class ButtonClicker : MonoBehaviour
     UIDocument buttonDocument;
     Button trimButton;
     Button waterButton;
+    Button wireButton;
+    Button removeWireButton;
 
     // Start is called before the first frame update
     void OnEnable(){
@@ -18,20 +20,20 @@ public class ButtonClicker : MonoBehaviour
             Debug.LogError("No button document found");
         }
 
-        trimButton = buttonDocument.rootVisualElement.Q("TrimButton") as Button;
+        trimButton       = buttonDocument.rootVisualElement.Q("TrimButton")       as Button;
+        waterButton      = buttonDocument.rootVisualElement.Q("WaterButton")      as Button;
+        wireButton       = buttonDocument.rootVisualElement.Q("WireButton")       as Button;
+        removeWireButton = buttonDocument.rootVisualElement.Q("RemoveWireButton") as Button;
 
-        waterButton = buttonDocument.rootVisualElement.Q("WaterButton") as Button;
-      
-
-        if(trimButton != null){
-            Debug.Log("TRIM BUTTON");
-        }
-        if(waterButton != null){
-            Debug.Log("WATER BUTTON");
-        }
+        if(trimButton != null)       Debug.Log("TRIM BUTTON");
+        if(waterButton != null)      Debug.Log("WATER BUTTON");
+        if(wireButton != null)       Debug.Log("WIRE BUTTON");
+        if(removeWireButton != null) Debug.Log("REMOVE WIRE BUTTON");
 
         trimButton.RegisterCallback<ClickEvent>(OnTreeButtonClick);
         waterButton.RegisterCallback<ClickEvent>(OnWaterButtonClick);
+        wireButton?.RegisterCallback<ClickEvent>(OnWireButtonClick);
+        removeWireButton?.RegisterCallback<ClickEvent>(OnRemoveWireButtonClick);
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
@@ -56,6 +58,16 @@ public class ButtonClicker : MonoBehaviour
         
         
      }
+
+    public void OnWireButtonClick(ClickEvent evt)
+    {
+        ToolManager.Instance.SelectTool(ToolType.Wire);
+    }
+
+    public void OnRemoveWireButtonClick(ClickEvent evt)
+    {
+        ToolManager.Instance.SelectTool(ToolType.RemoveWire);
+    }
 
 
 }

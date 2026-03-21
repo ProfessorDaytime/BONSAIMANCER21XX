@@ -1,16 +1,6 @@
 using UnityEngine;
 
-/// <summary>
-/// Tracks which tool the player currently has selected.
-/// Tools are selected by UI buttons; TreeInteraction reads ActiveTool each frame.
-///
-/// Tier list (only SmallClippers wired up in Phase 3):
-///   Shears        — leaves only (Phase 4)
-///   SmallClippers — thin branches (radius up to ~0.4)  ← active now
-///   BigClippers   — thick branches (radius 0.4–1.5)    ← stub
-///   Saw           — trunk-level cuts (radius 1.5+)     ← stub
-/// </summary>
-public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw }
+public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire }
 
 public class ToolManager : MonoBehaviour
 {
@@ -23,15 +13,19 @@ public class ToolManager : MonoBehaviour
     /// <summary>Activate a tool. Pass None to deselect.</summary>
     public void SelectTool(ToolType tool)
     {
-        ActiveTool     = tool;
-        GameManager.canTrim = tool == ToolType.SmallClippers
-                           || tool == ToolType.BigClippers
-                           || tool == ToolType.Saw;
+        ActiveTool                = tool;
+        GameManager.canTrim       = tool == ToolType.SmallClippers
+                                 || tool == ToolType.BigClippers
+                                 || tool == ToolType.Saw;
+        GameManager.canWire       = tool == ToolType.Wire;
+        GameManager.canRemoveWire = tool == ToolType.RemoveWire;
     }
 
     public void ClearTool()
     {
-        ActiveTool          = ToolType.None;
-        GameManager.canTrim = false;
+        ActiveTool                = ToolType.None;
+        GameManager.canTrim       = false;
+        GameManager.canWire       = false;
+        GameManager.canRemoveWire = false;
     }
 }

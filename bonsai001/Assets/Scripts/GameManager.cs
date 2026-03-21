@@ -18,6 +18,8 @@ public class GameManager : MonoBehaviour
     public static int newLeaves = 0;
     public static bool canLeaf = false;
     public static bool canTrim = false;
+    public static bool canWire = false;
+    public static bool canRemoveWire = false;
 
     /// <summary>
     /// How fast the tree grows this month (0 = dormant, 1 = peak spring growth).
@@ -131,22 +133,22 @@ public class GameManager : MonoBehaviour
 
         
         
-        if(hour >= 6f && hour < 20f){
-            rend.color = new Color (1,1,1,1);
-            sky.intensity = 1f;
-        }
-        else if(hour < 5f || hour >= 21f){
-            rend.color = new Color (1,1,1,0);
-            sky.intensity = 0f;
-        }
-        else if (hour > 5f && hour < 6f){
-            rend.color = new Color (1,1,1, hour - 5f);
-            sky.intensity = hour - 5f;
-        }
-        else if (hour > 20f && hour < 21f){
-            rend.color = new Color (1,1,1,1 - (hour - 20));
-            sky.intensity = 1 - (hour - 20);
-        }
+        // if(hour >= 6f && hour < 20f){
+        //     rend.color = new Color (1,1,1,1);
+        //     sky.intensity = 1f;
+        // }
+        // else if(hour < 5f || hour >= 21f){
+        //     rend.color = new Color (1,1,1,0);
+        //     sky.intensity = 0f;
+        // }
+        // else if (hour > 5f && hour < 6f){
+        //     rend.color = new Color (1,1,1, hour - 5f);
+        //     sky.intensity = hour - 5f;
+        // }
+        // else if (hour > 20f && hour < 21f){
+        //     rend.color = new Color (1,1,1,1 - (hour - 20));
+        //     sky.intensity = 1 - (hour - 20);
+        // }
         
         // if(hour > 12f && hour < 13f){
         //     // sky.intensity = hour - 12 + 1;
@@ -274,7 +276,9 @@ public class GameManager : MonoBehaviour
                 break;
             case GameState.Shaping:
                 break;
-            default: 
+            case GameState.Wiring:
+                break;
+            default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
         }
 
@@ -307,5 +311,6 @@ public enum GameState {
     TimeGo,
     LeafFall,
     Pruning,
-    Shaping
+    Shaping,
+    Wiring
 }

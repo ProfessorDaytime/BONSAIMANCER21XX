@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 /// <summary>
 /// Owns and manages the tree graph. Drives growth, branching, and secondary thickening.
@@ -70,9 +72,22 @@ public class TreeSkeleton : MonoBehaviour
     [SerializeField] float branchAngleMin = 25f;
     [SerializeField] float branchAngleMax = 55f;
 
+    [Header("Trunk Subdivisions")]
+    [Tooltip("Number of individually wire-able segments the initial trunk is split into. " +
+             "All share depth 0 — they don't count toward the branching depth cap.")]
+    [SerializeField] int trunkSubdivisions = 3;
+
+    [Header("Wiring")]
+    [Tooltip("Degrees per in-game day that a wired branch bends toward its wire target direction. " +
+             "0.5 ≈ 1.5 growing seasons for a 90° bend.")]
+    [SerializeField] float wireBendDegreesPerDay = 0.5f;
+
     // ── References ────────────────────────────────────────────────────────────
 
     [HideInInspector] public TreeMeshBuilder meshBuilder;
+
+    /// <summary>Fired after a trim, with the list of every node that was removed.</summary>
+    public event Action<List<TreeNode>> OnSubtreeTrimmed;
 
     // ── Tree Data ─────────────────────────────────────────────────────────────
 
@@ -123,6 +138,9 @@ public class TreeSkeleton : MonoBehaviour
         bool structureChanged = false;
         bool anyGrew          = false;
 
+        // TIMESCALE/24f converts real seconds → in-game days
+        float inGameDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
+
         // Snapshot growing nodes — we may add new ones during this loop
         var snapshot = new List<TreeNode>(allNodes.Count);
         foreach (var node in allNodes)
@@ -145,10 +163,7 @@ public class TreeSkeleton : MonoBehaviour
 
         foreach (var node in snapshot)
         {
-            // TIMESCALE/24f converts real seconds → in-game days, so baseGrowSpeed is
-            // in units/in-game-day and growth fills the same calendar span at any timescale.
-            float inGameDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
-            float speed      = baseGrowSpeed
+            float speed = baseGrowSpeed
                              * rate
                              * Mathf.Pow(depthSpeedDecay, node.depth);
 
@@ -172,10 +187,26 @@ public class TreeSkeleton : MonoBehaviour
             }
         }
 
+        // Wire bending — bend wired nodes toward their target direction each season
+        bool wireBent = false;
+        foreach (var node in allNodes)
+        {
+            if (!node.hasWire || node.isTrimmed) continue;
+
+            float maxAngle = wireBendDegreesPerDay * inGameDays * rate * Mathf.Deg2Rad;
+            Vector3 newDir = Vector3.RotateTowards(node.growDirection, node.wireTargetDirection, maxAngle, 0f);
+            if (newDir != node.growDirection)
+            {
+                node.growDirection = newDir.normalized;
+                PropagatePosition(node);  // move entire subtree with the bent branch
+                wireBent = true;
+            }
+        }
+
         if (structureChanged)
             RecalculateRadii(root);
 
-        if (anyGrew)
+        if (anyGrew || wireBent)
             meshBuilder.SetDirty();
     }
 
@@ -300,11 +331,31 @@ public class TreeSkeleton : MonoBehaviour
     void InitTree()
     {
         allNodes.Clear();
-        nextId   = 0;
+        nextId    = 0;
         startYear = GameManager.year;
 
-        // Single root segment — all nodes start at terminalRadius; pipe model builds trunk thickness
-        root = CreateNode(Vector3.zero, Vector3.up, terminalRadius, rootSegmentLength, null);
+        // Build trunk as trunkSubdivisions pre-grown segments stacked vertically.
+        // All share depth 0 so they don't eat into the seasonal depth cap.
+        // Each segment can be individually wired to shape the trunk curve.
+        int      segs   = Mathf.Max(1, trunkSubdivisions);
+        float    segLen = rootSegmentLength / segs;
+        TreeNode prev   = null;
+        Vector3  pos    = Vector3.zero;
+
+        for (int i = 0; i < segs; i++)
+        {
+            // Bypass CreateNode's depth increment — all trunk segments stay at depth 0.
+            var node = new TreeNode(nextId++, 0, pos, Vector3.up, terminalRadius, segLen, prev);
+            node.length    = segLen;   // pre-built; no grow animation
+            node.isGrowing = false;
+
+            if (prev != null) prev.children.Add(node);
+            allNodes.Add(node);
+
+            if (i == 0) root = node;
+            prev = node;
+            pos  = node.tipPosition;
+        }
 
         meshBuilder.SetDirty();
     }
@@ -416,7 +467,9 @@ public class TreeSkeleton : MonoBehaviour
             RecalculateRadii(child);
             sumOfSquares += child.radius * child.radius;
         }
-        node.radius = Mathf.Sqrt(sumOfSquares);
+        float pipeRadius = Mathf.Sqrt(sumOfSquares);
+        node.radius    = Mathf.Max(pipeRadius, node.minRadius);
+        node.minRadius = node.radius;
     }
 
     // ── Trimming ──────────────────────────────────────────────────────────────
@@ -433,17 +486,54 @@ public class TreeSkeleton : MonoBehaviour
         }
 
         node.parent?.children.Remove(node);
-        RemoveSubtree(node);
+        var removed = new List<TreeNode>();
+        RemoveSubtree(node, removed);
+        OnSubtreeTrimmed?.Invoke(removed);
         RecalculateRadii(root);
         meshBuilder.SetDirty();
     }
 
-    void RemoveSubtree(TreeNode node)
+    void RemoveSubtree(TreeNode node, List<TreeNode> removed)
     {
         foreach (var child in node.children)
-            RemoveSubtree(child);
+            RemoveSubtree(child, removed);
 
         node.isTrimmed = true;
         allNodes.Remove(node);
+        removed.Add(node);
+    }
+
+    // ── Wiring ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Attaches a wire to a node, bending it toward targetDirection (local space)
+    /// over the course of the growing season.
+    /// </summary>
+    public void WireNode(TreeNode node, Vector3 targetDirectionLocal)
+    {
+        node.hasWire             = true;
+        node.wireTargetDirection = targetDirectionLocal.normalized;
+        node.wireBendProgress    = 0f;
+    }
+
+    /// <summary>Removes the wire from a node. The branch keeps its current direction.</summary>
+    public void UnwireNode(TreeNode node)
+    {
+        node.hasWire          = false;
+        node.wireBendProgress = 0f;
+        meshBuilder.SetDirty();
+    }
+
+    /// <summary>
+    /// Recursively updates children's worldPosition when a parent node is bent.
+    /// Keeps the subtree attached to the bent tip.
+    /// </summary>
+    void PropagatePosition(TreeNode node)
+    {
+        foreach (var child in node.children)
+        {
+            child.worldPosition = node.tipPosition;
+            PropagatePosition(child);
+        }
     }
 }

@@ -20,6 +20,7 @@ public class TreeNode
     public Vector3 worldPosition;   // base of this segment (local space)
     public Vector3 growDirection;   // unit vector pointing toward the tip
     public float   radius;          // radius at the base of this segment
+    public float   minRadius;       // highest radius ever reached — pipe model can't shrink below this
     public float   length;          // current length (grows over time toward targetLength)
 
     // ── Growth ────────────────────────────────────────────────────────────────

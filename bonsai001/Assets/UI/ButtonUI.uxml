@@ -1,4 +1,6 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <ui:Button text="&#10;" display-tooltip-when-elided="true" name="TrimButton" style="top: 0; height: 106px; width: 130px; background-image: url(&apos;project://database/Assets/Textures/Trimmer.png?fileID=1676363445&amp;guid=54510a529bc20624bbbf4a1912fe0e85&amp;type=3#Trimmer_0&apos;); cursor: initial;" />
     <ui:Button text="&#10;" display-tooltip-when-elided="true" name="WaterButton" style="height: 101px; width: 130px; top: -1px; background-image: url(&apos;project://database/Assets/Textures/watering_can.png?fileID=1903538586&amp;guid=70e9feeaae197ff4b9cdaefae05b11ae&amp;type=3#watering_can_0&apos;); cursor: initial;" />
+    <ui:Button text="Wire" display-tooltip-when-elided="true" name="WireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
+    <ui:Button text="Unwire" display-tooltip-when-elided="true" name="RemoveWireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
 </ui:UXML>

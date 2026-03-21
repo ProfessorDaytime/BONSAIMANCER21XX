@@ -1558,6 +1558,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1486295571}
+    - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1486295572}
+    - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1486295573}
   m_SourcePrefab: {fileID: 100100000, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
 --- !u!1 &1486295552 stripped
 GameObject:
@@ -1626,6 +1632,8 @@ MonoBehaviour:
   randomWeight: 0.15
   branchAngleMin: 25
   branchAngleMax: 55
+  trunkSubdivisions: 3
+  wireBendDegreesPerDay: 0.5
   meshBuilder: {fileID: 0}
 --- !u!114 &1486295571
 MonoBehaviour:
@@ -1641,6 +1649,42 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ringSegments: 8
   highlightRadiusBias: 1.04
+  aimPreviewLength: 1.5
+--- !u!114 &1486295572
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1486295552}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0457fe201748a0845b74ab42ef3a3df2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  leafPrefab: {fileID: 349046008948968205, guid: 384e3240f85962c4da08966e92607d19, type: 3}
+  minLeafDepth: 2
+  leavesPerNode: 5
+  clusterRadius: 0.18
+  leafScale: 30
+  baseFallChancePerDay: 0.15
+--- !u!114 &1486295573
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1486295552}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4df964d37d4a7c4083d914efa675e2c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  helixTurns: 4
+  pointsPerTurn: 12
+  wireRadius: 0.012
+  lineWidth: 0.08
+  wireColor: {r: 0.72, g: 0.45, b: 0.2, a: 1}
 --- !u!1 &1499744398
 GameObject:
   m_ObjectHideFlags: 0
