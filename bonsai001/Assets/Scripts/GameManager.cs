@@ -16,6 +16,8 @@ public class GameManager : MonoBehaviour
 
     public static int branches = 0;
     public static int newLeaves = 0;
+    public static bool quickWinter   = false;
+
     public static bool canLeaf       = false;
     public static bool canTrim       = false;
     public static bool canWire       = false;
@@ -74,7 +76,7 @@ public class GameManager : MonoBehaviour
     // Text dayText;
     // Text monthText;
     // Text yearText;
-    string monthName = "April";
+    string monthName = "March";
 
     public static int day, month, year;
     public static float hour;
@@ -94,7 +96,7 @@ public class GameManager : MonoBehaviour
     void Start(){
 
 
-        month = 4;
+        month = 3;
         day = 1;
         year = 2123;
         hour = 12f;
@@ -130,8 +132,11 @@ public class GameManager : MonoBehaviour
 
    
 
+    static bool IsWinterMonth(int m) => m == 11 || m == 12 || m == 1 || m == 2;
+
     void CalculateTime(){
-        hour += Time.deltaTime * TIMESCALE;
+        float winterMult = (quickWinter && IsWinterMonth(month)) ? 2f : 1f;
+        hour += Time.deltaTime * TIMESCALE * winterMult;
 
         
 
@@ -181,6 +186,7 @@ public class GameManager : MonoBehaviour
 
             month = 1;
             year++;
+            SetMonthText();
             TextCallFunction();
 
         }
@@ -240,13 +246,8 @@ public class GameManager : MonoBehaviour
                 AudioManager.Instance.PlayMusic("WinterSong");
                 break;
             case 11:
-                // Skip winter — jump to February of next year.
-                // October (LeafFall) has already played; no reason to sit through Nov–Jan.
-                month     = 2;
-                year++;
-                monthName = "February";
-                day       = 1;
-                TextCallFunction();
+                monthName = "November";
+                UpdateGameState(GameState.TimeGo);
                 break;
             case 12:
                 monthName = "December";

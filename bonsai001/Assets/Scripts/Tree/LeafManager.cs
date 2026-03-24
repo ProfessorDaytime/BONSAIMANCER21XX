@@ -19,7 +19,7 @@ public class LeafManager : MonoBehaviour
     [SerializeField] GameObject leafPrefab;
 
     [Tooltip("Only terminal nodes at this depth or deeper get leaves (no leaves on trunk/scaffold).")]
-    [SerializeField] int minLeafDepth = 2;
+    [SerializeField] int minLeafDepth = 1;
 
     [Tooltip("How many leaves per terminal node.")]
     [SerializeField] [Range(2, 10)] int leavesPerNode = 5;

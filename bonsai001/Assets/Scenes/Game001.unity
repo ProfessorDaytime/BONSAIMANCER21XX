@@ -1013,6 +1013,8 @@ MonoBehaviour:
   zoomMax: 50
   panSpeed: 0.05
   pitchMinRootPrune: -30
+  startRadius: 2
+  startPanY: 0.46
 --- !u!114 &963194232
 MonoBehaviour:
   m_ObjectHideFlags: 0

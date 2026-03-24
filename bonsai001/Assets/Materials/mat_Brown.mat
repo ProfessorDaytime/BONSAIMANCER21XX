@@ -124,6 +124,6 @@ Material:
     - _BarkEmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _Color: {r: 0.3679245, g: 0.2883135, b: 0.24470451, a: 1}
     - _EmissionColor: {r: 0.014443844, g: 0.014443844, b: 0.014443844, a: 1}
-    - _NGColor: {r: 0.5, g: 0.95, b: 0.4, a: 1}
+    - _NGColor: {r: 0.20412955, g: 0.5754717, b: 0.111294046, a: 1}
     - _NGEmissionColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

@@ -39,6 +39,12 @@ public class CameraOrbit : MonoBehaviour
     [Tooltip("Pitch floor while in Root Prune mode — allows looking up at the roots from below.")]
     [SerializeField] float pitchMinRootPrune = -30f;
 
+    [Header("Start Position Overrides")]
+    [Tooltip("Starting zoom distance. 0 = derive from camera scene position.")]
+    [SerializeField] float startRadius = 0f;
+    [Tooltip("Starting vertical pan offset. 0 = no pan.")]
+    [SerializeField] float startPanY = 0f;
+
     // Current spherical coordinates relative to target
     float yaw;
     float pitch;
@@ -71,8 +77,12 @@ public class CameraOrbit : MonoBehaviour
         pitch  = Mathf.Asin(offset.normalized.y) * Mathf.Rad2Deg;
         yaw    = Mathf.Atan2(offset.x, offset.z) * Mathf.Rad2Deg;
 
+        if (startRadius > 0f) radius = startRadius;
+        if (startPanY   != 0f) panY   = startPanY;
+        ApplyOrbit();
+
         activePitchMin = pitchMin;
-        Debug.Log($"[CameraOrbit] Initialised — target={target.name} radius={radius:F2} yaw={yaw:F1} pitch={pitch:F1}");
+        Debug.Log($"[CameraOrbit] Initialised — target={target.name} radius={radius:F2} yaw={yaw:F1} pitch={pitch:F1} panY={panY:F2}");
     }
 
     void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
@@ -94,6 +104,7 @@ public class CameraOrbit : MonoBehaviour
         {
             radius = Mathf.Clamp(radius - scroll * zoomSpeed * radius, zoomMin, zoomMax);
             ApplyOrbit();
+            Debug.Log($"[CameraOrbit] zoom → startRadius={radius:F2} startPanY={panY:F2}");
         }
 
         if (Input.GetMouseButtonDown(0))
@@ -158,6 +169,7 @@ public class CameraOrbit : MonoBehaviour
             float panDelta = Input.GetAxis("Mouse Y");
             panY -= panDelta * panSpeed * radius;
             ApplyOrbit();
+            Debug.Log($"[CameraOrbit] pan → startRadius={radius:F2} startPanY={panY:F2}");
         }
 
         if (!isDragging) return;

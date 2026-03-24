@@ -11,6 +11,7 @@ public class ButtonClicker : MonoBehaviour
     Button wireButton;
     Button removeWireButton;
     Button rootPruneButton;
+    Button quickWinterButton;
 
     // Start is called before the first frame update
     void OnEnable(){
@@ -26,6 +27,7 @@ public class ButtonClicker : MonoBehaviour
         wireButton       = buttonDocument.rootVisualElement.Q("WireButton")       as Button;
         removeWireButton = buttonDocument.rootVisualElement.Q("RemoveWireButton") as Button;
         rootPruneButton  = buttonDocument.rootVisualElement.Q("RootPruneButton")  as Button;
+        quickWinterButton = buttonDocument.rootVisualElement.Q("QuickWinterButton") as Button;
 
         if(trimButton != null)       Debug.Log("TRIM BUTTON");
         if(waterButton != null)      Debug.Log("WATER BUTTON");
@@ -38,6 +40,7 @@ public class ButtonClicker : MonoBehaviour
         wireButton?.RegisterCallback<ClickEvent>(OnWireButtonClick);
         removeWireButton?.RegisterCallback<ClickEvent>(OnRemoveWireButtonClick);
         rootPruneButton?.RegisterCallback<ClickEvent>(OnRootPruneButtonClick);
+        quickWinterButton?.RegisterCallback<ClickEvent>(OnQuickWinterButtonClick);
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
@@ -76,6 +79,17 @@ public class ButtonClicker : MonoBehaviour
     public void OnRootPruneButtonClick(ClickEvent evt)
     {
         GameManager.Instance.ToggleRootPrune();
+    }
+
+    public void OnQuickWinterButtonClick(ClickEvent evt)
+    {
+        GameManager.quickWinter = !GameManager.quickWinter;
+        quickWinterButton.style.backgroundColor = GameManager.quickWinter
+            ? new StyleColor(new UnityEngine.Color(0.75f, 0.75f, 0.75f))
+            : new StyleColor(new UnityEngine.Color(0.25f, 0.25f, 0.25f));
+        quickWinterButton.style.color = GameManager.quickWinter
+            ? new StyleColor(UnityEngine.Color.black)
+            : new StyleColor(new UnityEngine.Color(0.78f, 0.78f, 0.78f));
     }
 
 

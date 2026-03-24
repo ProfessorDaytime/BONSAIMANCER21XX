@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-03-21
+Last updated: 2026-03-23
 
 ---
 
@@ -96,6 +96,7 @@ WireDamage    — progressive, from wireDamageProgress
 TrimTrauma    — small hit on trim, recovers over a season      [later]
 Drought       — slow drain if unwatered                        [later]
 NutrientLack  — reduces recovery rate                         [later]
+WoundDrain    — progressive, from open unprotected wounds      [item 6]
 ```
 
 Health thresholds and effects:
@@ -136,29 +137,139 @@ and `CameraOrbit` (Option A — no new classes needed).
 
 ---
 
+### 5. Bud System
+**Goal:** Spring growth emerges from pre-formed buds set the previous late summer.
+Gives the simulation biological accuracy and enables back-budding, apical dominance
+tuning, and the pinching mechanic. Applies to all tree species.
+
+**Phases:**
+
+**Bud Set (August):** When the season winds down, terminal nodes set a bud.
+- `node.hasBud = true`
+- Bud GameObject (player-provided prefab) spawned at `node.tipPosition`
+- Visible through the dormant winter period
+
+**Dormant lateral buds:** Set during growth alongside each new node.
+- `node.dormantBudCount` tracks latent axillary buds on each node
+- Normally suppressed (apical dominance); activation chance is low
+- Increased activation chance in spring if `node.backBudStimulated = true`
+
+**Bud Break (March):** `StartNewGrowingSeason` reads `hasBud` nodes.
+- Bud GameObjects destroyed (or animate away)
+- Growth begins from those nodes as today
+
+**Back-budding from pruning:** When a tip is trimmed:
+- The nearest 2–3 ancestor nodes get `backBudStimulated = true`
+- Next spring, those nodes roll against an elevated lateral activation chance
+- Simulates the hormonal response to tip removal (apical dominance released)
+
+**New data on `TreeNode`:**
+```
+hasBud               bool     terminal bud set this late summer
+dormantBudCount      int      latent axillary buds available on this node
+backBudStimulated    bool     tip ancestry was trimmed; boosted lateral chance next spring
+```
+
+**New on `TreeSkeleton`:**
+```
+[SerializeField] GameObject budPrefab             drag in bud prefab
+[SerializeField] GameObject lateralBudPrefab      optional — visible dormant laterals
+[SerializeField] float      backBudActivationBoost  multiplier on springLateralChance for stimulated nodes
+```
+
+**Scope:** `TreeSkeleton.cs`, `TreeNode.cs`, bud prefab(s)
+
+---
+
+### 6. Wound System
+**Goal:** Trimming branches leaves wounds that are a real health risk without care.
+Players manage wounds with cut paste. Wounds heal slowly over seasons, visually
+and mechanically. Thin tip cuts barely matter; removing a large branch unprotected
+should have meaningful consequences. Applies to all tree species; vulnerability
+is a per-species parameter.
+
+**Wound lifecycle:**
+1. Branch trimmed → wound created at parent node (cut site)
+2. Wound GameObject spawned, scaled by `woundRadius` (radius of cut branch)
+3. Each growing season: wound drains health from the node
+4. Player can apply cut paste → `pasteApplied = true`, drain drops to ~5%
+5. `woundAge` increments each growing season; wound heals when
+   `woundAge >= woundRadius × seasonsToHealPerUnit`
+6. On heal: health drain stops, wound GameObject destroyed
+
+**Health drain (per growing season):**
+```
+drain = woundRadius × woundDrainRate × (pasteApplied ? 0.05f : 1.0f)
+```
+
+**Wound healing (visual):**
+- Wound GameObject scale lerps from `woundRadius` to 0 as `woundAge` approaches the heal threshold
+- Represents callus tissue slowly rolling over the cut
+
+**New data on `TreeNode`:**
+```
+hasWound             bool
+woundRadius          float   radius of cut branch at time of trim
+woundAge             float   growing seasons elapsed since cut
+pasteApplied         bool    player protected this wound
+```
+
+**New on `TreeSkeleton` (species-configurable):**
+```
+[SerializeField] GameObject woundPrefab
+[SerializeField] float      woundDrainRate          health lost per season per unit of radius
+[SerializeField] float      seasonsToHealPerUnit    growing seasons to close per unit of radius
+```
+
+**Cut paste action:**
+- New tool/interaction: player clicks a wound in normal mode to apply paste
+- Cheap, unlimited — the cost is attention, not resources (for now)
+- Visual change on wound GameObject when paste applied
+
+**Scope:** `TreeSkeleton.cs`, `TreeNode.cs`, `TreeInteraction.cs` (paste action),
+wound prefab
+
+---
+
 ## Backlog (not yet scheduled)
-
-These are captured but intentionally deferred until the priority queue above
-is complete and multiple growing seasons are stable in testing.
-
-### Camera & Input
-- Full Unity Input System migration (currently legacy `Input.*`)
-- Wire animation skip key will be revisited as part of this
 
 ### Watering System
 - Watering can tool, soil moisture level, drain rate
 - Feeds into `NodeHealth` via `Drought` damage type
 - Nutrient concentration affects growth rate and recovery speed
 
+### Pinching Tool
+- Lighter spring action distinct from shears: remove the soft shoot tip between
+  the first leaf pair after it unfolds
+- Keeps internodes short and twigs fine without the trauma of hard pruning
+- Triggers `backBudStimulated` on nearby nodes (same as trim, lower health cost)
+- Depends on: Bud System (item 5)
+
+### Defoliation
+- Remove one leaf from each pair (~50% leaf surface) — the safe standard practice
+- Primary effect: shorter internodes and increased back-budding next season
+- Secondary effect: slightly smaller replacement leaves
+- Full defoliation (remove all leaves) is higher-risk: meaningful health cost,
+  only appropriate for healthy, developed trees
+- Timing matters: early summer only; defoliating a weak or young tree damages it
+- Depends on: Bud System (item 5), Leaf system refinement
+
 ### Tree Species
-- Different growth parameters, leaf shapes, seasonal colours
-- Species chosen at game start
+- Growth parameters, wound vulnerability, seasonal colours, leaf shapes
+- All species-configurable values already in place as `[SerializeField]` on
+  `TreeSkeleton` — species = a ScriptableObject that drives those values
+- Japanese maple specifics (opposite bud pairs, bark evolution stages,
+  red spring flush) added here once generic systems are solid
 
 ### Nebari Development
 - Visible surface root flare (nebari) scoring and shaping tools
 - Encourage roots to hug the soil surface and radiate outward evenly
 - Player feedback: nebari score / quality rating visible in UI
 - Tied to spread radius system already in place
+
+### Camera & Input
+- Full Unity Input System migration (currently legacy `Input.*`)
+- Wire animation skip key revisited as part of this
 
 ### Ishitsuki (Root-over-Rock)
 - Depends on: rock/prop placement system (not yet built)

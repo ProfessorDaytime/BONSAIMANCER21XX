@@ -83,7 +83,12 @@ public class TreeNode
                 }
             }
 
-            return Mathf.Lerp(terminalTip, maxRadius, maxProgress);
+            // Clamp the lerp start so the tip ring is never narrower than the child's base.
+            // Without this, thin branches (radius ≈ terminalRadius) taper to 0.55×radius
+            // which is visually thinner than the child's base ring — making the child
+            // look fatter than its parent even though the pipe model data is correct.
+            float junctionStart = Mathf.Max(terminalTip, maxRadius);
+            return Mathf.Lerp(junctionStart, maxRadius, maxProgress);
         }
     }
 
