@@ -12,6 +12,7 @@ public class ButtonClicker : MonoBehaviour
     Button removeWireButton;
     Button rootPruneButton;
     Button quickWinterButton;
+    Button pasteButton;
 
     // Start is called before the first frame update
     void OnEnable(){
@@ -28,6 +29,7 @@ public class ButtonClicker : MonoBehaviour
         removeWireButton = buttonDocument.rootVisualElement.Q("RemoveWireButton") as Button;
         rootPruneButton  = buttonDocument.rootVisualElement.Q("RootPruneButton")  as Button;
         quickWinterButton = buttonDocument.rootVisualElement.Q("QuickWinterButton") as Button;
+        pasteButton      = buttonDocument.rootVisualElement.Q("PasteButton")      as Button;
 
         if(trimButton != null)       Debug.Log("TRIM BUTTON");
         if(waterButton != null)      Debug.Log("WATER BUTTON");
@@ -41,6 +43,7 @@ public class ButtonClicker : MonoBehaviour
         removeWireButton?.RegisterCallback<ClickEvent>(OnRemoveWireButtonClick);
         rootPruneButton?.RegisterCallback<ClickEvent>(OnRootPruneButtonClick);
         quickWinterButton?.RegisterCallback<ClickEvent>(OnQuickWinterButtonClick);
+        pasteButton?.RegisterCallback<ClickEvent>(OnPasteButtonClick);
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
@@ -90,6 +93,11 @@ public class ButtonClicker : MonoBehaviour
         quickWinterButton.style.color = GameManager.quickWinter
             ? new StyleColor(UnityEngine.Color.black)
             : new StyleColor(new UnityEngine.Color(0.78f, 0.78f, 0.78f));
+    }
+
+    public void OnPasteButtonClick(ClickEvent evt)
+    {
+        ToolManager.Instance.SelectTool(ToolType.Paste);
     }
 
 

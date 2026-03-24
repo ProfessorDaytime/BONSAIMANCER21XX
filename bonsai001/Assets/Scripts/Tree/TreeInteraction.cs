@@ -49,14 +49,17 @@ public class TreeInteraction : MonoBehaviour
 
     // ── Highlight state ───────────────────────────────────────────────────────
 
-    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen }
+    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste }
 
-    TreeNode      highlightedNode;
-    HighlightMode highlightMode = HighlightMode.None;
+    TreeNode        highlightedNode;
+    HighlightMode   highlightMode = HighlightMode.None;
+    List<TreeNode>  highlightedRun = new List<TreeNode>();
 
     static readonly Color ColTrim       = new Color(0.9f, 0.1f, 0.1f);   // red
     static readonly Color ColWire       = new Color(0.9f, 0.65f, 0.1f);  // gold
-    static readonly Color ColRemoveWire = new Color(0.1f, 0.8f, 0.3f);   // green
+    static readonly Color ColRemoveWire = new Color(0.1f, 0.8f, 0.3f);   // green (single node)
+    static readonly Color ColWireRun    = new Color(0.0f, 1.0f, 0.55f);  // bright green (full run)
+    static readonly Color ColPaste      = new Color(0.2f, 0.8f, 0.9f);   // cyan (wound with paste)
 
     // ── Wire aim / animation state ────────────────────────────────────────────
 
@@ -147,6 +150,8 @@ public class TreeInteraction : MonoBehaviour
             HandleRemoveWireHover();
         else if (GameManager.canTrim)
             HandleTrimHover();
+        else if (GameManager.canPaste)
+            HandlePasteHover();
         else
             SetHighlight(null, HighlightMode.None);
     }
@@ -416,11 +421,42 @@ public class TreeInteraction : MonoBehaviour
             TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
             if (node != null && node.hasWire)
             {
-                SetHighlight(node, HighlightMode.SingleGreen);
+                var run    = skeleton.CollectWireRun(node);
+                bool allSet = true;
+                foreach (var n in run)
+                    if (n.wireSetProgress < 1f) { allSet = false; break; }
+
+                if (allSet && run.Count > 1)
+                    SetHighlightRun(run);
+                else
+                    SetHighlight(node, HighlightMode.SingleGreen);
 
                 if (Input.GetMouseButtonDown(0))
                 {
-                    skeleton.UnwireNode(node);
+                    skeleton.UnwireRun(node);
+                    SetHighlight(null, HighlightMode.None);
+                }
+                return;
+            }
+        }
+        SetHighlight(null, HighlightMode.None);
+    }
+
+    // ── Paste ─────────────────────────────────────────────────────────────────
+
+    void HandlePasteHover()
+    {
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
+        {
+            TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
+            if (node != null && node.hasWound && !node.pasteApplied)
+            {
+                SetHighlight(node, HighlightMode.Paste);
+
+                if (Input.GetMouseButtonDown(0))
+                {
+                    skeleton.ApplyPaste(node);
                     SetHighlight(null, HighlightMode.None);
                 }
                 return;
@@ -433,6 +469,7 @@ public class TreeInteraction : MonoBehaviour
 
     void SetHighlight(TreeNode node, HighlightMode mode)
     {
+        highlightedRun.Clear();  // switching to single-node mode; clear any run state
         if (node == highlightedNode && mode == highlightMode) return;
         highlightedNode = node;
         highlightMode   = mode;
@@ -448,10 +485,47 @@ public class TreeInteraction : MonoBehaviour
             case HighlightMode.TrimSubtree: highlightMat.color = ColTrim;       break;
             case HighlightMode.SingleGold:  highlightMat.color = ColWire;       break;
             case HighlightMode.SingleGreen: highlightMat.color = ColRemoveWire; break;
+            case HighlightMode.Paste:       highlightMat.color = ColPaste;      break;
         }
 
         RebuildHighlightMesh(node, singleNode: mode != HighlightMode.TrimSubtree);
         highlightRenderer.enabled = true;
+    }
+
+    void SetHighlightRun(List<TreeNode> run)
+    {
+        // Skip rebuild if the same run is already highlighted
+        if (highlightMode == HighlightMode.WireRun &&
+            highlightedRun.Count == run.Count &&
+            highlightedRun.Count > 0 && highlightedRun[0] == run[0])
+            return;
+
+        highlightedRun  = run;
+        highlightedNode = run.Count > 0 ? run[0] : null;
+        highlightMode   = HighlightMode.WireRun;
+
+        highlightMat.color = ColWireRun;
+        RebuildHighlightMeshRun(run);
+        highlightRenderer.enabled = true;
+    }
+
+    void RebuildHighlightMeshRun(List<TreeNode> nodes)
+    {
+        hVerts.Clear();
+        hTris.Clear();
+        hUVs.Clear();
+
+        // Chain each node's tip ring into the next node's base ring for seamless joints.
+        int prevTip = -1;
+        foreach (var node in nodes)
+            prevTip = BuildSubtreeNode(node, prevTip, 0f, Vector3.zero, recurse: false);
+
+        highlightMesh.Clear();
+        highlightMesh.SetVertices(hVerts);
+        highlightMesh.SetTriangles(hTris, 0);
+        highlightMesh.SetUVs(0, hUVs);
+        highlightMesh.RecalculateNormals();
+        highlightMesh.RecalculateBounds();
     }
 
     void RebuildHighlightMesh(TreeNode node, bool singleNode)

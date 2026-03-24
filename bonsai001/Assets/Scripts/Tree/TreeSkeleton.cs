@@ -78,6 +78,11 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Probability of a lateral branch spawning each spring (flat rate, not depth-decayed).")]
     [SerializeField] float springLateralChance = 0.80f;
 
+    [Tooltip("Hard cap on total branch nodes. No new branch segments spawn once reached.\n" +
+             "Lateral chances also scale toward zero as the tree approaches this cap,\n" +
+             "so vigor naturally diminishes with density. Trim regularly to stay vigorous.")]
+    [SerializeField] int maxBranchNodes = 2000;
+
     [Header("Direction")]
     [Tooltip("How strongly each segment continues its parent's direction (0..1).")]
     [SerializeField] float inertiaWeight = 0.65f;
@@ -108,9 +113,57 @@ public class TreeSkeleton : MonoBehaviour
              "Actual segment = max(chordLength/N, minSegmentLength).")]
     [SerializeField] float minSegmentLength = 0.15f;
 
+    [Header("Bud System")]
+    [Tooltip("Prefab spawned at terminal tips each autumn as a visible dormant bud. Assign in Inspector.")]
+    [SerializeField] GameObject budPrefab;
+
+    [Tooltip("Optional prefab for dormant lateral buds on non-terminal nodes. Leave empty to skip.")]
+    [SerializeField] GameObject lateralBudPrefab;
+
+    [Tooltip("Alternate: one continuation + one optional lateral per node (most trees).\n" +
+             "Opposite: two symmetric equal forks per node (Japanese maple, ash, dogwood).")]
+    [SerializeField] BudType budType = BudType.Alternate;
+
+    [Tooltip("How strongly the terminal bud suppresses lateral shoots (0 = equal vigor, 1 = laterals don't grow).\n" +
+             "Japanese maple ≈ 0.1  |  most broadleaf trees ≈ 0.3–0.5  |  conifers ≈ 0.7–0.9")]
+    [SerializeField] [Range(0f, 1f)] float apicalDominance = 0.3f;
+
+    [Tooltip("Chance per interior junction node per spring to spontaneously sprout a new lateral,\n" +
+             "simulating dormant axillary buds breaking on old wood without a trimming event.\n" +
+             "Japanese maple ≈ 0.05–0.15  |  most trees ≈ 0–0.02")]
+    [SerializeField] [Range(0f, 0.5f)] float oldWoodBudChance = 0.01f;
+
+    [Tooltip("Base chance per stimulated ancestor node to sprout a back-bud each spring.\n" +
+             "Independent of springLateralChance so you can tune them separately.\n" +
+             "0.15 = ~1 bud from 3 stimulated ancestors on a young tree.")]
+    [SerializeField] [Range(0f, 1f)] float backBudBaseChance = 0.15f;
+
+    [Tooltip("Multiplier applied to backBudBaseChance on nodes whose tip ancestry was trimmed (back-budding).")]
+    [SerializeField] [Range(1f, 10f)] float backBudActivationBoost = 1f;
+
+    [Tooltip("Spawn the terminal bud prefab at tip nodes each autumn. Disable to hide bud objects without affecting bud growth logic.")]
+    [SerializeField] bool showTerminalBuds = true;
+
+    [Tooltip("Spawn the lateral bud prefab at junction nodes each autumn. Disable to hide lateral bud objects without affecting bud growth logic.")]
+    [SerializeField] bool showLateralBuds = true;
+
     [Header("Wiring")]
     [Tooltip("Rate-adjusted in-game days for a wire to fully set (~2 growing seasons at speed 1).")]
     [SerializeField] float wireDaysToSet = 196f;
+
+    [Header("Wound System")]
+    [Tooltip("Health drained from a wounded node per growing season. Paste stops this drain.")]
+    [SerializeField] float woundDrainRate = 0.05f;
+
+    [Tooltip("Growing seasons to fully callus over one unit of wound radius. " +
+             "Larger wounds (thicker cut branches) take proportionally longer to heal. " +
+             "E.g. radius=0.1 × 20 = 2 seasons; radius=0.5 × 20 = 10 seasons.")]
+    [SerializeField] float seasonsToHealPerUnit = 20f;
+
+    [Tooltip("Optional material for wound visualization. " +
+             "If left empty a plain dark-brown Unlit material is used automatically. " +
+             "The bark shader uses vertex colours so it can't be darkened at runtime.")]
+    [SerializeField] Material woundMaterialOverride;
 
     [Header("Root System")]
     [Tooltip("Maximum node depth a root strand can grow to.")]
@@ -132,13 +185,37 @@ public class TreeSkeleton : MonoBehaviour
              "Lower = slower, more organic buildup toward targetTrunkRoots.")]
     [SerializeField] [Range(1, 5)] int trunkRootsPerYear = 2;
 
-    [Tooltip("Root spread target = tree height * this multiplier. " +
-             "Roots slow and stop laterals as they approach this radius.")]
+    [Tooltip("Assign the 'Root Area' scene object. When set, roots fill that box instead of " +
+             "spreading by radius. Leave empty to use the legacy radial spread system.")]
+    [SerializeField] Transform rootAreaTransform;
+
+    [Tooltip("Fallback used when no Root Area is assigned: spread target = tree height × this.\n" +
+             "Ignored when rootAreaTransform is set.")]
     [SerializeField] float rootSpreadMultiplier = 2f;
 
     [Tooltip("Chance per non-terminal root node per season to sprout a new fill-in lateral " +
              "inside the spread radius. Higher = denser root mat over time.")]
     [SerializeField] [Range(0f, 1f)] float rootFillLateralChance = 0.03f;
+
+    [Tooltip("Seasons a root terminal must spend near a wall (distRatio ≥ 0.85) before " +
+             "pot-bound effects activate: slower growth, thickening, and inner fill boost.")]
+    [SerializeField] int boundaryPressureThreshold = 3;
+
+    [Tooltip("Growth speed multiplier applied to pot-bound root terminals (fraction of normal rate). " +
+             "0.35 = roots near walls grow at 35% speed.")]
+    [SerializeField] [Range(0f, 1f)] float boundaryGrowthScale = 0.35f;
+
+    [Tooltip("Radius added to a pot-bound root node per season it stays at the wall. " +
+             "Thickening propagates up the pipe model, making wall-hugging roots visibly gnarled.")]
+    [SerializeField] float boundaryThickenRate = 0.003f;
+
+    [Tooltip("Multiplier on rootFillLateralChance for low-depth (≤ 2) root ancestors of pot-bound terminals. " +
+             "Simulates the tree pushing new root mass back toward the trunk when it can't spread further.")]
+    [SerializeField] float potBoundInnerBoost = 3f;
+
+    [Tooltip("Maximum new inner-fill laterals spawned per season from the pot-bound system. " +
+             "This budget is independent of maxTotalRootNodes so it fires even when the outer cap is full.")]
+    [SerializeField] int potBoundMaxFillPerYear = 30;
 
     [Tooltip("Hard cap on total root nodes. No new root segments (continuation or lateral) " +
              "spawn once this is reached. Prevents unbounded root growth over many seasons.")]
@@ -186,6 +263,16 @@ public class TreeSkeleton : MonoBehaviour
     int   lastGrownYear   = -1;
     int   startYear       = -1;
     float cachedTreeHeight = 1f;  // updated each spring; used for root spread radius
+    int   lastRecalcDay   = -1;   // tracks last in-game day RecalculateRadii was run mid-season
+
+    // node.id → live terminal bud GameObject (spawned at season end, destroyed on bud break)
+    readonly Dictionary<int, GameObject> budObjects = new Dictionary<int, GameObject>();
+
+    // Lateral (axillary) bud GameObjects — all destroyed at spring start
+    readonly List<GameObject> lateralBudObjects = new List<GameObject>();
+
+    // node.id → wound visualization GameObject (half-torus at the cut face)
+    readonly Dictionary<int, GameObject> woundObjects = new Dictionary<int, GameObject>();
 
     float debugLogTimer  = 0f;
 
@@ -327,6 +414,10 @@ public class TreeSkeleton : MonoBehaviour
                              * Mathf.Pow(depthSpeedDecay, node.depth)
                              * healthMult;
 
+            // Pot-bound roots near the tray wall grow slower
+            if (node.isRoot && node.boundaryPressure >= boundaryPressureThreshold)
+                speed *= boundaryGrowthScale;
+
             node.length += speed * inGameDays;
             node.age    += inGameDays * rate;
             anyGrew      = true;
@@ -341,9 +432,21 @@ public class TreeSkeleton : MonoBehaviour
                 {
                     node.length    = node.targetLength;
                     node.isGrowing = false;
+                    // Finalize radius and lock minRadius so RecalculateRadii can't collapse
+                    // this node to 0 when its new children (starting at radius=0) are summed.
+                    float finalR   = node.isRoot ? rootTerminalRadius : terminalRadius;
+                    node.radius    = finalR;
+                    node.minRadius = finalR;
                     SpawnChildren(node);
                     structureChanged = true;
                 }
+            }
+            else
+            {
+                // Ramp radius proportional to growth progress so parent thickening
+                // spreads across the season rather than spiking at spawn time.
+                float targetR = node.isRoot ? rootTerminalRadius : terminalRadius;
+                node.radius = targetR * Mathf.Clamp01(node.length / node.targetLength);
             }
         }
 
@@ -380,10 +483,18 @@ public class TreeSkeleton : MonoBehaviour
         totalGrowthMs += growthTimer.ElapsedMilliseconds;
         growthFrames++;
 
-        if (structureChanged)
+        // RecalculateRadii once per in-game day. Structural events (trim, spring start)
+        // still trigger it immediately via their own direct calls.
+        // Mid-season, the daily cadence picks up the ramping radii of growing nodes
+        // and propagates them up the tree gradually rather than all at once.
+        bool newDay = GameManager.day != lastRecalcDay;
+        if (structureChanged || newDay)
+        {
             RecalculateRadii(root);
+            if (newDay) lastRecalcDay = GameManager.day;
+        }
 
-        if (anyGrew)
+        if (anyGrew || structureChanged)
             meshBuilder.SetDirty();
     }
 
@@ -404,6 +515,7 @@ public class TreeSkeleton : MonoBehaviour
         {
             foreach (var node in allNodes)
                 if (node.isGrowing) node.isGrowing = false;
+            SetBuds();
             meshBuilder.SetDirty();
         }
 
@@ -441,8 +553,13 @@ public class TreeSkeleton : MonoBehaviour
 
         // Refresh cached tree height and compute spread radius for this season
         cachedTreeHeight = CalculateTreeHeight();
-        float spreadRadius = cachedTreeHeight * rootSpreadMultiplier;
-        Debug.Log($"[GRoot] StartNewGrowingSeason year={GameManager.year} | treeHeight={cachedTreeHeight:F2} spreadRadius={spreadRadius:F2}");
+        if (rootAreaTransform != null)
+            Debug.Log($"[GRoot] StartNewGrowingSeason year={GameManager.year} | treeHeight={cachedTreeHeight:F2} rootArea={rootAreaTransform.lossyScale.x:F2}×{rootAreaTransform.lossyScale.z:F2}");
+        else
+        {
+            float spreadRadius = cachedTreeHeight * rootSpreadMultiplier;
+            Debug.Log($"[GRoot] StartNewGrowingSeason year={GameManager.year} | treeHeight={cachedTreeHeight:F2} spreadRadius={spreadRadius:F2}");
+        }
 
         // Auto-plant trunk roots each spring until targetTrunkRoots is reached.
         // Counts only direct children of root that are roots (depth-1 trunk strands).
@@ -482,6 +599,34 @@ public class TreeSkeleton : MonoBehaviour
             }
         }
 
+        // Lateral bud visuals are only shown over winter; destroy them all at spring start.
+        foreach (var go in lateralBudObjects)
+            if (go != null) Destroy(go);
+        lateralBudObjects.Clear();
+
+        // Resume any non-root segments that were stopped mid-chord in autumn
+        // (stopped while isGrowing but before reaching targetLength, no children yet).
+        // This covers both mid-subdivision chains and any segment that didn't finish in time.
+        // They resume rather than being re-spawned from a bud break.
+        int resumed = 0;
+        foreach (var node in allNodes)
+        {
+            if (node.isTrimmed || node.isRoot || !node.isTerminal) continue;
+            if (node.isGrowing) continue;                   // already active
+            if (node.hasBud) continue;                      // will be handled by bud break below
+            if (node.length >= node.targetLength) continue; // fully grown, not mid-chord
+
+            node.isGrowing = true;
+            resumed++;
+        }
+        if (resumed > 0)
+            Debug.Log($"[Bud] Resumed mid-chord segments={resumed} year={GameManager.year}");
+
+        // Bud system: if any branch nodes have hasBud set (year 2+), use those as
+        // the terminal list. Year 1 (fresh tree, no prior season) falls back to
+        // the original isTerminal scan.
+        bool budSystemActive = allNodes.Exists(n => !n.isRoot && n.hasBud);
+
         var terminals = new List<TreeNode>();
         int resuming  = 0;
         foreach (var node in allNodes)
@@ -492,8 +637,18 @@ public class TreeSkeleton : MonoBehaviour
                 ? node.depth < maxRootDepth
                 : node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
 
-            if (!node.isTrimmed && node.isTerminal && !node.isGrowing && belowCap)
-                terminals.Add(node);
+            if (node.isRoot)
+            {
+                if (!node.isTrimmed && node.isTerminal && !node.isGrowing && belowCap)
+                    terminals.Add(node);
+            }
+            else
+            {
+                bool eligible = budSystemActive
+                    ? (!node.isTrimmed && node.hasBud && belowCap)
+                    : (!node.isTrimmed && node.isTerminal && !node.isGrowing && belowCap);
+                if (eligible) terminals.Add(node);
+            }
         }
 
         int rootTerminals = 0;
@@ -503,7 +658,17 @@ public class TreeSkeleton : MonoBehaviour
 
         // Count current root nodes once so the cap check is O(1) per terminal
         int currentRootCount = 0;
-        foreach (var n in allNodes) if (n.isRoot) currentRootCount++;
+        int currentBranchCount = 0;
+        foreach (var n in allNodes)
+        {
+            if (n.isRoot) currentRootCount++;
+            else currentBranchCount++;
+        }
+
+        // Vigor: lateral chances scale to zero as the tree approaches the branch node cap.
+        // At 0% capacity, vigorFactor=1 (full chance). At 100% cap, vigorFactor=0 (no laterals).
+        float vigorFactor = Mathf.Clamp01(1f - (float)currentBranchCount / maxBranchNodes);
+        Debug.Log($"[Tree] branchNodes={currentBranchCount}/{maxBranchNodes} vigorFactor={vigorFactor:F2}");
 
         foreach (var terminal in terminals)
         {
@@ -540,18 +705,54 @@ public class TreeSkeleton : MonoBehaviour
             }
             else
             {
-                var cont = CreateNode(terminal.tipPosition, ContinuationDirection(terminal), nodeRadius, childLength, terminal);
-                cont.isRoot = false;
-                if (branchSubdivisions > 1)
-                    cont.subdivisionsLeft = branchSubdivisions - 1;
+                if (currentBranchCount >= maxBranchNodes) continue;  // hard cap reached
 
-                if (Random.value < springLateralChance)
+                // Bud break — destroy the dormant bud GameObject
+                if (terminal.hasBud)
                 {
-                    var lat = CreateNode(terminal.tipPosition, LateralDirection(terminal), nodeRadius, childLength * 0.85f, terminal);
-                    lat.isRoot = false;
-                    if (branchSubdivisions > 1)
-                        lat.subdivisionsLeft = branchSubdivisions - 1;
+                    terminal.hasBud = false;
+                    if (budObjects.TryGetValue(terminal.id, out var budGo))
+                    {
+                        Destroy(budGo);
+                        budObjects.Remove(terminal.id);
+                    }
+                }
+
+                if (budType == BudType.Opposite)
+                {
+                    var forkNeeded = currentBranchCount + 2 <= maxBranchNodes;
+                    var (dirA, dirB) = OppositeForkDirections(terminal);
+                    var forkA = CreateNode(terminal.tipPosition, dirA, nodeRadius, childLength, terminal);
+                    forkA.isRoot = false;
+                    if (branchSubdivisions > 1) forkA.subdivisionsLeft = branchSubdivisions - 1;
+                    currentBranchCount++;
+                    if (forkNeeded)
+                    {
+                        var forkB = CreateNode(terminal.tipPosition, dirB, nodeRadius, childLength, terminal);
+                        forkB.isRoot = false;
+                        if (branchSubdivisions > 1) forkB.subdivisionsLeft = branchSubdivisions - 1;
+                        currentBranchCount++;
+                    }
                     GameManager.branches++;
+                }
+                else
+                {
+                    var cont = CreateNode(terminal.tipPosition, ContinuationDirection(terminal), nodeRadius, childLength, terminal);
+                    cont.isRoot = false;
+                    if (branchSubdivisions > 1)
+                        cont.subdivisionsLeft = branchSubdivisions - 1;
+                    currentBranchCount++;
+
+                    if (currentBranchCount < maxBranchNodes && Random.value < springLateralChance * vigorFactor)
+                    {
+                        float latLength = childLength * 0.85f * Mathf.Max(0.1f, 1f - apicalDominance);
+                        var lat = CreateNode(terminal.tipPosition, LateralDirection(terminal), nodeRadius, latLength, terminal);
+                        lat.isRoot = false;
+                        if (branchSubdivisions > 1)
+                            lat.subdivisionsLeft = branchSubdivisions - 1;
+                        currentBranchCount++;
+                        GameManager.branches++;
+                    }
                 }
             }
         }
@@ -587,7 +788,160 @@ public class TreeSkeleton : MonoBehaviour
         if (fillCount > 0)
             Debug.Log($"[GRoot] Fill-in laterals sprouted={fillCount} year={GameManager.year}");
 
-        if (terminals.Count > 0 || fillCount > 0)
+        // Boundary pressure: roots near walls thicken, slow down, and stimulate inner fills.
+        // Track which low-depth ancestors need a lateral boost this season.
+        var potBoundInnerCandidates = new HashSet<TreeNode>();
+        int potBoundCount = 0;
+        foreach (var node in allNodes)
+        {
+            if (!node.isRoot || node.isTrimmed) continue;
+
+            float distRatio = RootDistRatio(node);
+            if (distRatio >= 0.85f)
+            {
+                node.boundaryPressure++;
+                if (node.boundaryPressure >= boundaryPressureThreshold)
+                {
+                    // Thicken — propagates up the pipe model to parent roots
+                    node.radius    += boundaryThickenRate;
+                    node.minRadius  = Mathf.Max(node.minRadius, node.radius);
+                    potBoundCount++;
+
+                    // Walk up toward trunk to collect low-depth ancestors for inner fill
+                    TreeNode anc = node.parent;
+                    while (anc != null && anc.isRoot)
+                    {
+                        if (anc.depth <= 2 && !anc.isTerminal)
+                            potBoundInnerCandidates.Add(anc);
+                        anc = anc.parent;
+                    }
+                }
+            }
+            else
+            {
+                // Pressure decays when the root is no longer crowded against a wall
+                node.boundaryPressure = Mathf.Max(0, node.boundaryPressure - 1);
+            }
+        }
+
+        // Spawn extra fill-in laterals from low-depth ancestors of pot-bound terminals.
+        // Simulates the tree pushing new root mass back toward the trunk when walled in.
+        int potBoundFillCount = 0;
+        foreach (var node in potBoundInnerCandidates)
+        {
+            if (potBoundFillCount >= potBoundMaxFillPerYear) break;
+            if (node.depth >= maxRootDepth - 1) continue;
+
+            float distRatio = RootDistRatio(node);
+            float chance = rootFillLateralChance * potBoundInnerBoost * Mathf.Pow(0.6f, node.depth);
+            if (Random.value < chance)
+            {
+                float segLen = rootSegmentLength * Mathf.Pow(rootSegmentLengthDecay, node.depth + 1);
+                segLen = Mathf.Max(segLen, 0.3f);
+                var lat = CreateNode(node.tipPosition, LateralDirection(node), rootTerminalRadius, segLen, node);
+                lat.isRoot = true;
+                currentRootCount++;
+                potBoundFillCount++;
+            }
+        }
+        if (potBoundCount > 0)
+            Debug.Log($"[GRoot] Pot-bound terminals={potBoundCount} innerFill={potBoundFillCount} year={GameManager.year}");
+
+        // Back-budding: nodes whose tip ancestry was trimmed get a boosted chance
+        // to sprout a new lateral from dormant axillary buds.
+        // Snapshot allNodes first — CreateNode appends to allNodes during iteration.
+        int backBudCount = 0;
+        var backBudCandidates = new List<TreeNode>(allNodes);
+        foreach (var node in backBudCandidates)
+        {
+            if (!node.backBudStimulated || node.isTrimmed || node.isRoot) continue;
+            node.backBudStimulated = false;  // consume — only fires once per trim event
+
+            if (currentBranchCount >= maxBranchNodes) continue;  // hard cap
+
+            bool belowCap = node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
+            if (!belowCap) continue;
+
+            float chance = backBudBaseChance * backBudActivationBoost * vigorFactor
+                           * Mathf.Pow(branchChanceDepthDecay, node.depth);
+            if (Random.value < chance)
+            {
+                float chordLen = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float segLen   = branchSubdivisions > 1 ? chordLen / branchSubdivisions : chordLen;
+                segLen = Mathf.Max(segLen, minSegmentLength) * Mathf.Max(0.1f, 1f - apicalDominance);
+                var lat = CreateNode(node.tipPosition, LateralDirection(node), terminalRadius, segLen, node);
+                lat.isRoot = false;
+                if (branchSubdivisions > 1) lat.subdivisionsLeft = branchSubdivisions - 1;
+                currentBranchCount++;
+                backBudCount++;
+            }
+        }
+        if (backBudCount > 0)
+            Debug.Log($"[Bud] Back-buds activated={backBudCount} year={GameManager.year}");
+
+        // Old-wood budding: dormant axillary buds on interior junction nodes can break
+        // spontaneously each spring without requiring a trim event. Rate is low on most trees;
+        // higher on Japanese maple and other freely back-budding species.
+        if (oldWoodBudChance > 0f)
+        {
+            int oldWoodCount = 0;
+            var junctionCandidates = new List<TreeNode>(allNodes);
+            foreach (var node in junctionCandidates)
+            {
+                if (node.isTrimmed || node.isRoot || node.isTerminal) continue;
+                // Skip sub-segment junctions — not real branching forks
+                bool isSubJunction = node.children.Count == 1 && node.children[0].depth == node.depth;
+                if (isSubJunction) continue;
+
+                if (currentBranchCount >= maxBranchNodes) break;  // hard cap
+
+                bool belowCap = node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
+                if (!belowCap) continue;
+
+                if (Random.value >= oldWoodBudChance * vigorFactor) continue;
+
+                float chordLen = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float segLen   = branchSubdivisions > 1 ? chordLen / branchSubdivisions : chordLen;
+                segLen = Mathf.Max(segLen, minSegmentLength) * Mathf.Max(0.1f, 1f - apicalDominance);
+                var lat = CreateNode(node.tipPosition, LateralDirection(node), terminalRadius, segLen, node);
+                lat.isRoot = false;
+                if (branchSubdivisions > 1) lat.subdivisionsLeft = branchSubdivisions - 1;
+                currentBranchCount++;
+                oldWoodCount++;
+            }
+            if (oldWoodCount > 0)
+                Debug.Log($"[Bud] Old-wood buds broke={oldWoodCount} year={GameManager.year}");
+        }
+
+        // Wound aging: drain health, scale wound visuals, heal over time
+        foreach (var node in allNodes)
+        {
+            if (!node.hasWound) continue;
+
+            node.woundAge++;
+
+            if (!node.pasteApplied)
+                ApplyDamage(node, DamageType.WoundDrain, woundDrainRate);
+
+            float seasonsToHeal = Mathf.Max(1f, node.woundRadius * seasonsToHealPerUnit);
+            float remaining     = 1f - node.woundAge / seasonsToHeal;
+
+            if (remaining <= 0f)
+            {
+                node.hasWound = false;
+                if (woundObjects.TryGetValue(node.id, out var wGo))
+                {
+                    Destroy(wGo);
+                    woundObjects.Remove(node.id);
+                }
+            }
+            else if (woundObjects.TryGetValue(node.id, out var wGo) && wGo != null)
+            {
+                wGo.transform.localScale = Vector3.one * remaining;
+            }
+        }
+
+        if (terminals.Count > 0 || fillCount > 0 || backBudCount > 0)
         {
             RecalculateRadii(root);
             meshBuilder.SetDirty();
@@ -666,6 +1020,18 @@ public class TreeSkeleton : MonoBehaviour
 
     void InitTree()
     {
+        foreach (var go in budObjects.Values)
+            if (go != null) Destroy(go);
+        budObjects.Clear();
+
+        foreach (var go in lateralBudObjects)
+            if (go != null) Destroy(go);
+        lateralBudObjects.Clear();
+
+        foreach (var go in woundObjects.Values)
+            if (go != null) Destroy(go);
+        woundObjects.Clear();
+
         allNodes.Clear();
         nextId    = 0;
         startYear = GameManager.year;
@@ -768,6 +1134,12 @@ public class TreeSkeleton : MonoBehaviour
         int depth = parent == null ? 0 : parent.depth + 1;
         var node  = new TreeNode(nextId++, depth, position, direction, radius, targetLength, parent);
 
+        // New nodes start thin and ramp toward their target radius as they grow,
+        // distributing trunk thickening across the season instead of spiking at spawn.
+        // Parent == null is the tree root node itself; it starts visible immediately.
+        if (parent != null)
+            node.radius = 0f;
+
         if (parent != null)
             parent.children.Add(node);
 
@@ -853,20 +1225,34 @@ public class TreeSkeleton : MonoBehaviour
             return;
         }
 
-        var cont = CreateNode(node.tipPosition, ContinuationDirection(node), nodeRadius, segLength, node);
-        cont.isRoot = false;
-        if (branchSubdivisions > 1)
-            cont.subdivisionsLeft = branchSubdivisions - 1;
-
-        float lateralChanceBranch = baseBranchChance * Mathf.Pow(branchChanceDepthDecay, node.depth);
-        if (Random.value < lateralChanceBranch)
+        if (budType == BudType.Opposite)
         {
-            float branchLength = segLength * 0.85f;
-            var lat = CreateNode(node.tipPosition, LateralDirection(node), nodeRadius, branchLength, node);
-            lat.isRoot = false;
-            if (branchSubdivisions > 1)
-                lat.subdivisionsLeft = branchSubdivisions - 1;
+            var (dirA, dirB) = OppositeForkDirections(node);
+            var forkA = CreateNode(node.tipPosition, dirA, nodeRadius, segLength, node);
+            forkA.isRoot = false;
+            if (branchSubdivisions > 1) forkA.subdivisionsLeft = branchSubdivisions - 1;
+            var forkB = CreateNode(node.tipPosition, dirB, nodeRadius, segLength, node);
+            forkB.isRoot = false;
+            if (branchSubdivisions > 1) forkB.subdivisionsLeft = branchSubdivisions - 1;
             GameManager.branches++;
+        }
+        else
+        {
+            var cont = CreateNode(node.tipPosition, ContinuationDirection(node), nodeRadius, segLength, node);
+            cont.isRoot = false;
+            if (branchSubdivisions > 1)
+                cont.subdivisionsLeft = branchSubdivisions - 1;
+
+            float lateralChanceBranch = baseBranchChance * Mathf.Pow(branchChanceDepthDecay, node.depth);
+            if (Random.value < lateralChanceBranch)
+            {
+                float latLength = segLength * 0.85f * Mathf.Max(0.1f, 1f - apicalDominance);
+                var lat = CreateNode(node.tipPosition, LateralDirection(node), nodeRadius, latLength, node);
+                lat.isRoot = false;
+                if (branchSubdivisions > 1)
+                    lat.subdivisionsLeft = branchSubdivisions - 1;
+                GameManager.branches++;
+            }
         }
     }
 
@@ -891,11 +1277,64 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     float RootDistRatio(TreeNode node)
     {
+        if (rootAreaTransform != null)
+        {
+            // Box mode: 0=center, 1=at wall, >1=outside.
+            // InverseTransformPoint gives coords in Root Area local space where
+            // the box extents are [-0.5, 0.5] on each axis.
+            Vector3 worldTip  = transform.TransformPoint(node.tipPosition);
+            Vector3 areaLocal = rootAreaTransform.InverseTransformPoint(worldTip);
+            float xRatio = Mathf.Abs(areaLocal.x) * 2f;
+            float zRatio = Mathf.Abs(areaLocal.z) * 2f;
+            // Y floor: below bottom of box counts as outside (areaLocal.y < -0.5)
+            float yRatio = areaLocal.y < 0f ? Mathf.Abs(areaLocal.y) * 2f : 0f;
+            return Mathf.Max(xRatio, zRatio, yRatio);
+        }
+        // Legacy radial fallback
         float spreadRadius = cachedTreeHeight * rootSpreadMultiplier;
         if (spreadRadius <= 0f) return 0f;
         Vector3 tip = node.tipPosition;
         float horizDist = Mathf.Sqrt(tip.x * tip.x + tip.z * tip.z);
         return horizDist / spreadRadius;
+    }
+
+    /// <summary>
+    /// When a Root Area box is assigned, deflects a root direction away from walls
+    /// the root is approaching, so roots run along the inside of the box rather
+    /// than stopping dead or punching through.
+    /// treeLocalDir and treeLocalPos are in TreeSkeleton local space.
+    /// </summary>
+    Vector3 DeflectFromRootAreaWalls(Vector3 treeLocalDir, Vector3 treeLocalPos)
+    {
+        if (rootAreaTransform == null) return treeLocalDir;
+
+        Vector3 worldPos  = transform.TransformPoint(treeLocalPos);
+        Vector3 worldDir  = transform.TransformDirection(treeLocalDir);
+        Vector3 areaLocal = rootAreaTransform.InverseTransformPoint(worldPos);
+
+        // Margin in normalised box coords (0.5 = half-extent).
+        // Within this distance of a wall, start blending toward the wall surface.
+        const float margin = 0.15f;
+
+        Vector3 wallNormal = Vector3.zero;
+        if (areaLocal.x >  0.5f - margin) wallNormal += rootAreaTransform.right    *  Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.x);
+        if (areaLocal.x < -0.5f + margin) wallNormal -= rootAreaTransform.right    *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.x);
+        if (areaLocal.z >  0.5f - margin) wallNormal += rootAreaTransform.forward  *  Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.z);
+        if (areaLocal.z < -0.5f + margin) wallNormal -= rootAreaTransform.forward  *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.z);
+        // Y floor: roots approaching the bottom of the tray redirect horizontally
+        if (areaLocal.y < -0.5f + margin) wallNormal -= rootAreaTransform.up       *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.y);
+
+        if (wallNormal.sqrMagnitude > 0.001f)
+        {
+            wallNormal.Normalize();
+            // Project dir onto the wall surface so the root runs along it
+            Vector3 along = Vector3.ProjectOnPlane(worldDir, wallNormal);
+            if (along.sqrMagnitude > 0.001f)
+                worldDir = along.normalized;
+        }
+
+        Vector3 result = transform.InverseTransformDirection(worldDir);
+        return result.sqrMagnitude > 0.001f ? result.normalized : treeLocalDir;
     }
 
     // Direction Helpers
@@ -950,6 +1389,7 @@ public class TreeSkeleton : MonoBehaviour
                 dir.Normalize();
             }
 
+            dir = DeflectFromRootAreaWalls(dir, node.tipPosition);
             return dir;
         }
         // Slerp toward sun so phototropismWeight is a direct blend fraction (0=none, 1=point straight up)
@@ -984,6 +1424,7 @@ public class TreeSkeleton : MonoBehaviour
                 if (lateral.sqrMagnitude < 0.001f) lateral = rootRadial;
                 lateral.Normalize();
             }
+            lateral = DeflectFromRootAreaWalls(lateral, node.tipPosition);
             return lateral;
         }
         // Lateral branches get half the phototropism blend of continuation segments
@@ -992,6 +1433,27 @@ public class TreeSkeleton : MonoBehaviour
 
     // Keep old name as alias so any external callers don't break.
     Vector3 LateralBranchDirection(TreeNode node) => LateralDirection(node);
+
+    /// <summary>
+    /// Returns two symmetric fork directions for Opposite budding.
+    /// Both branches diverge equally from the parent's grow direction,
+    /// mirrored across a random perpendicular axis.
+    /// </summary>
+    (Vector3 a, Vector3 b) OppositeForkDirections(TreeNode node)
+    {
+        Vector3 perp = Vector3.Cross(node.growDirection, Random.insideUnitSphere).normalized;
+        if (perp.sqrMagnitude < 0.001f)
+            perp = Vector3.Cross(node.growDirection, Vector3.right).normalized;
+
+        float halfAngle = Random.Range(branchAngleMin, branchAngleMax) * 0.5f;
+        Vector3 dir1 = Quaternion.AngleAxis( halfAngle, perp) * node.growDirection;
+        Vector3 dir2 = Quaternion.AngleAxis(-halfAngle, perp) * node.growDirection;
+
+        // Same phototropism blend as laterals
+        dir1 = Vector3.Slerp(dir1, SunDirection(), phototropismWeight * 0.5f).normalized;
+        dir2 = Vector3.Slerp(dir2, SunDirection(), phototropismWeight * 0.5f).normalized;
+        return (dir1, dir2);
+    }
 
     /// <summary>
     /// Direction toward the sun. Falls back to Vector3.up.
@@ -1043,6 +1505,58 @@ public class TreeSkeleton : MonoBehaviour
         node.minRadius = node.radius;
     }
 
+    // Bud System
+
+    /// <summary>
+    /// Called at season end (TimeGo). Sets hasBud on all eligible terminal branch nodes
+    /// and spawns a bud prefab at each tip position.
+    /// </summary>
+    void SetBuds()
+    {
+        int termCount = 0;
+        int latCount  = 0;
+        foreach (var node in allNodes)
+        {
+            if (node.isTrimmed || node.isRoot) continue;
+
+            if (node.isTerminal)
+            {
+                // subdivisionsLeft > 0 means this is a mid-chord sub-segment that was
+                // stopped before completing. Resume it in spring instead of treating it
+                // as a real tip — SetBuds skips it; StartNewGrowingSeason resumes it.
+                if (node.subdivisionsLeft > 0) continue;
+                if (node.hasBud) continue;
+
+                node.hasBud = true;
+                if (showTerminalBuds && budPrefab != null)
+                {
+                    var bud = Instantiate(budPrefab, transform);
+                    bud.transform.localPosition = node.tipPosition;
+                    bud.transform.localRotation = Quaternion.LookRotation(node.growDirection);
+                    budObjects[node.id] = bud;
+                }
+                termCount++;
+            }
+            else
+            {
+                // Junction node — spawn a lateral (axillary) bud visual.
+                // Skip sub-segment junctions (they're part of a single wireable chord, not real forks).
+                bool isSubJunction = node.children.Count == 1 && node.children[0].depth == node.depth;
+                if (isSubJunction) continue;
+
+                if (showLateralBuds && lateralBudPrefab != null)
+                {
+                    var latBud = Instantiate(lateralBudPrefab, transform);
+                    latBud.transform.localPosition = node.tipPosition;
+                    latBud.transform.localRotation = Quaternion.LookRotation(node.growDirection);
+                    lateralBudObjects.Add(latBud);
+                    latCount++;
+                }
+            }
+        }
+        Debug.Log($"[Bud] Buds set | terminal={termCount} lateral={latCount} year={GameManager.year}");
+    }
+
     // Trimming
 
     /// <summary>
@@ -1072,6 +1586,37 @@ public class TreeSkeleton : MonoBehaviour
             parent.regrowthSeasonCount = 0;
         }
 
+        // Back-budding: stimulate the nearest 3 non-root ancestors so they have a
+        // boosted chance to sprout a lateral next spring.
+        if (!node.isRoot)
+        {
+            int stimulated = 0;
+            TreeNode ancestor = parent;
+            while (ancestor != null && stimulated < 3)
+            {
+                if (!ancestor.isRoot)
+                {
+                    ancestor.backBudStimulated = true;
+                    stimulated++;
+                }
+                ancestor = ancestor.parent;
+            }
+        }
+
+        // Wound: mark the exposed cut face and spawn a visualization.
+        // Subdivision cut (same depth) = tip nip — small ring.
+        // Real branch cut (deeper node) = full callus wound.
+        if (parent != null && !parent.isRoot && parent != root)
+        {
+            bool isSubdivisionCut  = (node.depth == parent.depth);
+            parent.hasWound        = true;
+            parent.woundRadius     = isSubdivisionCut ? node.radius * 0.35f : node.radius;
+            parent.woundFaceNormal = isSubdivisionCut ? parent.growDirection : node.growDirection;
+            parent.woundAge        = 0f;
+            parent.pasteApplied    = false;
+            CreateWoundObject(parent);
+        }
+
         OnSubtreeTrimmed?.Invoke(removed);
         RecalculateRadii(root);
         meshBuilder.SetDirty();
@@ -1081,6 +1626,20 @@ public class TreeSkeleton : MonoBehaviour
     {
         foreach (var child in node.children)
             RemoveSubtree(child, removed);
+
+        // Clean up any dormant bud object sitting at this node's tip.
+        if (budObjects.TryGetValue(node.id, out var budGo))
+        {
+            Destroy(budGo);
+            budObjects.Remove(node.id);
+        }
+
+        // Clean up any wound object on this node.
+        if (woundObjects.TryGetValue(node.id, out var woundGo))
+        {
+            Destroy(woundGo);
+            woundObjects.Remove(node.id);
+        }
 
         node.isTrimmed = true;
         allNodes.Remove(node);
@@ -1106,6 +1665,66 @@ public class TreeSkeleton : MonoBehaviour
         node.wireSetProgress       = 0f;
         node.wireDamageProgress    = 0f;
         node.wireAgeDays           = 0f;
+    }
+
+    /// <summary>
+    /// Collects the contiguous wire run that includes <paramref name="start"/>.
+    /// Walks up to the highest wired ancestor, then follows the most direction-aligned
+    /// wired child at each fork (leaving other branches' wires in place).
+    /// </summary>
+    public List<TreeNode> CollectWireRun(TreeNode start)
+    {
+        // Walk up to the top of the run
+        TreeNode top = start;
+        while (top.parent != null && top.parent.hasWire)
+            top = top.parent;
+
+        // Walk down following the best-aligned wired child at each fork
+        var run = new List<TreeNode>();
+        TreeNode cur = top;
+        while (cur != null && cur.hasWire)
+        {
+            run.Add(cur);
+            cur = WireRunChild(cur);
+        }
+        return run;
+    }
+
+    TreeNode WireRunChild(TreeNode node)
+    {
+        TreeNode best    = null;
+        float    bestDot = -2f;
+        foreach (var child in node.children)
+        {
+            if (!child.hasWire) continue;
+            float dot = Vector3.Dot(node.growDirection, child.growDirection);
+            if (dot > bestDot) { bestDot = dot; best = child; }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Smart unwire: if every node in the wire run is fully set, removes them all.
+    /// Otherwise falls back to unwiring only the clicked node.
+    /// </summary>
+    public void UnwireRun(TreeNode node)
+    {
+        var run = CollectWireRun(node);
+
+        bool allSet = true;
+        foreach (var n in run)
+            if (n.wireSetProgress < 1f) { allSet = false; break; }
+
+        if (allSet && run.Count > 1)
+        {
+            foreach (var n in run)
+                UnwireNode(n);
+            Debug.Log($"[Wire] UnwireRun removed count={run.Count}");
+        }
+        else
+        {
+            UnwireNode(node);
+        }
     }
 
     /// <summary>
@@ -1159,6 +1778,120 @@ public class TreeSkeleton : MonoBehaviour
         node.health = Mathf.Max(0f, node.health - amount);
     }
 
+    // Wound System
+
+    void CreateWoundObject(TreeNode node)
+    {
+        // Destroy any existing wound object on this node (re-trim case)
+        if (woundObjects.TryGetValue(node.id, out var existing))
+        {
+            Destroy(existing);
+            woundObjects.Remove(node.id);
+        }
+
+        var go = new GameObject($"_Wound_{node.id}");
+        go.transform.SetParent(transform, false);
+
+        var mf = go.AddComponent<MeshFilter>();
+        var mr = go.AddComponent<MeshRenderer>();
+
+        // The major radius must be at least as large as the parent's own tip radius,
+        // otherwise the ring is buried inside the parent branch mesh.
+        // Add a 10% bias to ensure it sits clearly outside the surface.
+        float visR   = Mathf.Max(node.woundRadius, node.tipRadius) * 1.1f;
+        float minorR = visR * 0.2f;
+        mf.mesh = BuildHalfTorusMesh(visR, minorR, 12, 6);
+
+        // Material: use override if assigned; otherwise a plain dark-brown Unlit fallback.
+        // The bark shader (Custom/BarkVertexColor) uses vertex colours and has no _Color
+        // property, so we can't tint it at runtime.
+        if (woundMaterialOverride != null)
+        {
+            mr.sharedMaterial = woundMaterialOverride;
+        }
+        else
+        {
+            var mat = new Material(Shader.Find("Unlit/Color"));
+            mat.color = new Color(0.28f, 0.18f, 0.10f);  // dark bark brown
+            mr.material = mat;
+        }
+
+        // Place at the cut face, pushed slightly forward along the cut direction
+        // so the ring sits proud of the parent's surface rather than buried in it.
+        // Orient so the ring plane is perpendicular to the removed branch's direction.
+        go.transform.localPosition = node.tipPosition + node.woundFaceNormal * (minorR * 0.5f);
+        go.transform.localRotation = Quaternion.FromToRotation(Vector3.up, node.woundFaceNormal);
+
+        woundObjects[node.id] = go;
+        Debug.Log($"[Wound] Created wound node={node.id} radius={node.woundRadius:F3}");
+    }
+
+    /// <summary>
+    /// Low-poly half-torus (outer half only, theta ∈ [0, π]).
+    /// The ring lies in the XZ plane; the tube protrudes along +Y.
+    /// </summary>
+    Mesh BuildHalfTorusMesh(float R, float r, int phiSteps, int thetaSteps)
+    {
+        var verts = new List<Vector3>();
+        var tris  = new List<int>();
+        var uvs   = new List<Vector2>();
+
+        int cols = phiSteps + 1;
+
+        for (int j = 0; j <= thetaSteps; j++)
+        {
+            float theta = Mathf.PI * j / thetaSteps;
+            float ct = Mathf.Cos(theta), st = Mathf.Sin(theta);
+            for (int i = 0; i <= phiSteps; i++)
+            {
+                float phi = Mathf.PI * 2f * i / phiSteps;
+                float cp = Mathf.Cos(phi), sp = Mathf.Sin(phi);
+                verts.Add(new Vector3((R + r * ct) * cp, r * st, (R + r * ct) * sp));
+                uvs.Add(new Vector2((float)i / phiSteps, (float)j / thetaSteps));
+            }
+        }
+
+        for (int j = 0; j < thetaSteps; j++)
+        {
+            for (int i = 0; i < phiSteps; i++)
+            {
+                int a = j * cols + i, b = j * cols + i + 1;
+                int c = (j + 1) * cols + i, d = (j + 1) * cols + i + 1;
+                tris.Add(a); tris.Add(c); tris.Add(b);
+                tris.Add(b); tris.Add(c); tris.Add(d);
+            }
+        }
+
+        var mesh = new Mesh { name = "HalfTorus" };
+        mesh.SetVertices(verts);
+        mesh.SetTriangles(tris, 0);
+        mesh.SetUVs(0, uvs);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    /// <summary>
+    /// Applies wound sealing paste to a node, stopping the seasonal health drain.
+    /// </summary>
+    public void ApplyPaste(TreeNode node)
+    {
+        if (!node.hasWound || node.pasteApplied) return;
+        node.pasteApplied = true;
+
+        // Tint the wound object grey to indicate it's been sealed
+        if (woundObjects.TryGetValue(node.id, out var go) && go != null)
+        {
+            var mr = go.GetComponent<MeshRenderer>();
+            if (mr != null)
+            {
+                Color c = mr.material.color;
+                mr.material.color = new Color(c.r * 1.1f, c.g * 1.15f, c.b * 1.1f, c.a);
+            }
+        }
+        Debug.Log($"[Wound] Paste applied node={node.id}");
+    }
+
     /// <summary>
     /// Recursively updates children's worldPosition when a parent node is moved.
     /// </summary>
@@ -1170,4 +1903,10 @@ public class TreeSkeleton : MonoBehaviour
             PropagatePosition(child);
         }
     }
+}
+
+public enum BudType
+{
+    Alternate,  // one continuation + optional lateral (default for most trees)
+    Opposite,   // two symmetric equal forks (Japanese maple, ash, dogwood)
 }

@@ -32,10 +32,13 @@ public class AudioManager : MonoBehaviour
         Sound s = Array.Find(musicSounds, x=> x.name==name);
 
         if(s == null){
-            Debug.Log("Music Not Found");
+            Debug.LogWarning($"[Audio] PlayMusic: clip '{name}' not found in musicSounds array.");
+        } else if(musicSource == null){
+            Debug.LogWarning("[Audio] PlayMusic: musicSource is not assigned.");
         } else{
             musicSource.clip = s.clip;
             musicSource.Play();
+            Debug.Log($"[Audio] Playing music: {name} | muted={musicSource.mute} volume={musicSource.volume:F2}");
         }
     }
 

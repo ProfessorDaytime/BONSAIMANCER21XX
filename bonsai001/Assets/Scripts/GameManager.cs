@@ -22,6 +22,7 @@ public class GameManager : MonoBehaviour
     public static bool canTrim       = false;
     public static bool canWire       = false;
     public static bool canRemoveWire = false;
+    public static bool canPaste      = false;
     public static bool canRootWork   = false;
 
     // Saved state to restore when exiting RootPrune mode.

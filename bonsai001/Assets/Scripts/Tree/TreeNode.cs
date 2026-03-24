@@ -42,6 +42,13 @@ public class TreeNode
     // season (same pacing as the first year of the tree's life), preventing a
     // hard prune from immediately regrowing to full depth in one season.
 
+    // ── Bud system ────────────────────────────────────────────────────────────
+    // Terminal buds are set at season end (August→September) and break in March.
+    // Back-budding: trimming a tip stimulates dormant axillary buds on ancestors.
+
+    public bool hasBud;              // terminal bud set; will activate next spring
+    public bool backBudStimulated;   // tip ancestry was trimmed; boosted lateral chance next spring
+
     public bool isTrimCutPoint;      // this node is the exposed tip of a pruning cut
     public int  trimCutDepth;        // node.depth at the moment the cut was made
     public int  regrowthSeasonCount; // growing seasons elapsed since the cut
@@ -106,6 +113,20 @@ public class TreeNode
     public float   wireSetProgress;        // 0→1: wood lignifying in new position
     public float   wireDamageProgress;     // 0→1: accumulates after fully set
     public float   wireAgeDays;            // total rate-adjusted in-game days on wire
+
+    // ── Pot-bound pressure ────────────────────────────────────────────────────
+    // Increments each season a root terminal spends near a tray/pot wall.
+    // Above the threshold: growth slows, radius ticks up, and low-depth ancestors
+    // get boosted lateral chances (the tree pushes new roots back toward the trunk).
+
+    public int boundaryPressure;
+
+    // ── Wound ─────────────────────────────────────────────────────────────────
+    public bool    hasWound;
+    public float   woundRadius;      // radius of the removed branch at the cut point
+    public Vector3 woundFaceNormal;  // growDirection of the removed branch (cut face normal)
+    public float   woundAge;         // growing seasons elapsed since the wound was made
+    public bool    pasteApplied;     // player has sealed this wound with cut paste
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
