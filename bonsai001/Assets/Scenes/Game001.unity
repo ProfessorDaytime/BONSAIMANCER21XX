@@ -1673,9 +1673,9 @@ MonoBehaviour:
   rootSegmentLengthDecay: 0.95
   terminalRadius: 0.04
   rootTerminalRadius: 0.004
-  baseBranchChance: 0.75
-  branchChanceDepthDecay: 0.9
-  maxDepth: 50
+  baseBranchChance: 0.8
+  branchChanceDepthDecay: 0.7
+  maxDepth: 15
   depthsPerYear: 3
   baseElongation: 0.05
   elongationDepthDecay: 0.7
