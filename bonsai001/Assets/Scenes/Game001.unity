@@ -755,9 +755,9 @@ Canvas:
   m_GameObject: {fileID: 701059892}
   m_Enabled: 1
   serializedVersion: 3
-  m_RenderMode: 0
-  m_Camera: {fileID: 0}
-  m_PlaneDistance: 100
+  m_RenderMode: 1
+  m_Camera: {fileID: 963194227}
+  m_PlaneDistance: 1
   m_PixelPerfect: 0
   m_ReceivesEvents: 1
   m_OverrideSorting: 0
@@ -767,7 +767,7 @@ Canvas:
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
-  m_SortingOrder: 0
+  m_SortingOrder: 2
   m_TargetDisplay: 0
 --- !u!224 &701059896
 RectTransform:
@@ -898,6 +898,7 @@ GameObject:
   - component: {fileID: 963194226}
   - component: {fileID: 963194230}
   - component: {fileID: 963194231}
+  - component: {fileID: 963194232}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -971,14 +972,14 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 88, z: -15}
+  m_LocalRotation: {x: 0.16246492, y: 0, z: 0, w: 0.98671436}
+  m_LocalPosition: {x: 0, y: 92.45, z: -14.1}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 0
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 18.7, y: 0, z: 0}
 --- !u!114 &963194230
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1004,13 +1005,33 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   target: {fileID: 1486295577}
-  sensitivity: 0.8
+  sensitivity: 4
   pitchMin: 5
   pitchMax: 85
   zoomSpeed: 2
   zoomMin: 2
   zoomMax: 50
   panSpeed: 0.05
+  pitchMinRootPrune: -30
+--- !u!114 &963194232
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 42b9f144b97736243b28b53b0d496226, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  crtShader: {fileID: 4800000, guid: 0ec63a6913db68a42a7f78650b0df4fe, type: 3}
+  scanlineStrength: 0.079
+  scanlineFrequency: 298
+  curvature: 0.126
+  vignette: 1.17
+  rgbSplit: 0.00192
+  brightness: 1.25
 --- !u!1 &980914154
 GameObject:
   m_ObjectHideFlags: 0
@@ -1604,6 +1625,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ringSegments: 8
+  renderRoots: 0
+  thinRadius: 0.04
+  thickRadius: 0.14
+  newGrowthFadeDays: 200
+  showGrowingDebugColor: 0
+  growingDebugColor: {r: 0, g: 0, b: 1, a: 1}
 --- !u!64 &1486295569
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -1640,22 +1667,47 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   baseGrowSpeed: 0.07
   depthSpeedDecay: 0.85
-  rootSegmentLength: 2
+  branchSegmentLength: 1
+  rootSegmentLength: 1
   segmentLengthDecay: 0.8
+  rootSegmentLengthDecay: 0.95
   terminalRadius: 0.04
+  rootTerminalRadius: 0.004
   baseBranchChance: 0.75
   branchChanceDepthDecay: 0.9
   maxDepth: 50
   depthsPerYear: 3
+  baseElongation: 0.05
+  elongationDepthDecay: 0.7
   springLateralChance: 0.8
   inertiaWeight: 0.65
-  phototropismWeight: 0.2
+  phototropismWeight: 0.213
   randomWeight: 0.15
-  branchAngleMin: 25
-  branchAngleMax: 55
-  trunkSubdivisions: 3
-  wireBendDegreesPerDay: 0.5
+  branchAngleMin: 15
+  branchAngleMax: 75
+  trunkSubdivisions: 5
+  branchSubdivisions: 3
+  minSegmentLength: 1
+  wireDaysToSet: 196
+  maxRootDepth: 8
+  rootLateralChance: 8
+  rootLateralDepthDecay: 0.85
+  targetTrunkRoots: 21
+  trunkRootsPerYear: 2
+  rootSpreadMultiplier: 2
+  rootFillLateralChance: 0.884
+  maxTotalRootNodes: 300
+  rootRadialWeight: 0.5
+  rootGravityWeight: 0.1
+  rootInitialPitch: 0.15
+  initialRootCount: 7
+  rootLiftHeight: 4
+  rootLiftSpeed: 4
+  rootSurfaceSnapDist: 0.8
+  seedHideLength: 0.25
   meshBuilder: {fileID: 0}
+  plantingNormal: {x: 0, y: 1, z: 0}
+  plantingSurfacePoint: {x: 0, y: 0, z: 0}
 --- !u!114 &1486295571
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1705,7 +1757,6 @@ MonoBehaviour:
   pointsPerTurn: 12
   wireRadius: 0.012
   lineWidth: 0.08
-  wireColor: {r: 0.72, g: 0.45, b: 0.2, a: 1}
 --- !u!4 &1486295577 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 8046696593132258112, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
@@ -1746,7 +1797,7 @@ MonoBehaviour:
   m_BlockingObjects: 0
   m_BlockingMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 0
 --- !u!114 &1499744400
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1780,8 +1831,8 @@ Canvas:
   m_Enabled: 1
   serializedVersion: 3
   m_RenderMode: 0
-  m_Camera: {fileID: 0}
-  m_PlaneDistance: 100
+  m_Camera: {fileID: 963194227}
+  m_PlaneDistance: 1
   m_PixelPerfect: 0
   m_ReceivesEvents: 1
   m_OverrideSorting: 0

@@ -16,7 +16,7 @@ shippable (playable without obvious breakage).
 
 ---
 
-### 2. Post-Trim Depth Cap  *(next up)*
+### 2. Post-Trim Depth Cap  ✓ *done*
 **Goal:** After trimming back hard, regrowth is limited to early-year depths —
 a branch cut to depth 1 can't grow 6 levels in one season.
 **Scope:** `TreeSkeleton.cs`, `TreeNode.cs`.
@@ -32,7 +32,7 @@ a branch cut to depth 1 can't grow 6 levels in one season.
 
 ---
 
-### 3. Wire Rework + Health System Foundation
+### 3. Wire Rework + Health System Foundation  ✓ *done*
 **Goal:** Realistic wiring with meaningful consequences; health system that
 future mechanics (watering, nutrients, trimming trauma) can feed into.
 
@@ -117,12 +117,22 @@ so the system stays clean as more damage types are added later.
 
 ---
 
-### 4. Root System  *(plan separately before implementing)*
-**Goal:** Visible surface roots (nebari), later trimmable and scorable for
-flared-root development; eventual rock/substrate repotting.
-**Scope:** Big — new skeleton system, new mesh builder, new interaction modes.
-**Status:** Design TBD. Will be planned in a separate session before any code
-is written. Not blocking items 1–3.
+### 4. Root System  ✓ *done*
+**Goal:** Visible surface/subsurface roots (nebari), trimmable in RootPrune mode
+and naturally scorable for flared-root development.
+**Scope:** Extended existing `TreeSkeleton`/`TreeNode`/`TreeMeshBuilder`/`TreeInteraction`
+and `CameraOrbit` (Option A — no new classes needed).
+
+**What was built:**
+- `isRoot` flag on `TreeNode`; roots are children of `skeleton.root`.
+- Gravity-biased `ContinuationDirection` and `LateralDirection` for root nodes.
+- Separate depth cap: `maxRootDepth` (not `SeasonDepthCap`) for root nodes.
+- Pipe model thickens trunk base from root radii automatically.
+- `renderRoots` flag on `TreeMeshBuilder`; root nodes skipped in mesh unless flag set.
+- `PlantRoot(Vector3 localDir)` on `TreeSkeleton` — player-triggered from soil plane click.
+- `GameState.RootPrune`: tree lifts (`rootLiftHeight`, animated), roots revealed.
+- `HandleRootWorkHover()` in `TreeInteraction`: click root mesh to trim, click soil to plant.
+- `CameraOrbit` pitch relaxed to `pitchMinRootPrune` (−30°) in RootPrune mode.
 
 ---
 
@@ -143,6 +153,18 @@ is complete and multiple growing seasons are stable in testing.
 ### Tree Species
 - Different growth parameters, leaf shapes, seasonal colours
 - Species chosen at game start
+
+### Nebari Development
+- Visible surface root flare (nebari) scoring and shaping tools
+- Encourage roots to hug the soil surface and radiate outward evenly
+- Player feedback: nebari score / quality rating visible in UI
+- Tied to spread radius system already in place
+
+### Ishitsuki (Root-over-Rock)
+- Depends on: rock/prop placement system (not yet built)
+- Player places a rock near the trunk; roots detect it and route around/over it
+- Roots grip crevices in the rock surface over multiple seasons
+- Visual: roots partially embed into rock geometry over time
 
 ### Multi-Tree Planting
 - Plant two trees in the same pot
@@ -167,3 +189,7 @@ is complete and multiple growing seasons are stable in testing.
 - Camera orbit, zoom, Y-pan (`CameraOrbit`)
 - Tight-angle geometry: bend rings + parallel-transport frame fix (`TreeMeshBuilder`)
 - Post-trim depth cap: cut point tracking + per-season regrowth limit (`TreeSkeleton`, `TreeNode`)
+- Wire rework: instant snap + spring animation, Enter to skip, WireAnimate state (`TreeInteraction`, `GameManager`)
+- Health system foundation: `health` on `TreeNode`, `DamageType` enum, `ApplyDamage`, health-gated growth (`TreeSkeleton`, `NodeHealth.cs`)
+- Wire colour progression: silver → gold pulse → orange → red (`WireRenderer`)
+- Root system: `isRoot` flag, gravity-biased growth, `PlantRoot`, `RootPrune` state, lift animation, soil-plane interaction, pitch relaxation (`TreeSkeleton`, `TreeMeshBuilder`, `TreeInteraction`, `CameraOrbit`)

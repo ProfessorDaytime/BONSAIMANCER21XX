@@ -8,15 +8,15 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: mat_Brown
-  m_Shader: {fileID: 46, guid: 0000000000000000f000000000000000, type: 0}
+  m_Shader: {fileID: 4800000, guid: 5f837b0834b9e57479a067e1a0ad34de, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
-  m_ValidKeywords:
+  m_ValidKeywords: []
+  m_InvalidKeywords:
   - _DETAIL_MULX2
   - _EMISSION
   - _NORMALMAP
   - _PARALLAXMAP
-  m_InvalidKeywords: []
   m_LightmapFlags: 2
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -27,6 +27,22 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _BarkBump:
+        m_Texture: {fileID: 2800000, guid: fbdc3ace3f7f2514a950913c138deb19, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkEmissionMap:
+        m_Texture: {fileID: 2800000, guid: 7695b7255455bd44e925066681da5e92, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkOcclusionMap:
+        m_Texture: {fileID: 2800000, guid: 87200b80e4c1b8042b73b6ced17b3404, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkTex:
+        m_Texture: {fileID: 2800000, guid: 303fb5165cf7c5e4cac2f0369daf88b5, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BumpMap:
         m_Texture: {fileID: 2800000, guid: fbdc3ace3f7f2514a950913c138deb19, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -55,6 +71,22 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _NGBump:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NGEmissionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NGOcclusionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NGTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _OcclusionMap:
         m_Texture: {fileID: 2800000, guid: 87200b80e4c1b8042b73b6ced17b3404, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -65,6 +97,9 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - _BarkGlossiness: 0.01
+    - _BarkMetallic: 0
+    - _BarkOcclusionStr: 1
     - _BumpScale: 0
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
@@ -74,6 +109,9 @@ Material:
     - _GlossyReflections: 1
     - _Metallic: 0
     - _Mode: 0
+    - _NGGlossiness: 0.1
+    - _NGMetallic: 0
+    - _NGOcclusionStr: 1
     - _OcclusionStrength: 0
     - _Parallax: 0.005
     - _SmoothnessTextureChannel: 0
@@ -82,6 +120,10 @@ Material:
     - _UVSec: 0
     - _ZWrite: 1
     m_Colors:
+    - _BarkColor: {r: 0.2735849, g: 0.14602588, b: 0.10453009, a: 1}
+    - _BarkEmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _Color: {r: 0.3679245, g: 0.2883135, b: 0.24470451, a: 1}
     - _EmissionColor: {r: 0.014443844, g: 0.014443844, b: 0.014443844, a: 1}
+    - _NGColor: {r: 0.5, g: 0.95, b: 0.4, a: 1}
+    - _NGEmissionColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

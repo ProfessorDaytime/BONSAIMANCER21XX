@@ -19,6 +19,7 @@ public class ToolManager : MonoBehaviour
                                  || tool == ToolType.Saw;
         GameManager.canWire       = tool == ToolType.Wire;
         GameManager.canRemoveWire = tool == ToolType.RemoveWire;
+        Debug.Log($"[Tool] SelectTool={tool} | canTrim={GameManager.canTrim} canWire={GameManager.canWire} canRemoveWire={GameManager.canRemoveWire} | gameState={GameManager.Instance?.state}");
     }
 
     public void ClearTool()
@@ -27,5 +28,6 @@ public class ToolManager : MonoBehaviour
         GameManager.canTrim       = false;
         GameManager.canWire       = false;
         GameManager.canRemoveWire = false;
+        Debug.Log($"[Tool] ClearTool | gameState={GameManager.Instance?.state}");
     }
 }

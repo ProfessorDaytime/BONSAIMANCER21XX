@@ -33,6 +33,8 @@ public class TreeNode
 
     public bool isTrimmed;          // trimmed nodes stop growing; their mesh remains
     public bool hasLeaves;          // true once leaves have been spawned at this tip
+    public bool isRoot;             // part of the surface/sub-surface root system
+    public int  subdivisionsLeft;   // subdivision segments remaining before branching is allowed (0 = ready to branch)
 
     // ── Post-trim regrowth cap ────────────────────────────────────────────────
     // When trimming creates a fresh stump, the surviving tip is marked as a
@@ -61,21 +63,44 @@ public class TreeNode
     {
         get
         {
-            if (children.Count == 0)
-                return radius * 0.55f;
+            float terminalTip = radius * 0.55f;
+            if (children.Count == 0) return terminalTip;
 
-            float max = 0f;
+            // Find the dominant child (largest radius) and its growth progress.
+            // Blend tipRadius from the tapered-terminal size toward the junction
+            // size as the child grows, so new sub-segments emerge smoothly rather
+            // than snapping the tip ring to a thinner radius at spawn time.
+            float maxRadius   = 0f;
+            float maxProgress = 0f;
             foreach (var child in children)
-                max = Mathf.Max(max, child.radius);
-            return max;
+            {
+                if (child.radius > maxRadius)
+                {
+                    maxRadius   = child.radius;
+                    maxProgress = child.targetLength > 0f
+                        ? Mathf.Clamp01(child.length / child.targetLength)
+                        : 1f;
+                }
+            }
+
+            return Mathf.Lerp(terminalTip, maxRadius, maxProgress);
         }
     }
+
+    // ── Health ────────────────────────────────────────────────────────────────
+    // 0 = dead, 1 = fully healthy. Damage sources defined in DamageType enum.
+    // Thresholds: <0.75 slowed growth, <0.25 dormant, <=0 dead.
+
+    public float health = 1f;
 
     // ── Wiring ────────────────────────────────────────────────────────────────
 
     public bool    hasWire;
-    public Vector3 wireTargetDirection;
-    public float   wireBendProgress;
+    public Vector3 wireOriginalDirection;  // growDirection at the moment of wiring
+    public Vector3 wireTargetDirection;    // player-aimed target direction
+    public float   wireSetProgress;        // 0→1: wood lignifying in new position
+    public float   wireDamageProgress;     // 0→1: accumulates after fully set
+    public float   wireAgeDays;            // total rate-adjusted in-game days on wire
 
     // ── Constructor ───────────────────────────────────────────────────────────
 

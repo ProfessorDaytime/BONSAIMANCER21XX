@@ -16,10 +16,14 @@ public class GameManager : MonoBehaviour
 
     public static int branches = 0;
     public static int newLeaves = 0;
-    public static bool canLeaf = false;
-    public static bool canTrim = false;
-    public static bool canWire = false;
+    public static bool canLeaf       = false;
+    public static bool canTrim       = false;
+    public static bool canWire       = false;
     public static bool canRemoveWire = false;
+    public static bool canRootWork   = false;
+
+    // Saved state to restore when exiting RootPrune mode.
+    static GameState preRootPruneState = GameState.Idle;
 
     /// <summary>
     /// How fast the tree grows this month (0 = dormant, 1 = peak spring growth).
@@ -196,6 +200,7 @@ public class GameManager : MonoBehaviour
     }
 
     void SetMonthText(){
+        Debug.Log($"[Time] SetMonthText month={month} state={state} year={year}");
         switch(month){
             case 1:
                 monthName = "January";
@@ -205,11 +210,13 @@ public class GameManager : MonoBehaviour
                 break;
             case 3:
                 monthName = "March";
+                Debug.Log($"[Time] March trigger — state before={state}");
+                UpdateGameState(GameState.BranchGrow);
+                AudioManager.Instance.PlayMusic("SpringSong");
+                Debug.Log($"[Time] March trigger — state after={state}");
                 break;
             case 4:
                 monthName = "April";
-                UpdateGameState(GameState.BranchGrow);
-                AudioManager.Instance.PlayMusic("SpringSong");
                 break;
             case 5:
                 monthName = "May";
@@ -248,7 +255,12 @@ public class GameManager : MonoBehaviour
     }
 
     public void UpdateGameState(GameState newState){
+        if (state == newState) return;   // already in this state; don't re-fire listeners
+
         state = newState;
+
+        // RootPrune is the only state that allows root interaction.
+        canRootWork = (newState == GameState.RootPrune);
 
         Debug.Log("GAME STATE: " + newState);
 
@@ -278,6 +290,11 @@ public class GameManager : MonoBehaviour
                 break;
             case GameState.Wiring:
                 break;
+            case GameState.WireAnimate:
+                break;
+            case GameState.RootPrune:
+                HandleRootPruneState();
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
         }
@@ -289,6 +306,40 @@ public class GameManager : MonoBehaviour
     void HandleWaterState(){
         if(waterings < 0){
             Debug.Log("Waterings is -1");
+        }
+    }
+
+    void HandleRootPruneState()
+    {
+        Debug.Log("[Root] Entering RootPrune mode");
+    }
+
+    /// <summary>
+    /// Call from a UI button to enter or exit Root Prune mode.
+    /// Saves the current state so it can be restored when exiting.
+    /// </summary>
+    static bool IsTimeTickingState(GameState s) =>
+        s == GameState.BranchGrow || s == GameState.LeafGrow ||
+        s == GameState.LeafFall   || s == GameState.TimeGo;
+
+    public void ToggleRootPrune()
+    {
+        if (state == GameState.RootPrune)
+        {
+            // Exit: restore the state that was active before we entered root mode.
+            // If preRootPruneState isn't a time-ticking state, fall back to LeafFall
+            // so the calendar continues advancing rather than freezing.
+            GameState restore = IsTimeTickingState(preRootPruneState)
+                ? preRootPruneState
+                : GameState.LeafFall;
+            Debug.Log($"[Root] ExitRootPrune — restoring to {restore} (was {preRootPruneState})");
+            UpdateGameState(restore);
+        }
+        else
+        {
+            preRootPruneState = state;
+            Debug.Log($"[Root] EnterRootPrune — saving state={state}");
+            UpdateGameState(GameState.RootPrune);
         }
     }
 
@@ -312,5 +363,7 @@ public enum GameState {
     LeafFall,
     Pruning,
     Shaping,
-    Wiring
+    Wiring,
+    WireAnimate,  // time frozen; spring-bend animation playing
+    RootPrune,    // tree lifted, root mesh visible, root trim/placement active
 }

@@ -19,8 +19,8 @@ public class WireRenderer : MonoBehaviour
     [SerializeField] float wireRadius    = 0.012f;
 
     [Header("Appearance")]
-    [SerializeField] float lineWidth  = 0.010f;
-    [SerializeField] Color wireColor  = new Color(0.72f, 0.45f, 0.20f); // copper
+    [SerializeField] float lineWidth = 0.010f;
+    // Wire colour is driven by set/damage progress — no static colour field needed.
 
     // ── References ────────────────────────────────────────────────────────────
 
@@ -85,7 +85,7 @@ public class WireRenderer : MonoBehaviour
         lr.positionCount         = helixTurns * pointsPerTurn + 1;
         lr.startWidth            = lineWidth;
         lr.endWidth              = lineWidth;
-        lr.material              = new Material(Shader.Find("Unlit/Color")) { color = wireColor };
+        lr.material              = new Material(Shader.Find("Unlit/Color"));
         lr.shadowCastingMode     = UnityEngine.Rendering.ShadowCastingMode.Off;
         lr.receiveShadows        = false;
 
@@ -101,9 +101,52 @@ public class WireRenderer : MonoBehaviour
 
     // ── Helix geometry ────────────────────────────────────────────────────────
 
+    // ── Wire colour ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Silver while setting → obvious gold pulse when fully set → orange → deep red.
+    /// </summary>
+    static Color WireColor(TreeNode node)
+    {
+        if (node.wireSetProgress < 1f)
+        {
+            // Silver, brightening slightly as it sets
+            return Color.Lerp(
+                new Color(0.55f, 0.55f, 0.60f),
+                new Color(0.80f, 0.80f, 0.85f),
+                node.wireSetProgress);
+        }
+
+        if (node.wireDamageProgress < 0.01f)
+        {
+            // Obvious gold pulse: ready to remove
+            float pulse = (Mathf.Sin(Time.time * 4f) + 1f) * 0.5f;
+            return Color.Lerp(new Color(0.85f, 0.68f, 0.05f), new Color(1.0f, 0.92f, 0.20f), pulse);
+        }
+
+        if (node.wireDamageProgress < 0.5f)
+        {
+            // Gold → orange
+            return Color.Lerp(
+                new Color(0.95f, 0.72f, 0.05f),
+                new Color(0.92f, 0.38f, 0.04f),
+                node.wireDamageProgress * 2f);
+        }
+
+        // Orange → deep red
+        return Color.Lerp(
+            new Color(0.92f, 0.38f, 0.04f),
+            new Color(0.50f, 0.02f, 0.02f),
+            (node.wireDamageProgress - 0.5f) * 2f);
+    }
+
+    // ── Helix geometry ────────────────────────────────────────────────────────
+
     void UpdateHelix(TreeNode node)
     {
         if (!wireLines.TryGetValue(node.id, out var lr) || lr == null) return;
+
+        lr.material.color = WireColor(node);
 
         Vector3 axisUp = node.growDirection.normalized;
 

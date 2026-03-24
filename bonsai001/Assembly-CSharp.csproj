@@ -64,6 +64,7 @@
      <Compile Include="Assets\Scripts\Tree\TreeNode.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeMeshBuilder.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexJitter.cs" />
+     <Compile Include="Assets\Scripts\Tree\NodeHealth.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_DigitValidator.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_FrameRateCounter.cs" />
      <Compile Include="Assets\Scripts\Tools\ToolManager.cs" />
@@ -100,6 +101,7 @@
      <Compile Include="Assets\Scripts\CubeMeshData.cs" />
      <Compile Include="Assets\Scripts\ToolTip.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT003.cs" />
+     <Compile Include="Assets\Scripts\CRTEffect.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeSkeleton.cs" />
      <Compile Include="Assets\Scripts\scr_Cyl_001.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT002.cs" />
@@ -129,10 +131,12 @@
      <None Include="Assets\UI\UIBase.uxml" />
      <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile Masking.shader" />
      <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF Overlay.shader" />
+     <None Include="Assets\Shaders\CRT.shader" />
      <None Include="Assets\TextMesh Pro\Shaders\TMP_Bitmap-Mobile.shader" />
      <None Include="Assets\TextMesh Pro\Fonts\LiberationSans - OFL.txt" />
      <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile.shader" />
      <None Include="Assets\Shader\CameraFilterPack_TV_ARCADE.shader" />
+     <None Include="Assets\Shaders\BarkVertexColor.shader" />
      <None Include="Assets\TextMesh Pro\Shaders\TMP_Sprite.shader" />
      <None Include="Assets\TextMesh Pro\Examples &amp; Extras\Fonts\Bangers - OFL.txt" />
     <Reference Include="UnityEngine">

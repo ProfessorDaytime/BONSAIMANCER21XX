@@ -36,6 +36,9 @@ public class CameraOrbit : MonoBehaviour
     [Tooltip("Speed of vertical pan with middle-mouse drag.")]
     [SerializeField] float panSpeed = 0.05f;
 
+    [Tooltip("Pitch floor while in Root Prune mode — allows looking up at the roots from below.")]
+    [SerializeField] float pitchMinRootPrune = -30f;
+
     // Current spherical coordinates relative to target
     float yaw;
     float pitch;
@@ -47,6 +50,8 @@ public class CameraOrbit : MonoBehaviour
 
     bool isDragging;
     bool isPanning;
+
+    float activePitchMin;
 
     // Reused buffer for UI raycasts — avoids per-frame allocation
     static readonly List<RaycastResult> uiHits = new List<RaycastResult>();
@@ -66,7 +71,18 @@ public class CameraOrbit : MonoBehaviour
         pitch  = Mathf.Asin(offset.normalized.y) * Mathf.Rad2Deg;
         yaw    = Mathf.Atan2(offset.x, offset.z) * Mathf.Rad2Deg;
 
+        activePitchMin = pitchMin;
         Debug.Log($"[CameraOrbit] Initialised — target={target.name} radius={radius:F2} yaw={yaw:F1} pitch={pitch:F1}");
+    }
+
+    void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
+    void OnDisable() => GameManager.OnGameStateChanged -= OnGameStateChanged;
+
+    void OnGameStateChanged(GameState state)
+    {
+        activePitchMin = (state == GameState.RootPrune) ? pitchMinRootPrune : pitchMin;
+        pitch = Mathf.Clamp(pitch, activePitchMin, pitchMax);
+        ApplyOrbit();
     }
 
     void Update()
@@ -82,32 +98,60 @@ public class CameraOrbit : MonoBehaviour
 
         if (Input.GetMouseButtonDown(0))
         {
+            bool blocked = false;
+
+            // Don't start a drag during wire operations — the click belongs to TreeInteraction.
+            if (GameManager.Instance != null &&
+                (GameManager.Instance.state == GameState.Wiring ||
+                 GameManager.Instance.state == GameState.WireAnimate))
+            {
+                blocked = true;
+            }
             // Don't start a drag if the cursor is over an interactable UI element
             // (buttons, toggles, etc.).  We use RaycastAll rather than
             // IsPointerOverGameObject so that invisible background panels whose
             // "Raycast Target" flag is on don't block the camera.
-            if (IsPointerOverInteractableUI())
+            else if (IsPointerOverInteractableUI())
             {
                 Debug.Log("[CameraOrbit] Click blocked — over interactive UI");
-                return;
+                blocked = true;
             }
-
-            // Don't start a drag if the cursor is over any physics collider
-            // (tree mesh, or any future interactable with a collider)
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out RaycastHit hit))
+            // Don't start a drag if the cursor is over an interactable physics collider
+            // (the bonsai tree or any child of it).  Decorative objects like the planter
+            // table have colliders but should NOT block camera rotation.
+            else
             {
-                Debug.Log($"[CameraOrbit] Click blocked — hit collider '{hit.collider.name}' on '{hit.collider.gameObject.name}'");
-                return;
+                Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+                if (Physics.Raycast(ray, out RaycastHit hit))
+                {
+                    bool isTree = target != null &&
+                                  (hit.transform == target || hit.transform.IsChildOf(target));
+                    if (isTree)
+                    {
+                        Debug.Log($"[Camera] Click blocked — hit tree '{hit.collider.name}'");
+                        blocked = true;
+                    }
+                    // else: decorative collider, allow drag
+                }
             }
 
-            Debug.Log("[CameraOrbit] Drag started");
-            isDragging = true;
+            if (!blocked)
+            {
+                isDragging = true;
+                Debug.Log($"[Camera] isDragging=true | gameState={GameManager.Instance?.state}");
+            }
         }
 
         if (Input.GetMouseButtonDown(2)) isPanning  = true;
         if (Input.GetMouseButtonUp(2))   isPanning  = false;
-        if (Input.GetMouseButtonUp(0))   isDragging = false;
+        if (Input.GetMouseButtonUp(0) && isDragging) { isDragging = false; Debug.Log($"[Camera] isDragging=false | gameState={GameManager.Instance?.state}"); }
+
+        // Safety: LMB not held but isDragging somehow stuck — force-clear it.
+        if (isDragging && !Input.GetMouseButton(0))
+        {
+            isDragging = false;
+            Debug.LogWarning($"[Camera] isDragging safety-cleared (LMB not held) | gameState={GameManager.Instance?.state}");
+        }
 
         if (isPanning)
         {
@@ -123,7 +167,7 @@ public class CameraOrbit : MonoBehaviour
 
         yaw   += dx * sensitivity * 100f * Time.deltaTime;
         pitch -= dy * sensitivity * 100f * Time.deltaTime;   // subtract so dragging up tilts up
-        pitch  = Mathf.Clamp(pitch, pitchMin, pitchMax);
+        pitch  = Mathf.Clamp(pitch, activePitchMin, pitchMax);
 
         ApplyOrbit();
     }

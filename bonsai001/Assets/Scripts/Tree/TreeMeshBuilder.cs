@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// Reads the TreeSkeleton graph and builds ONE unified Mesh for the whole tree.
@@ -8,24 +10,24 @@ using UnityEngine;
 ///   The old system gave each cone its own GameObject + Mesh. Unity lights each
 ///   mesh independently from its local origin, so normals restart at every junction
 ///   and you get visible seams. A single mesh means vertex normals at junctions are
-///   shared across both the parent's top ring and the child's bottom ring — Unity's
+///   shared across both the parent's top ring and the child's bottom ring -- Unity's
 ///   RecalculateNormals() then averages all contributing face normals at those shared
 ///   vertices, producing smooth, continuous shading across the entire tree.
 ///
 /// How the junction sharing works:
 ///   When we process a node, we generate its tip ring and store its start index.
-///   Every child of that node is told "your base ring starts at index X" — the same
+///   Every child of that node is told "your base ring starts at index X" -- the same
 ///   index the parent's tip ring used. The tip ring vertices are therefore referenced
 ///   by the parent's quad strip AND each child's quad strip. RecalculateNormals()
 ///   sees all contributing face normals and averages them, giving a smooth blend.
 ///
-/// Mesh is only rebuilt when SetDirty() is called — not every frame — unless a node
+/// Mesh is only rebuilt when SetDirty() is called -- not every frame -- unless a node
 /// is actively growing or bending (Phase 2/5 will call SetDirty each frame for those).
 /// </summary>
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
 public class TreeMeshBuilder : MonoBehaviour
 {
-    // ── Settings ──────────────────────────────────────────────────────────────
+    // Settings
 
     [Tooltip("Number of sides on each cylinder segment. 8 is fine for a bonsai.")]
     [SerializeField] int ringSegments = 8;
@@ -36,20 +38,49 @@ public class TreeMeshBuilder : MonoBehaviour
     const float BEND_THRESHOLD_DEG  = 20f;   // minimum angle that triggers extra rings
     const float BEND_RING_FRACTION   = 0.15f; // extra rings span first 15% of the child's length
 
-    // ── References ────────────────────────────────────────────────────────────
+    // References
 
     TreeSkeleton  skeleton;
     Mesh          mesh;
     MeshCollider  meshCollider;
     bool          isDirty;
 
-    // ── Build Buffers (reused each rebuild to avoid GC pressure) ──────────────
+    /// <summary>
+    /// When false (default), root nodes are excluded from the mesh.
+    /// Set to true by TreeSkeleton when entering RootPrune mode.
+    /// </summary>
+    [HideInInspector] public bool renderRoots = false;
+
+    // New-growth tint settings
+
+    [Tooltip("Branches at or below this radius get the full new-growth tint. " +
+             "Match this to TreeSkeleton's Terminal Radius (default 0.04).")]
+    [SerializeField] float thinRadius = 0.04f;
+
+    [Tooltip("Branches at or above this radius show no tint (pure bark colour). " +
+             "Anything between thinRadius and thickRadius is linearly blended.")]
+    [SerializeField] float thickRadius = 0.14f;
+
+    [Tooltip("Rate-adjusted in-game days before a branch fully fades from new growth to bark. " +
+             "The fade uses whichever comes first: enough time passing OR the branch getting thick.")]
+    [SerializeField] float newGrowthFadeDays = 150f;
+
+    [Tooltip("When enabled, still-growing segments are highlighted with the debug colour below.")]
+    [SerializeField] bool showGrowingDebugColor = false;
+
+    [Tooltip("Colour used to highlight segments that are still actively growing. " +
+             "Alpha controls texture visibility: 0 = solid colour only, 1 = full bark texture. " +
+             "Keep alpha at 0 for a clearly visible debug highlight.")]
+    [SerializeField] Color growingDebugColor = new Color(0f, 0f, 1f, 0f);
+
+    // Build Buffers (reused each rebuild to avoid GC pressure)
 
     readonly List<Vector3> vertices  = new List<Vector3>();
     readonly List<int>     triangles = new List<int>();
     readonly List<Vector2> uvs       = new List<Vector2>();
+    readonly List<Color>   colors    = new List<Color>();
 
-    // ── Triangle Range → Node mapping (for Phase 3 tool hit detection) ────────
+    // Triangle Range -> Node mapping (for Phase 3 tool hit detection)
 
     // Key:   first triangle INDEX (not count) in the triangles list for this node
     // Value: the TreeNode
@@ -57,13 +88,14 @@ public class TreeMeshBuilder : MonoBehaviour
     public readonly List<(int triStart, int triEnd, TreeNode node)> triRanges
         = new List<(int, int, TreeNode)>();
 
-    // ── Unity ─────────────────────────────────────────────────────────────────
+    // Unity
 
     void Awake()
     {
         skeleton     = GetComponent<TreeSkeleton>();
-        mesh         = new Mesh();
-        mesh.name    = "BonsaiTree";
+        mesh             = new Mesh();
+        mesh.name        = "BonsaiTree";
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;  // supports 4 billion vertices; default 16-bit caps at 65535
         GetComponent<MeshFilter>().mesh = mesh;
         meshCollider = GetComponent<MeshCollider>();
 
@@ -80,15 +112,41 @@ public class TreeMeshBuilder : MonoBehaviour
         isDirty = false;
     }
 
-    // ── Mesh Construction ─────────────────────────────────────────────────────
+    // Mesh Construction
+
+    // Perf tracking
+    readonly Stopwatch buildTimer    = new Stopwatch();
+    readonly Stopwatch colliderTimer = new Stopwatch();
+    float meshLogTimer = 0f;
+
+    // Accumulated stats between log intervals
+    long   totalBuildMs    = 0;
+    long   totalColliderMs = 0;
+    int    buildCount      = 0;
 
     void BuildMesh()
     {
         if (skeleton.root == null) return;
 
+        if (renderRoots)
+        {
+            int rootNodes = 0, rootTerminals = 0, rootDepthMax = 0;
+            foreach (var n in skeleton.allNodes)
+            {
+                if (!n.isRoot) continue;
+                rootNodes++;
+                if (n.isTerminal) rootTerminals++;
+                if (n.depth > rootDepthMax) rootDepthMax = n.depth;
+            }
+            Debug.Log($"[GRoot] BuildMesh | rootNodes={rootNodes} rootTerminals={rootTerminals} maxRootDepth={rootDepthMax} totalNodes={skeleton.allNodes.Count}");
+        }
+
+        buildTimer.Restart();
+
         vertices.Clear();
         triangles.Clear();
         uvs.Clear();
+        colors.Clear();
         triRanges.Clear();
 
         // Traverse the node graph depth-first.
@@ -99,16 +157,37 @@ public class TreeMeshBuilder : MonoBehaviour
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         mesh.SetUVs(0, uvs);
+        mesh.SetColors(colors);
 
-        // This is the key call: because junction ring vertices are shared between
-        // the parent's top quads and each child's bottom quads, Unity averages all
-        // contributing face normals at each shared vertex — smooth shading for free.
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
 
-        // Refresh collider
+        // Refresh collider -- measure separately, it's usually the most expensive part
+        colliderTimer.Restart();
         meshCollider.sharedMesh = null;
         meshCollider.sharedMesh = mesh;
+        colliderTimer.Stop();
+
+        buildTimer.Stop();
+
+        totalBuildMs    += buildTimer.ElapsedMilliseconds;
+        totalColliderMs += colliderTimer.ElapsedMilliseconds;
+        buildCount++;
+
+        // Log accumulated stats once per second
+        meshLogTimer += Time.deltaTime;
+        if (meshLogTimer >= 1f)
+        {
+            meshLogTimer = 0f;
+            int nodes = skeleton.allNodes?.Count ?? 0;
+            Debug.Log($"[Mesh] nodes={nodes} verts={vertices.Count} tris={triangles.Count / 3} " +
+                      $"| builds/s={buildCount} " +
+                      $"avgBuild={( buildCount > 0 ? totalBuildMs / buildCount : 0)}ms " +
+                      $"avgCollider={( buildCount > 0 ? totalColliderMs / buildCount : 0)}ms");
+            totalBuildMs    = 0;
+            totalColliderMs = 0;
+            buildCount      = 0;
+        }
     }
 
     /// <summary>
@@ -134,18 +213,18 @@ public class TreeMeshBuilder : MonoBehaviour
     ///   The axisRight used when the base ring was generated. Passed down so each
     ///   child can inherit the parent's ring orientation via parallel transport,
     ///   preventing the quad strips from twisting at junctions.
-    ///   Pass Vector3.zero for the root — it computes a fresh frame.
+    ///   Pass Vector3.zero for the root -- it computes a fresh frame.
     /// </param>
     /// <param name="parentDir">
     ///   The growDirection of the parent node (normalised).
-    ///   Pass Vector3.zero for the root — it skips the bend-ring logic.
+    ///   Pass Vector3.zero for the root -- it skips the bend-ring logic.
     /// </param>
     int ProcessNode(TreeNode node, int baseRingStart, float cumulativeHeight,
                     Vector3 frameRight, Vector3 parentDir)
     {
-        // ── Resolve frame ────────────────────────────────────────────────────
+        // Resolve frame
         // Save the incoming frame (oriented to the parent's direction) before
-        // re-orthogonalising it to THIS node's direction.  The bend rings below
+        // re-orthogonalising it to THIS node's direction. The bend rings below
         // need to transport through intermediate directions from incomingFrame.
 
         Vector3 axisUp       = node.growDirection.normalized;
@@ -162,15 +241,21 @@ public class TreeMeshBuilder : MonoBehaviour
             frameRight = frameRight.normalized;
         }
 
-        // ── Base ring ────────────────────────────────────────────────────────
+        // Compute vertex colors for this segment.
+        // Still-growing segments are tinted deep blue for debugging.
+        // Thin branches get a green new-growth tint; thick branches are bark-colored.
+        Color baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age);
+        Color tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age);
+
+        // Base ring
 
         if (baseRingStart < 0)
         {
             baseRingStart = vertices.Count;
-            AddRing(node.worldPosition, axisUp, frameRight, node.radius, cumulativeHeight);
+            AddRing(node.worldPosition, axisUp, frameRight, node.radius, cumulativeHeight, baseColor);
         }
 
-        // ── Bend rings ───────────────────────────────────────────────────────
+        // Bend rings
         // When the angle from parent to this node exceeds BEND_THRESHOLD_DEG,
         // insert intermediate rings that Slerp from parentDir to axisUp.
         // They are placed in the first BEND_RING_FRACTION of the node's length
@@ -208,9 +293,10 @@ public class TreeMeshBuilder : MonoBehaviour
                     Vector3 ringPos = node.worldPosition + axisUp * (node.length * ringT);
                     float   ringH   = cumulativeHeight + node.length * ringT;
                     float   ringR   = Mathf.Lerp(node.radius, node.tipRadius, ringT);
+                    Color   ringC   = Color.Lerp(baseColor, tipColor, ringT);
 
                     int newRing = vertices.Count;
-                    AddRing(ringPos, bendDir, bendFrame, ringR, ringH);
+                    AddRing(ringPos, bendDir, bendFrame, ringR, ringH, ringC);
 
                     // Connect the previous ring to this bend ring
                     int bendTriStart = triangles.Count;
@@ -229,21 +315,21 @@ public class TreeMeshBuilder : MonoBehaviour
                 // After bend rings, re-project the transported bendFrame onto axisUp
                 // so the tip ring uses a frame consistent with the last bend ring.
                 // Without this, the tip ring falls back to an independent computation
-                // that can differ by ~90°, making the final quad strip twist visibly.
+                // that can differ by ~90 degrees, making the final quad strip twist visibly.
                 Vector3 transported = Vector3.ProjectOnPlane(bendFrame, axisUp).normalized;
                 if (transported.sqrMagnitude > 0.001f)
                     frameRight = transported;
             }
         }
 
-        // ── Tip ring ─────────────────────────────────────────────────────────
+        // Tip ring
         // Uses frameRight (now consistent with the last bend ring if any were inserted).
 
         float tipHeight    = cumulativeHeight + node.length;
         int   tipRingStart = vertices.Count;
-        AddRing(node.tipPosition, axisUp, frameRight, node.tipRadius, tipHeight);
+        AddRing(node.tipPosition, axisUp, frameRight, node.tipRadius, tipHeight, tipColor);
 
-        // ── Quads (currentBase → tip) ─────────────────────────────────────────
+        // Quads (currentBase -> tip)
         // currentBase is either the original base ring (no bend) or the last
         // bend ring inserted above.
 
@@ -262,16 +348,53 @@ public class TreeMeshBuilder : MonoBehaviour
 
         triRanges.Add((triStart, triangles.Count, node));
 
-        // ── Recurse into children ─────────────────────────────────────────────
+        // Recurse into children.
         // Pass axisUp as parentDir so each child can detect its own bend angle.
+        // Root nodes are only rendered when renderRoots is true (RootPrune mode).
+        // Track whether any child was rendered; if not, add a cap to close the tip.
 
+        bool hasRenderedChild = false;
         foreach (var child in node.children)
-            ProcessNode(child, tipRingStart, tipHeight, frameRight, axisUp);
+        {
+            if (child.isRoot && !renderRoots) continue;
+            // Skip zero-length children: they produce degenerate (zero-area) triangles
+            // that corrupt RecalculateNormals at the shared tip ring, causing a one-frame
+            // visual glitch where the parent tip looks wrong at the start of each season.
+            // The parent keeps its end cap until the child grows past zero.
+            if (child.length <= 0f) continue;
+            hasRenderedChild = true;
+            // Root children attach at the trunk BASE (worldPosition), not the tip.
+            // Pass -1 so they generate a fresh base ring at their own position rather
+            // than inheriting the trunk tip ring, which would stretch triangles wildly.
+            int childBase = (!node.isRoot && child.isRoot) ? -1 : tipRingStart;
+            ProcessNode(child, childBase, tipHeight, frameRight, axisUp);
+        }
+
+        // Cap the open tip ring on terminal (leaf) nodes so no hollow end is visible.
+        // Fan from a center point outward: winding capCenter->r1->r0 produces a normal
+        // pointing in the +axisUp direction (outward from the cut face).
+        if (!hasRenderedChild)
+        {
+            int capCenter   = vertices.Count;
+            int capTriStart = triangles.Count;
+
+            vertices.Add(node.tipPosition);
+            uvs.Add(new Vector2(0.5f, tipHeight * 0.4f));
+            colors.Add(tipColor);
+
+            for (int i = 0; i < ringSegments; i++)
+            {
+                int r0 = tipRingStart + i;
+                int r1 = tipRingStart + i + 1;
+                triangles.Add(capCenter); triangles.Add(r1); triangles.Add(r0);
+            }
+            triRanges.Add((capTriStart, triangles.Count, node));
+        }
 
         return tipRingStart;
     }
 
-    // ── Ring Generation ───────────────────────────────────────────────────────
+    // Ring Generation
 
     /// <summary>
     /// Appends (ringSegments + 1) vertices forming a circle perpendicular to
@@ -280,7 +403,8 @@ public class TreeMeshBuilder : MonoBehaviour
     /// The +1 duplicates the first vertex at the end with U=1.0 so UV mapping
     /// has a clean seam rather than a hard wrap from 1 back to 0.
     /// </summary>
-    void AddRing(Vector3 center, Vector3 axisUp, Vector3 axisRight, float radius, float heightV)
+    void AddRing(Vector3 center, Vector3 axisUp, Vector3 axisRight, float radius, float heightV,
+                 Color vertexColor)
     {
         // axisUp and axisRight are already normalised and orthogonal (done in ProcessNode).
         Vector3 axisFwd = Vector3.Cross(axisRight, axisUp).normalized;
@@ -298,10 +422,29 @@ public class TreeMeshBuilder : MonoBehaviour
             // U = angle around circumference (0..1)
             // V = cumulative height from root * bark tile scale
             uvs.Add(new Vector2(t, heightV * 0.4f));
+
+            colors.Add(vertexColor);
         }
     }
 
-    // ── Public API (Phase 3 tool interaction) ─────────────────────────────────
+    /// <summary>
+    /// Returns the vertex color for a ring of the given radius.
+    /// Thin branches (radius <= thinRadius) get the full new-growth tint.
+    /// Thick branches (radius >= thickRadius) are white (no tint -- pure bark).
+    /// In between, the tint fades linearly.
+    /// </summary>
+    Color GrowthColor(float radius, float age)
+    {
+        // alpha = bark blend weight: 0 = fully new growth, 1 = fully bark.
+        // Fades whichever comes first: branch getting thick OR enough time passing.
+        // Vertex RGB is white — colours are controlled entirely by the shader material.
+        float radiusT = Mathf.InverseLerp(thinRadius, thickRadius, radius);
+        float ageT    = newGrowthFadeDays > 0f ? Mathf.Clamp01(age / newGrowthFadeDays) : 1f;
+        float t       = Mathf.Max(radiusT, ageT);
+        return new Color(1f, 1f, 1f, t);
+    }
+
+    // Public API (Phase 3 tool interaction)
 
     /// <summary>
     /// Given a triangle index from a RaycastHit, returns the TreeNode that

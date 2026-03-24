@@ -49,6 +49,8 @@ public class LeafManager : MonoBehaviour
     bool isLeafFall      = false;
     bool isGrowingSeason = false;
 
+    int lastSpringYear = -1;
+
     float fallDebugTimer = 0f;
 
     // Shared material — one colour update drives all leaves
@@ -108,8 +110,9 @@ public class LeafManager : MonoBehaviour
         isLeafFall      = (state == GameState.LeafFall);
         isGrowingSeason = (state == GameState.BranchGrow);
 
-        if (state == GameState.BranchGrow)
+        if (state == GameState.BranchGrow && GameManager.year > lastSpringYear)
         {
+            lastSpringYear = GameManager.year;
             CleanupOrphanedLeaves();
             SpawnSpringLeaves();
         }
@@ -174,9 +177,11 @@ public class LeafManager : MonoBehaviour
 
         foreach (var node in skeleton.allNodes)
         {
-            if (node.isTrimmed)           continue;
-            if (!node.isTerminal)         continue;
+            if (node.isTrimmed)            continue;
+            if (!node.isTerminal)          continue;
+            if (node.isRoot)               continue;  // roots never get leaves
             if (node.depth < minLeafDepth) continue;
+            if (node.subdivisionsLeft > 0) continue;  // mid-chain sub-segment — will spawn more before branching
             if (nodeLeaves.ContainsKey(node.id)) continue;  // already has leaves
 
             SpawnCluster(node);
@@ -227,35 +232,37 @@ public class LeafManager : MonoBehaviour
     /// </summary>
     void CleanupOrphanedLeaves()
     {
-        // Build a quick lookup of current valid node ids
-        var validTerminals = new HashSet<int>();
+        // Only remove leaves from trimmed or fully removed nodes.
+        // Nodes that simply gained children this spring keep their leaves and
+        // drop them naturally in LeafFall — removing them here would race with
+        // TreeSkeleton.StartNewGrowingSeason (which runs first) and cause the
+        // "ungrows last segment" visual glitch.
+        var liveUntrimmed = new HashSet<int>();
         foreach (var node in skeleton.allNodes)
-        {
-            if (!node.isTrimmed && node.isTerminal)
-                validTerminals.Add(node.id);
-        }
+            if (!node.isTrimmed) liveUntrimmed.Add(node.id);
 
         var toRemove = new List<int>();
         foreach (var kvp in nodeLeaves)
-        {
-            if (!validTerminals.Contains(kvp.Key))
+            if (!liveUntrimmed.Contains(kvp.Key))
                 toRemove.Add(kvp.Key);
-        }
 
         foreach (int id in toRemove)
-            DestroyCluster(id);
+            StartFallingCluster(id);
     }
 
-    void DestroyCluster(int nodeId)
+    // Starts the fall animation on all leaves in a cluster, then removes the cluster
+    // from tracking so it is no longer managed. Each Leaf self-destructs after falling.
+    void StartFallingCluster(int nodeId)
     {
         if (!nodeLeaves.TryGetValue(nodeId, out var list)) return;
 
         foreach (var go in list)
-            if (go != null) Destroy(go);
+            if (go != null) go.GetComponent<Leaf>()?.StartFalling();
 
         nodeLeaves.Remove(nodeId);
         listDirty = true;
     }
+
 
     // ── Leaf fall ─────────────────────────────────────────────────────────────
 

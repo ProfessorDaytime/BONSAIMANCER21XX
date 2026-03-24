@@ -10,6 +10,7 @@ public class ButtonClicker : MonoBehaviour
     Button waterButton;
     Button wireButton;
     Button removeWireButton;
+    Button rootPruneButton;
 
     // Start is called before the first frame update
     void OnEnable(){
@@ -24,16 +25,19 @@ public class ButtonClicker : MonoBehaviour
         waterButton      = buttonDocument.rootVisualElement.Q("WaterButton")      as Button;
         wireButton       = buttonDocument.rootVisualElement.Q("WireButton")       as Button;
         removeWireButton = buttonDocument.rootVisualElement.Q("RemoveWireButton") as Button;
+        rootPruneButton  = buttonDocument.rootVisualElement.Q("RootPruneButton")  as Button;
 
         if(trimButton != null)       Debug.Log("TRIM BUTTON");
         if(waterButton != null)      Debug.Log("WATER BUTTON");
         if(wireButton != null)       Debug.Log("WIRE BUTTON");
         if(removeWireButton != null) Debug.Log("REMOVE WIRE BUTTON");
+        if(rootPruneButton != null)  Debug.Log("ROOT PRUNE BUTTON");
 
         trimButton.RegisterCallback<ClickEvent>(OnTreeButtonClick);
         waterButton.RegisterCallback<ClickEvent>(OnWaterButtonClick);
         wireButton?.RegisterCallback<ClickEvent>(OnWireButtonClick);
         removeWireButton?.RegisterCallback<ClickEvent>(OnRemoveWireButtonClick);
+        rootPruneButton?.RegisterCallback<ClickEvent>(OnRootPruneButtonClick);
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
@@ -67,6 +71,11 @@ public class ButtonClicker : MonoBehaviour
     public void OnRemoveWireButtonClick(ClickEvent evt)
     {
         ToolManager.Instance.SelectTool(ToolType.RemoveWire);
+    }
+
+    public void OnRootPruneButtonClick(ClickEvent evt)
+    {
+        GameManager.Instance.ToggleRootPrune();
     }
 
 

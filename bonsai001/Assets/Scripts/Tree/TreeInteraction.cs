@@ -58,14 +58,26 @@ public class TreeInteraction : MonoBehaviour
     static readonly Color ColWire       = new Color(0.9f, 0.65f, 0.1f);  // gold
     static readonly Color ColRemoveWire = new Color(0.1f, 0.8f, 0.3f);   // green
 
-    // ── Wire aim state ────────────────────────────────────────────────────────
+    // ── Wire aim / animation state ────────────────────────────────────────────
 
-    enum WirePhase { None, Aiming }
+    enum WirePhase { None, Aiming, Animating }
 
     WirePhase wirePhase    = WirePhase.None;
     TreeNode  wireTarget;
     Vector3   aimDirection;   // world-space direction being aimed
-    GameState preWireState;   // state to restore when aim ends
+    GameState preWireState;   // state to restore when aim/animation ends
+
+    // Spring animation
+    float   wireAnimTimer;
+    Vector3 wireAnimStartDir;
+    Vector3 wireAnimEndDir;
+    const float WIRE_ANIM_DURATION = 0.6f;
+
+    // Original growDirections of wireTarget's descendants, captured at confirm time.
+    // The animation applies Quaternion.FromToRotation(wireAnimStartDir, currentDir)
+    // to these originals every frame rather than accumulating deltas, so there is
+    // no floating-point drift even with the spring overshoot.
+    readonly Dictionary<TreeNode, Vector3> descOriginalDirs = new Dictionary<TreeNode, Vector3>();
 
     // Direction preview arrow
     LineRenderer aimPreview;
@@ -113,6 +125,13 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
 
+        // Wire animation blocks all other interaction until complete
+        if (wirePhase == WirePhase.Animating)
+        {
+            UpdateWireAnimation();
+            return;
+        }
+
         // Wire aim mode takes over completely
         if (wirePhase == WirePhase.Aiming)
         {
@@ -120,7 +139,9 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
 
-        if (GameManager.canWire)
+        if (GameManager.canRootWork)
+            HandleRootWorkHover();
+        else if (GameManager.canWire)
             HandleWireHover();
         else if (GameManager.canRemoveWire)
             HandleRemoveWireHover();
@@ -128,6 +149,69 @@ public class TreeInteraction : MonoBehaviour
             HandleTrimHover();
         else
             SetHighlight(null, HighlightMode.None);
+    }
+
+    // ── Root work (RootPrune mode) ────────────────────────────────────────────
+
+    // Y coordinate of the soil plane in world space.
+    // Assumes the tree was planted at world y = 0.
+    const float SOIL_WORLD_Y = 0f;
+
+    void HandleRootWorkHover()
+    {
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+
+        // Priority 1: trim an existing root by clicking it on the tree mesh.
+        if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
+        {
+            TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
+            if (node != null && node.isRoot && node != skeleton.root)
+            {
+                SetHighlight(node, HighlightMode.TrimSubtree);
+
+                if (Input.GetMouseButtonDown(0))
+                {
+                    SetHighlight(null, HighlightMode.None);
+                    skeleton.TrimNode(node);
+                }
+                return;
+            }
+        }
+
+        // Priority 2: plant a new root by clicking the planting surface.
+        Plane soilPlane = new Plane(skeleton.plantingNormal, skeleton.plantingSurfacePoint);
+        if (soilPlane.Raycast(ray, out float dist))
+        {
+            SetHighlight(null, HighlightMode.None);
+
+            if (Input.GetMouseButtonDown(0))
+            {
+                Vector3 worldPoint     = ray.GetPoint(dist);
+                Vector3 trunkBaseWorld = transform.TransformPoint(skeleton.root.worldPosition);
+                Vector3 outward        = worldPoint - trunkBaseWorld;
+                outward.y = 0f;  // PlantRoot adds the downward pitch component
+
+                if (outward.sqrMagnitude > 0.01f)
+                {
+                    Vector3 localDir = transform.InverseTransformDirection(outward.normalized);
+                    skeleton.PlantRoot(localDir);
+                }
+            }
+            return;
+        }
+
+        // Right-click any non-tree surface to place the tree on it.
+        // The tree lowers to that surface and subsequent root growth hugs it.
+        if (Input.GetMouseButtonDown(1))
+        {
+            if (Physics.Raycast(ray, out RaycastHit surfaceHit) &&
+                surfaceHit.collider.gameObject != gameObject)
+            {
+                skeleton.SetPlantingSurface(surfaceHit.point, surfaceHit.normal);
+            }
+        }
+
+        SetHighlight(null, HighlightMode.None);
     }
 
     // ── Trim ──────────────────────────────────────────────────────────────────
@@ -180,6 +264,8 @@ public class TreeInteraction : MonoBehaviour
         wirePhase    = WirePhase.Aiming;
         preWireState = GameManager.Instance.state;
 
+        Debug.Log($"[Wire] StartWireAim node={node.id} depth={node.depth} | preWireState={preWireState} | canWire={GameManager.canWire}");
+
         // Start aim arrow pointing along the branch's current direction
         aimDirection = transform.TransformDirection(node.growDirection);
 
@@ -193,6 +279,7 @@ public class TreeInteraction : MonoBehaviour
         // Cancel automatically if wire tool was deselected
         if (!GameManager.canWire)
         {
+            Debug.Log($"[Wire] Auto-cancel — canWire went false while aiming | gameState={GameManager.Instance.state} | preWireState={preWireState}");
             CancelWire();
             return;
         }
@@ -212,7 +299,7 @@ public class TreeInteraction : MonoBehaviour
         UpdateAimPreview();
         SetHighlight(wireTarget, HighlightMode.SingleGold);
 
-        if (Input.GetMouseButtonDown(0))                              ConfirmWire();
+        if (Input.GetMouseButtonDown(0)) { ConfirmWire(); return; }
         if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape)) CancelWire();
     }
 
@@ -226,19 +313,97 @@ public class TreeInteraction : MonoBehaviour
     void ConfirmWire()
     {
         Vector3 localDir = transform.InverseTransformDirection(aimDirection);
+
+        // Capture start direction before WireNode records it as wireOriginalDirection
+        wireAnimStartDir = wireTarget.growDirection;
         skeleton.WireNode(wireTarget, localDir);
+        wireAnimEndDir = wireTarget.wireTargetDirection;
+
+        // Snapshot every descendant's current growDirection.
+        // The animation will apply FromToRotation(wireAnimStartDir, currentDir)
+        // to these originals each frame so the whole subtree rotates as a rigid body.
+        descOriginalDirs.Clear();
+        CaptureDescendantDirs(wireTarget);
+
+        wireAnimTimer      = 0f;
+        wirePhase          = WirePhase.Animating;
+        aimPreview.enabled = false;
+        SetHighlight(null, HighlightMode.None);
+
+        Debug.Log($"[Wire] ConfirmWire node={wireTarget.id} | preWireState={preWireState} | canWire={GameManager.canWire} | descSnapCount={descOriginalDirs.Count}");
+
+        GameManager.Instance.UpdateGameState(GameState.WireAnimate);
+    }
+
+    void CaptureDescendantDirs(TreeNode node)
+    {
+        foreach (var child in node.children)
+        {
+            descOriginalDirs[child] = child.growDirection;
+            CaptureDescendantDirs(child);
+        }
+    }
+
+    void CancelWire()
+    {
+        Debug.Log($"[Wire] CancelWire | preWireState={preWireState} | canWire={GameManager.canWire}");
         EndWireAim();
     }
 
-    void CancelWire() => EndWireAim();
-
     void EndWireAim()
     {
+        Debug.Log($"[Wire] EndWireAim → restoring state={preWireState} | wirePhase was={wirePhase}");
         wirePhase          = WirePhase.None;
         wireTarget         = null;
         aimPreview.enabled = false;
         SetHighlight(null, HighlightMode.None);
         GameManager.Instance.UpdateGameState(preWireState);
+    }
+
+    // ── Wire spring animation ─────────────────────────────────────────────────
+
+    void UpdateWireAnimation()
+    {
+        wireAnimTimer += Time.deltaTime;
+
+        bool done = wireAnimTimer >= WIRE_ANIM_DURATION
+                    || Input.GetKeyDown(KeyCode.Return);
+
+        float t      = done ? 1f : Mathf.Clamp01(wireAnimTimer / WIRE_ANIM_DURATION);
+        float spring = WireSpringCurve(t);
+
+        wireTarget.growDirection = Vector3.Slerp(wireAnimStartDir, wireAnimEndDir, spring).normalized;
+
+        // Rotate all descendants by the same rotation applied to wireTarget
+        // so the subtree moves as a rigid body. We apply to the ORIGINAL dirs
+        // (captured at ConfirmWire) to avoid float drift from frame accumulation.
+        Quaternion rot = Quaternion.FromToRotation(wireAnimStartDir, wireTarget.growDirection);
+        skeleton.RotateAndPropagateDescendants(wireTarget, rot, descOriginalDirs);
+        skeleton.meshBuilder.SetDirty();
+
+        if (done)
+        {
+            // Lock wireTarget to exact target, then do one final rigid-body propagation.
+            wireTarget.growDirection = wireAnimEndDir;
+            rot = Quaternion.FromToRotation(wireAnimStartDir, wireAnimEndDir);
+            skeleton.RotateAndPropagateDescendants(wireTarget, rot, descOriginalDirs);
+            skeleton.meshBuilder.SetDirty();
+
+            Debug.Log($"[Wire] AnimationDone node={wireTarget.id} | preWireState={preWireState} | canWire={GameManager.canWire}");
+            descOriginalDirs.Clear();
+            wirePhase  = WirePhase.None;
+            wireTarget = null;
+            GameManager.Instance.UpdateGameState(preWireState);
+        }
+    }
+
+    /// <summary>
+    /// Damped-spring easing: overshoots past 1 by ~15 % then settles.
+    /// Input t is 0..1 over the animation duration.
+    /// </summary>
+    static float WireSpringCurve(float t)
+    {
+        return 1f - Mathf.Exp(-5f * t) * Mathf.Cos(Mathf.PI * 2f * t * 1.5f);
     }
 
     // ── Remove wire ───────────────────────────────────────────────────────────
