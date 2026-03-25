@@ -121,6 +121,11 @@ public class TreeNode
 
     public int boundaryPressure;
 
+    // ── Air Layering ──────────────────────────────────────────────────────────
+    /// <summary>True for roots that developed from an air layer on the trunk.
+    /// These render regardless of RootPrune mode since they sit above ground.</summary>
+    public bool isAirLayerRoot;
+
     // ── Wound ─────────────────────────────────────────────────────────────────
     public bool    hasWound;
     public float   woundRadius;      // radius of the removed branch at the cut point

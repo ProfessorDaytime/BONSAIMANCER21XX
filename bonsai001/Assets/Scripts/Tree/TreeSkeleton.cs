@@ -37,6 +37,10 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Target length of each root segment before it branches. Smaller = denser, earlier splits.")]
     [SerializeField] float rootSegmentLength = 0.7f;
 
+    [Tooltip("Multiplier on root segment length when the root is near or at the tray boundary (distRatio ≥ 0.8). " +
+             "Shorter segments = more deflection steps = smoother curves along the wall. 0.25–0.4 recommended.")]
+    [SerializeField] [Range(0.1f, 1f)] float wallSegmentScale = 0.35f;
+
     [Tooltip("Each depth level, branch segments get this much shorter (0..1).")]
     [SerializeField] float segmentLengthDecay = 0.80f;
 
@@ -189,6 +193,19 @@ public class TreeSkeleton : MonoBehaviour
              "spreading by radius. Leave empty to use the legacy radial spread system.")]
     [SerializeField] Transform rootAreaTransform;
 
+    [Header("Root Health")]
+    [Tooltip("Maximum root depth counted toward the root health score. 1 = only first segments off the trunk; 3 captures the full surface flare.")]
+    [SerializeField] int rootHealthMaxDepth = 3;
+
+    [Tooltip("Root tips within this many Y-units of the soil surface (Y=0) count as surface roots for root health scoring.")]
+    [SerializeField] float rootHealthSurfaceDepth = 0.3f;
+
+    [Tooltip("Root radius considered ideal for the girth component. Roots at or above this thickness score full girth points.")]
+    [SerializeField] float rootHealthTargetRadius = 0.04f;
+
+    [Tooltip("If the centre of mass of surface roots is this far from the trunk horizontally, balance reaches zero.")]
+    [SerializeField] float rootHealthBalanceRadius = 1.5f;
+
     [Tooltip("Fallback used when no Root Area is assigned: spread target = tree height × this.\n" +
              "Ignored when rootAreaTransform is set.")]
     [SerializeField] float rootSpreadMultiplier = 2f;
@@ -242,6 +259,25 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Distance from the planting surface at which roots begin to hug the surface.")]
     [SerializeField] float rootSurfaceSnapDist = 0.8f;
 
+    [Header("Air Layering")]
+    [Tooltip("Prefab spawned at the air layer site to represent the coconut coir wrap. Optional — system works without it.")]
+    [SerializeField] GameObject airLayerWrapPrefab;
+
+    [Tooltip("Number of growing seasons before roots develop under the wrap.")]
+    [SerializeField] int airLayerSeasonsToRoot = 2;
+
+    [Tooltip("Number of new roots spawned when the wrap is removed.")]
+    [SerializeField] [Range(2, 21)] int airLayerRootCount = 17;
+
+    [Tooltip("Number of segments per root strand spawned at unwrap. More = longer, snakier roots from the start.")]
+    [SerializeField] [Range(1, 8)] int airLayerRootSegments = 3;
+
+    [Tooltip("Target length of each segment on a newly-spawned air-layer root strand.")]
+    [SerializeField] float airLayerRootTargetLength = 1.0f;
+
+    [Tooltip("Radius of air-layer roots as a fraction of the trunk node's radius at the layer site.")]
+    [SerializeField] [Range(0.1f, 1f)] float airLayerRootRadiusMultiplier = 0.35f;
+
     [Header("Seed")]
     [Tooltip("Trunk length at which the seed object is hidden (the sprout has emerged).")]
     [SerializeField] float seedHideLength = 0.25f;
@@ -273,6 +309,27 @@ public class TreeSkeleton : MonoBehaviour
 
     // node.id → wound visualization GameObject (half-torus at the cut face)
     readonly Dictionary<int, GameObject> woundObjects = new Dictionary<int, GameObject>();
+
+    // ── Root Health ───────────────────────────────────────────────────────────
+    /// <summary>0–100 root health score. Updated each spring and on RootPrune entry.</summary>
+    public float RootHealthScore { get; private set; }
+    /// <summary>Per-sector coverage, normalised 0–1. Length = 8 (N, NE, E, SE, S, SW, W, NW).</summary>
+    public float[] RootHealthSectorCoverage { get; private set; } = new float[8];
+
+    // ── Air Layering ──────────────────────────────────────────────────────────
+    /// <summary>
+    /// Tracks all active air layers. Exposed so TreeInteraction can read layer state.
+    /// </summary>
+    public readonly List<AirLayerData> airLayers = new List<AirLayerData>();
+
+    /// <summary>Data for one active air layer on the trunk.</summary>
+    public class AirLayerData
+    {
+        public TreeNode   node;           // trunk node the layer is applied to
+        public int        seasonsElapsed; // growing seasons since placement
+        public bool       rootsSpawned;   // true once roots are ready to emerge
+        public GameObject wrapObject;     // the coir wrap visual (may be null)
+    }
 
     float debugLogTimer  = 0f;
 
@@ -358,6 +415,14 @@ public class TreeSkeleton : MonoBehaviour
             seedObject.SetActive(false);
             Debug.Log("[Tree] Seed hidden -- sprout emerged");
         }
+
+        // Keep air layer wraps sized to the trunk every frame so they can't be swallowed.
+        if (airLayers.Count > 0)
+            foreach (var layer in airLayers)
+                SetAirLayerWrapTransform(layer);
+
+        // Keep air layer root bases anchored to parent tip as the trunk grows.
+        UpdateAirLayerRootPositions();
 
         if (!isGrowing || root == null) return;
 
@@ -532,6 +597,7 @@ public class TreeSkeleton : MonoBehaviour
             int rootCount = 0;
             foreach (var n in allNodes) if (n.isRoot) rootCount++;
             Debug.Log($"[Root] Entering RootPrune | rootNodes={rootCount} | liftTarget={liftTarget} | plantingNormal={plantingNormal} plantingPoint={plantingSurfacePoint}");
+            RecalculateRootHealthScore();
         }
 
         if (state == GameState.BranchGrow && root != null && GameManager.year > lastGrownYear)
@@ -690,6 +756,8 @@ public class TreeSkeleton : MonoBehaviour
                 float distRatio = RootDistRatio(terminal);
                 if (distRatio >= 1.3f) continue;  // beyond hard outer boundary — stop
 
+                if (distRatio >= 0.8f) childLength *= wallSegmentScale;
+
                 var cont = CreateNode(terminal.tipPosition, ContinuationDirection(terminal), nodeRadius, childLength, terminal);
                 cont.isRoot = true;
                 currentRootCount++;
@@ -827,9 +895,13 @@ public class TreeSkeleton : MonoBehaviour
         // Spawn extra fill-in laterals from low-depth ancestors of pot-bound terminals.
         // Simulates the tree pushing new root mass back toward the trunk when walled in.
         int potBoundFillCount = 0;
+        // Use a slightly higher ceiling so inner fill still works when outer cap is full,
+        // but cap total roots at 1.5× maxTotalRootNodes to prevent unbounded growth.
+        int potBoundRootCap = Mathf.RoundToInt(maxTotalRootNodes * 1.5f);
         foreach (var node in potBoundInnerCandidates)
         {
             if (potBoundFillCount >= potBoundMaxFillPerYear) break;
+            if (currentRootCount >= potBoundRootCap) break;
             if (node.depth >= maxRootDepth - 1) continue;
 
             float distRatio = RootDistRatio(node);
@@ -946,6 +1018,9 @@ public class TreeSkeleton : MonoBehaviour
             RecalculateRadii(root);
             meshBuilder.SetDirty();
         }
+
+        UpdateAirLayers();
+        RecalculateRootHealthScore();
     }
 
     // Year Simulation (debug keys 1-9)
@@ -1105,6 +1180,144 @@ public class TreeSkeleton : MonoBehaviour
 
         RecalculateRadii(root);
         meshBuilder.SetDirty();
+    }
+
+    // ── Air Layering ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Places an air layer on a trunk node. The wrap is positioned at the node's
+    /// tip and tracked in <see cref="airLayers"/>. After <see cref="airLayerSeasonsToRoot"/>
+    /// growing seasons <see cref="AirLayerData.rootsSpawned"/> becomes true;
+    /// the player then clicks again to call <see cref="UnwrapAirLayer"/>.
+    /// </summary>
+    public void PlaceAirLayer(TreeNode node)
+    {
+        if (node == null || node.isRoot) return;
+
+        // Disallow duplicate layers on the same node.
+        foreach (var l in airLayers)
+            if (l.node == node) return;
+
+        var layer = new AirLayerData { node = node };
+
+        if (airLayerWrapPrefab != null)
+        {
+            layer.wrapObject = Instantiate(airLayerWrapPrefab, transform);
+        }
+        else
+        {
+            // Placeholder: teal cylinder wrapping the branch at the layer site.
+            layer.wrapObject = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            layer.wrapObject.transform.SetParent(transform, false);
+            var mat = new Material(Shader.Find("Standard"));
+            mat.color = new Color(0f, 0.75f, 0.75f);
+            layer.wrapObject.GetComponent<Renderer>().material = mat;
+        }
+
+        SetAirLayerWrapTransform(layer);
+        airLayers.Add(layer);
+        Debug.Log($"[AirLayer] PlaceAirLayer node={node.id} depth={node.depth}");
+    }
+
+    /// <summary>
+    /// Spawns air-layer roots radially from the layer node and removes the wrap.
+    /// Only call when <see cref="AirLayerData.rootsSpawned"/> is true.
+    /// </summary>
+    public void UnwrapAirLayer(AirLayerData layer)
+    {
+        if (layer == null)          { Debug.LogWarning("[AirLayer] UnwrapAirLayer called with null layer"); return; }
+        if (!layer.rootsSpawned)    { Debug.LogWarning("[AirLayer] UnwrapAirLayer called but rootsSpawned=false"); return; }
+
+        float spawnRadius = Mathf.Max(layer.node.radius * airLayerRootRadiusMultiplier, terminalRadius);
+        float spawnLength = Mathf.Max(airLayerRootTargetLength, 0.1f);
+
+        Debug.Log($"[AirLayer] UnwrapAirLayer firing — node={layer.node.id} spawnRadius={spawnRadius:F4} spawnLength={spawnLength:F3} segments={airLayerRootSegments} nodeRadius={layer.node.radius:F4}");
+
+        float angleStep = 360f / airLayerRootCount;
+        for (int i = 0; i < airLayerRootCount; i++)
+        {
+            float   angle  = i * angleStep * Mathf.Deg2Rad;
+            Vector3 radial = new Vector3(Mathf.Cos(angle), -0.15f, Mathf.Sin(angle)).normalized;
+
+            // Spawn a chain of segments per strand, each a child of the previous.
+            // Start on the trunk's cylindrical surface (not its center axis) so the
+            // first segment doesn't have to travel through the bark to become visible.
+            Vector3  radialXZ = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+            TreeNode prev     = layer.node;
+            Vector3  prevTip  = layer.node.tipPosition + radialXZ * layer.node.radius;
+            float    segRadius = spawnRadius;
+            for (int s = 0; s < airLayerRootSegments; s++)
+            {
+                // Slightly vary direction each segment so strands curve naturally.
+                Vector3 segDir = (radial + Random.insideUnitSphere * 0.15f).normalized;
+                var seg = CreateNode(prevTip, segDir, segRadius, spawnLength, prev);
+                seg.isRoot         = true;
+                seg.isAirLayerRoot = true;
+                seg.radius         = segRadius;
+                seg.minRadius      = segRadius;
+                seg.length         = spawnLength * 0.4f;   // start short so they visibly grow
+                prev    = seg;
+                prevTip = seg.tipPosition;
+                segRadius *= 0.8f;                  // taper along the strand
+            }
+        }
+
+        if (layer.wrapObject != null)
+            Destroy(layer.wrapObject);
+
+        airLayers.Remove(layer);
+
+        RecalculateRadii(root);
+        meshBuilder.SetDirty();
+        Debug.Log($"[AirLayer] UnwrapAirLayer done — spawned {airLayerRootCount} air-layer roots");
+    }
+
+    /// <summary>
+    /// Positions and scales the wrap cylinder to match the current node radius and direction.
+    /// Unity's Cylinder primitive is 2 units tall, 1 unit diameter at scale (1,1,1).
+    /// We orient the cylinder's Y-axis along growDirection and scale it to sit snugly
+    /// outside the branch surface.
+    /// </summary>
+    void SetAirLayerWrapTransform(AirLayerData layer)
+    {
+        if (layer.wrapObject == null) return;
+        var node = layer.node;
+        float wrapRadius = Mathf.Max(node.radius * 4f, 0.04f);
+        float wrapHeight = Mathf.Max(node.radius * 4f, 0.04f);
+        // Center the band along the segment.
+        layer.wrapObject.transform.localPosition = node.worldPosition + node.growDirection * (node.length * 0.5f);
+        layer.wrapObject.transform.localRotation = Quaternion.FromToRotation(Vector3.up, node.growDirection);
+        // Cylinder: diameter = scale.x, height = scale.y * 2
+        layer.wrapObject.transform.localScale    = new Vector3(wrapRadius * 2f, wrapHeight * 0.5f, wrapRadius * 2f);
+    }
+
+    /// <summary>
+    /// Advances all active air layers by one growing season.
+    /// Called from <see cref="StartNewGrowingSeason"/>.
+    /// </summary>
+    void UpdateAirLayers()
+    {
+        foreach (var layer in airLayers)
+        {
+            if (layer.rootsSpawned) continue;
+
+            layer.seasonsElapsed++;
+
+            // Keep wrap sized and positioned as the trunk thickens.
+            SetAirLayerWrapTransform(layer);
+
+            if (layer.seasonsElapsed >= airLayerSeasonsToRoot)
+            {
+                layer.rootsSpawned = true;
+                // Turn the wrap gold to signal roots are ready to emerge.
+                if (layer.wrapObject != null)
+                {
+                    var rend = layer.wrapObject.GetComponent<Renderer>();
+                    if (rend != null) rend.material.color = new Color(0.85f, 0.65f, 0.0f);
+                }
+                Debug.Log($"[AirLayer] Roots ready — node={layer.node.id} after {layer.seasonsElapsed} seasons. Click the gold wrap to unwrap.");
+            }
+        }
     }
 
     /// <summary>
@@ -1272,6 +1485,62 @@ public class TreeSkeleton : MonoBehaviour
     }
 
     /// <summary>
+    /// Scores the current root health (surface root flare) 0–100 and updates
+    /// RootHealthScore and RootHealthSectorCoverage (8 directional sectors).
+    /// Considers shallow trunk roots: depth 1–rootHealthMaxDepth, Y > -rootHealthSurfaceDepth.
+    /// Components: angular coverage (50%), girth thickness (30%), radial balance (20%).
+    /// </summary>
+    public void RecalculateRootHealthScore()
+    {
+        const int sectors = 8;
+        float[] sectorRadius = new float[sectors];
+        float   totalRadius  = 0f;
+        int     count        = 0;
+        Vector2 com          = Vector2.zero;
+
+        foreach (var node in allNodes)
+        {
+            if (!node.isRoot || node.isTrimmed) continue;
+            if (node.depth < 1 || node.depth > rootHealthMaxDepth) continue;
+            if (node.tipPosition.y < -rootHealthSurfaceDepth) continue;
+
+            Vector3 tip   = node.tipPosition;
+            float   angle = Mathf.Atan2(tip.z, tip.x);            // –π … +π
+            float   t     = (angle + Mathf.PI) / (Mathf.PI * 2f); // 0 … 1
+            int     s     = Mathf.Clamp(Mathf.FloorToInt(t * sectors), 0, sectors - 1);
+
+            sectorRadius[s] += node.radius;
+            totalRadius      += node.radius;
+            com              += new Vector2(tip.x, tip.z) * node.radius;
+            count++;
+        }
+
+        // Normalise sector coverage for the UI (0 = empty, 1 = best-covered sector)
+        float maxSector = 0f;
+        for (int i = 0; i < sectors; i++) if (sectorRadius[i] > maxSector) maxSector = sectorRadius[i];
+        RootHealthSectorCoverage = new float[sectors];
+        if (maxSector > 0f)
+            for (int i = 0; i < sectors; i++) RootHealthSectorCoverage[i] = sectorRadius[i] / maxSector;
+
+        if (count == 0) { RootHealthScore = 0f; return; }
+
+        // Angular coverage: fraction of the 8 sectors that have any roots
+        int coveredSectors = 0;
+        for (int i = 0; i < sectors; i++) if (sectorRadius[i] > 0f) coveredSectors++;
+        float angularScore = (float)coveredSectors / sectors;
+
+        // Girth: average root radius vs the ideal target radius
+        float girthScore = Mathf.Clamp01(totalRadius / count / rootHealthTargetRadius);
+
+        // Balance: centre of mass close to the trunk origin
+        com /= totalRadius;
+        float balanceScore = Mathf.Clamp01(1f - com.magnitude / rootHealthBalanceRadius);
+
+        RootHealthScore = (angularScore * 0.5f + girthScore * 0.3f + balanceScore * 0.2f) * 100f;
+        Debug.Log($"[RootHealth] score={RootHealthScore:F1} angular={angularScore:F2} girth={girthScore:F2} balance={balanceScore:F2} sectors={coveredSectors}/8 nodes={count}");
+    }
+
+    /// <summary>
     /// Returns the horizontal distance ratio of a root node's tip to the spread radius.
     /// 0 = at trunk, 1 = at target spread radius, >1 = beyond it.
     /// </summary>
@@ -1286,8 +1555,8 @@ public class TreeSkeleton : MonoBehaviour
             Vector3 areaLocal = rootAreaTransform.InverseTransformPoint(worldTip);
             float xRatio = Mathf.Abs(areaLocal.x) * 2f;
             float zRatio = Mathf.Abs(areaLocal.z) * 2f;
-            // Y floor: below bottom of box counts as outside (areaLocal.y < -0.5)
-            float yRatio = areaLocal.y < 0f ? Mathf.Abs(areaLocal.y) * 2f : 0f;
+            // Y: check both floor and ceiling — roots must stay inside the tray height
+            float yRatio = Mathf.Abs(areaLocal.y) * 2f;
             return Mathf.Max(xRatio, zRatio, yRatio);
         }
         // Legacy radial fallback
@@ -1321,8 +1590,9 @@ public class TreeSkeleton : MonoBehaviour
         if (areaLocal.x < -0.5f + margin) wallNormal -= rootAreaTransform.right    *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.x);
         if (areaLocal.z >  0.5f - margin) wallNormal += rootAreaTransform.forward  *  Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.z);
         if (areaLocal.z < -0.5f + margin) wallNormal -= rootAreaTransform.forward  *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.z);
-        // Y floor: roots approaching the bottom of the tray redirect horizontally
-        if (areaLocal.y < -0.5f + margin) wallNormal -= rootAreaTransform.up       *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.y);
+        // Y floor and ceiling: roots approaching either face redirect horizontally
+        if (areaLocal.y < -0.5f + margin) wallNormal -= rootAreaTransform.up * Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.y);
+        if (areaLocal.y >  0.5f - margin) wallNormal += rootAreaTransform.up * Mathf.InverseLerp( 0.5f - margin,  0.5f, areaLocal.y);
 
         if (wallNormal.sqrMagnitude > 0.001f)
         {
@@ -1347,6 +1617,15 @@ public class TreeSkeleton : MonoBehaviour
     Vector3 ContinuationDirection(TreeNode node)
     {
         Vector3 rand = Random.insideUnitSphere * randomWeight;
+
+        // Air-layer roots grow downward (gravitropism / anti-phototropism).
+        // Bypass normal root surface-snap logic — they hang freely from the trunk.
+        if (node.isAirLayerRoot)
+        {
+            Vector3 airInertia = (node.growDirection * inertiaWeight + rand).normalized;
+            return Vector3.Slerp(airInertia, Vector3.down, 0.7f).normalized;
+        }
+
         if (node.isRoot)
         {
             // Outward radial direction from trunk base, projected flat.
@@ -1479,11 +1758,82 @@ public class TreeSkeleton : MonoBehaviour
 
         RecalculateRadiiInternal(node);
 
+        // After the pipe model runs, override air-layer root radii so they track
+        // the trunk's growth and never get swallowed. Must run after the main pass
+        // so the pipe model doesn't immediately overwrite them.
+        if (isRootCall) ScaleAirLayerRootRadii();
+
         if (isRootCall)
         {
             radiiTimer.Stop();
             if (radiiTimer.ElapsedMilliseconds > 0)
                 Debug.Log($"[Perf] RecalculateRadii nodes={allNodes.Count} took {radiiTimer.ElapsedMilliseconds}ms");
+        }
+    }
+
+    /// <summary>
+    /// Keeps air-layer root radii proportional to their trunk parent as the tree thickens.
+    /// Walks each isAirLayerRoot node up the chain to find the first non-air-layer ancestor
+    /// (the trunk node), then sets radius = trunkRadius * multiplier * taper^depth.
+    /// </summary>
+    /// <summary>
+    /// Each frame: re-anchor every air-layer root base to its parent's current tip
+    /// so strands don't get swallowed as the trunk node grows longer.
+    /// Multiple passes handle chains: pass N propagates corrections N links deep.
+    /// </summary>
+    void UpdateAirLayerRootPositions()
+    {
+        if (allNodes == null) return;
+        for (int pass = 0; pass < airLayerRootSegments; pass++)
+        {
+            foreach (var node in allNodes)
+            {
+                if (!node.isAirLayerRoot || node.parent == null) continue;
+
+                if (node.parent.isAirLayerRoot)
+                {
+                    // Chain segment: just track parent tip directly.
+                    node.worldPosition = node.parent.tipPosition;
+                }
+                else
+                {
+                    // First segment: anchor to the cylindrical surface of the trunk node,
+                    // not its center, so the root visually emerges from the bark.
+                    // Derive the radial direction from the current XZ offset; fall back
+                    // to the node's grow direction on the first frame (when offset == 0).
+                    Vector3 offset    = node.worldPosition - node.parent.tipPosition;
+                    Vector3 radialDir = new Vector3(offset.x, 0f, offset.z);
+                    if (radialDir.sqrMagnitude < 0.0001f)
+                        radialDir = new Vector3(node.growDirection.x, 0f, node.growDirection.z);
+                    if (radialDir.sqrMagnitude < 0.0001f)
+                        radialDir = Vector3.right;
+                    node.worldPosition = node.parent.tipPosition + radialDir.normalized * node.parent.radius;
+                }
+            }
+        }
+    }
+
+    void ScaleAirLayerRootRadii()
+    {
+        foreach (var node in allNodes)
+        {
+            if (!node.isAirLayerRoot) continue;
+
+            // Walk up to find the trunk node and how deep in the strand this segment is.
+            int      chainDepth = 0;
+            TreeNode trunkNode  = node.parent;
+            while (trunkNode != null && trunkNode.isAirLayerRoot)
+            {
+                chainDepth++;
+                trunkNode = trunkNode.parent;
+            }
+            if (trunkNode == null) continue;
+
+            float r = Mathf.Max(
+                trunkNode.radius * airLayerRootRadiusMultiplier * Mathf.Pow(0.8f, chainDepth),
+                terminalRadius);
+            node.radius    = r;
+            node.minRadius = r;
         }
     }
 
@@ -1639,6 +1989,16 @@ public class TreeSkeleton : MonoBehaviour
         {
             Destroy(woundGo);
             woundObjects.Remove(node.id);
+        }
+
+        // Clean up any air layer wrap on this node.
+        for (int i = airLayers.Count - 1; i >= 0; i--)
+        {
+            if (airLayers[i].node == node)
+            {
+                if (airLayers[i].wrapObject != null) Destroy(airLayers[i].wrapObject);
+                airLayers.RemoveAt(i);
+            }
         }
 
         node.isTrimmed = true;

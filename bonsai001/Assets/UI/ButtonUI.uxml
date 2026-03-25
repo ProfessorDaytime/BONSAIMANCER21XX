@@ -3,7 +3,17 @@
     <ui:Button text="&#10;" display-tooltip-when-elided="true" name="WaterButton" style="height: 101px; width: 130px; top: -1px; background-image: url(&apos;project://database/Assets/Textures/watering_can.png?fileID=1903538586&amp;guid=70e9feeaae197ff4b9cdaefae05b11ae&amp;type=3#watering_can_0&apos;); cursor: initial;" />
     <ui:Button text="Wire" display-tooltip-when-elided="true" name="WireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Unwire" display-tooltip-when-elided="true" name="RemoveWireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
-    <ui:Button text="Paste" display-tooltip-when-elided="true" name="PasteButton" style="position: absolute; right: 0; top: 89px; height: 101px; width: 130px; cursor: initial;" />
-    <ui:Button text="Roots" display-tooltip-when-elided="true" name="RootPruneButton" style="position: absolute; right: 0; top: 200px; height: 101px; width: 130px; cursor: initial;" />
+    <ui:Button text="Paste" display-tooltip-when-elided="true" name="PasteButton" style="position: absolute; right: 0; top: 0; height: 101px; width: 130px; cursor: initial;" />
+    <ui:Button text="Roots" display-tooltip-when-elided="true" name="RootPruneButton" style="position: absolute; right: 0; top: 89px; height: 101px; width: 130px; cursor: initial;" />
+    <ui:Button text="Air Layer" display-tooltip-when-elided="true" name="AirLayerButton" style="position: absolute; right: 0; top: 178px; height: 101px; width: 130px; cursor: initial;" />
     <ui:Button text="Quick Winter" display-tooltip-when-elided="true" name="QuickWinterButton" style="position: absolute; right: 0; top: 311px; height: 101px; width: 130px; cursor: initial; background-color: rgb(64,64,64); color: rgb(200,200,200);" />
+    <ui:VisualElement name="SelectionBar" style="position: absolute; bottom: 20px; left: 0; right: 0; align-items: center; flex-direction: row; justify-content: center;">
+        <ui:Label text="Selection" name="SelectionLabel" style="color: rgb(200,200,200); font-size: 12px; margin-right: 10px; -unity-text-align: middle-left;" />
+        <ui:Slider name="SelectionRadiusSlider" low-value="0" high-value="0.5" value="0" style="width: 300px;" />
+    </ui:VisualElement>
+    <ui:VisualElement name="RootHealthPanel" style="position: absolute; left: 10px; bottom: 10px; width: 160px; padding: 10px; background-color: rgb(18,28,18); border-radius: 6px; display: none;">
+        <ui:Label text="ROOT HEALTH" name="RootHealthHeader" style="color: rgb(160,200,160); font-size: 11px; -unity-font-style: bold; margin-bottom: 2px;" />
+        <ui:Label text="—" name="RootHealthScoreLabel" style="color: rgb(255,255,255); font-size: 32px; -unity-font-style: bold; margin-bottom: 4px;" />
+        <ui:VisualElement name="RootHealthSectors" style="flex-direction: row; justify-content: space-between;" />
+    </ui:VisualElement>
 </ui:UXML>

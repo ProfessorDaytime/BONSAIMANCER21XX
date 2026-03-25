@@ -356,7 +356,7 @@ public class TreeMeshBuilder : MonoBehaviour
         bool hasRenderedChild = false;
         foreach (var child in node.children)
         {
-            if (child.isRoot && !renderRoots) continue;
+            if (child.isRoot && !child.isAirLayerRoot && !renderRoots) continue;
             // Skip zero-length children: they produce degenerate (zero-area) triangles
             // that corrupt RecalculateNormals at the shared tip ring, causing a one-frame
             // visual glitch where the parent tip looks wrong at the start of each season.

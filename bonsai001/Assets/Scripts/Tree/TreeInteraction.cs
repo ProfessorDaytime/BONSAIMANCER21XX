@@ -49,7 +49,7 @@ public class TreeInteraction : MonoBehaviour
 
     // ── Highlight state ───────────────────────────────────────────────────────
 
-    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste }
+    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste, AirLayer }
 
     TreeNode        highlightedNode;
     HighlightMode   highlightMode = HighlightMode.None;
@@ -60,6 +60,8 @@ public class TreeInteraction : MonoBehaviour
     static readonly Color ColRemoveWire = new Color(0.1f, 0.8f, 0.3f);   // green (single node)
     static readonly Color ColWireRun    = new Color(0.0f, 1.0f, 0.55f);  // bright green (full run)
     static readonly Color ColPaste      = new Color(0.2f, 0.8f, 0.9f);   // cyan (wound with paste)
+    static readonly Color ColAirLayer   = new Color(0.0f, 0.85f, 0.85f); // teal (air layer placement)
+    static readonly Color ColRootWork   = new Color(0.9f, 0.45f, 0.1f);  // orange (root work)
 
     // ── Wire aim / animation state ────────────────────────────────────────────
 
@@ -84,6 +86,10 @@ public class TreeInteraction : MonoBehaviour
 
     // Direction preview arrow
     LineRenderer aimPreview;
+
+    // ── Selection sphere ──────────────────────────────────────────────────────
+    GameObject selectionSphere;
+    Material   sphereMat;
 
     // ── Unity ─────────────────────────────────────────────────────────────────
 
@@ -118,7 +124,100 @@ public class TreeInteraction : MonoBehaviour
         aimPreview.material          = new Material(Shader.Find("Unlit/Color")) { color = new Color(1f, 0.5f, 0f) };
         aimPreview.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         aimPreview.enabled           = false;
+
+        // ── Selection sphere ──────────────────────────────────────────────────
+        selectionSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        selectionSphere.name = "_SelectionSphere";
+        var sCol = selectionSphere.GetComponent<Collider>();
+        if (sCol != null) Destroy(sCol);
+        sphereMat = new Material(Shader.Find("Standard"));
+        sphereMat.SetFloat("_Mode", 3f);
+        sphereMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        sphereMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        sphereMat.SetInt("_ZWrite", 0);
+        sphereMat.EnableKeyword("_ALPHABLEND_ON");
+        sphereMat.renderQueue = 3000;
+        selectionSphere.GetComponent<Renderer>().material = sphereMat;
+        selectionSphere.SetActive(false);
     }
+
+    // ── Selection sphere & node picking ───────────────────────────────────────
+
+    void UpdateSelectionSphere()
+    {
+        float radius = GameManager.selectionRadius;
+        Ray   ray    = cam.ScreenPointToRay(Input.mousePosition);
+
+        if (radius <= 0f)
+        {
+            selectionSphere.SetActive(false);
+            return;
+        }
+
+        // Position at raycast hit, or project to a fixed depth if ray hits nothing.
+        Vector3 spherePos = Physics.Raycast(ray, out RaycastHit hit)
+            ? hit.point
+            : ray.GetPoint(Vector3.Distance(cam.transform.position, transform.position));
+
+        selectionSphere.SetActive(true);
+        selectionSphere.transform.position   = spherePos;
+        selectionSphere.transform.localScale = Vector3.one * radius * 2f;
+
+        Color col  = ToolColor();
+        col.a      = 0.22f;
+        sphereMat.color = col;
+    }
+
+    Color ToolColor()
+    {
+        if (GameManager.canRootWork) return ColRootWork;
+        switch (ToolManager.Instance.ActiveTool)
+        {
+            case ToolType.SmallClippers:
+            case ToolType.BigClippers:
+            case ToolType.Saw:        return ColTrim;
+            case ToolType.Wire:       return ColWire;
+            case ToolType.RemoveWire: return ColRemoveWire;
+            case ToolType.Paste:      return ColPaste;
+            case ToolType.AirLayer:   return ColAirLayer;
+            default:                  return Color.white;
+        }
+    }
+
+    /// <summary>
+    /// Picks the most relevant node at the cursor.
+    /// When selectionRadius > 0 finds the nearest node within that world-space
+    /// distance from the camera ray — works even when the ray misses all colliders.
+    /// When radius is 0 falls back to exact triangle hit on the tree mesh.
+    /// </summary>
+    TreeNode PickNode(Ray ray, out RaycastHit hit)
+    {
+        Physics.Raycast(ray, out hit);   // attempt hit but don't require it
+        float r = GameManager.selectionRadius;
+        if (r > 0f) return NodeNearRay(ray, r);
+        if (!hit.collider || hit.collider.gameObject != gameObject) return null;
+        return meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
+    }
+
+    /// <summary>Returns the nearest node whose base or tip is within <paramref name="radius"/>
+    /// world units of the camera ray.</summary>
+    TreeNode NodeNearRay(Ray ray, float radius)
+    {
+        TreeNode best     = null;
+        float    bestDist = radius;
+        foreach (var node in skeleton.allNodes)
+        {
+            float d = Mathf.Min(
+                DistToRay(transform.TransformPoint(node.worldPosition), ray),
+                DistToRay(transform.TransformPoint(node.tipPosition),   ray));
+            if (d < bestDist) { bestDist = d; best = node; }
+        }
+        return best;
+    }
+
+    // Perpendicular distance from a world point to an infinite ray.
+    static float DistToRay(Vector3 point, Ray ray) =>
+        Vector3.Cross(ray.direction, point - ray.origin).magnitude;
 
     void Update()
     {
@@ -127,6 +226,8 @@ public class TreeInteraction : MonoBehaviour
             SetHighlight(null, HighlightMode.None);
             return;
         }
+
+        UpdateSelectionSphere();
 
         // Wire animation blocks all other interaction until complete
         if (wirePhase == WirePhase.Animating)
@@ -152,6 +253,8 @@ public class TreeInteraction : MonoBehaviour
             HandleTrimHover();
         else if (GameManager.canPaste)
             HandlePasteHover();
+        else if (GameManager.canAirLayer)
+            HandleAirLayerHover();
         else
             SetHighlight(null, HighlightMode.None);
     }
@@ -166,21 +269,17 @@ public class TreeInteraction : MonoBehaviour
     {
         Ray ray = cam.ScreenPointToRay(Input.mousePosition);
 
-        // Priority 1: trim an existing root by clicking it on the tree mesh.
-        if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
+        // Priority 1: trim an existing root.
+        TreeNode rootNode = PickNode(ray, out RaycastHit hit);
+        if (rootNode != null && rootNode.isRoot && rootNode != skeleton.root)
         {
-            TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
-            if (node != null && node.isRoot && node != skeleton.root)
+            SetHighlight(rootNode, HighlightMode.TrimSubtree);
+            if (Input.GetMouseButtonDown(0))
             {
-                SetHighlight(node, HighlightMode.TrimSubtree);
-
-                if (Input.GetMouseButtonDown(0))
-                {
-                    SetHighlight(null, HighlightMode.None);
-                    skeleton.TrimNode(node);
-                }
-                return;
+                SetHighlight(null, HighlightMode.None);
+                skeleton.TrimNode(rootNode);
             }
+            return;
         }
 
         // Priority 2: plant a new root by clicking the planting surface.
@@ -223,21 +322,17 @@ public class TreeInteraction : MonoBehaviour
 
     void HandleTrimHover()
     {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-        if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
+        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        TreeNode node = PickNode(ray, out _);
+        if (node != null && node != skeleton.root && !node.isRoot)
         {
-            TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
-            if (node != null && node != skeleton.root)
+            SetHighlight(node, HighlightMode.TrimSubtree);
+            if (Input.GetMouseButtonDown(0))
             {
-                SetHighlight(node, HighlightMode.TrimSubtree);
-
-                if (Input.GetMouseButtonDown(0))
-                {
-                    SetHighlight(null, HighlightMode.None);
-                    skeleton.TrimNode(node);
-                }
-                return;
+                SetHighlight(null, HighlightMode.None);
+                skeleton.TrimNode(node);
             }
+            return;
         }
         SetHighlight(null, HighlightMode.None);
     }
@@ -246,19 +341,14 @@ public class TreeInteraction : MonoBehaviour
 
     void HandleWireHover()
     {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-        if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
+        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        TreeNode node = PickNode(ray, out _);
+        if (node != null && node != skeleton.root && (!node.isRoot || node.isAirLayerRoot) && !node.hasWire)
         {
-            TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
-            if (node != null && node != skeleton.root && !node.hasWire)
-            {
-                SetHighlight(node, HighlightMode.SingleGold);
-
-                if (Input.GetMouseButtonDown(0))
-                    StartWireAim(node);
-
-                return;
-            }
+            SetHighlight(node, HighlightMode.SingleGold);
+            if (Input.GetMouseButtonDown(0))
+                StartWireAim(node);
+            return;
         }
         SetHighlight(null, HighlightMode.None);
     }
@@ -415,29 +505,26 @@ public class TreeInteraction : MonoBehaviour
 
     void HandleRemoveWireHover()
     {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-        if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
+        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        TreeNode node = PickNode(ray, out _);
+        if (node != null && node.hasWire)
         {
-            TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
-            if (node != null && node.hasWire)
+            var  run    = skeleton.CollectWireRun(node);
+            bool allSet = true;
+            foreach (var n in run)
+                if (n.wireSetProgress < 1f) { allSet = false; break; }
+
+            if (allSet && run.Count > 1)
+                SetHighlightRun(run);
+            else
+                SetHighlight(node, HighlightMode.SingleGreen);
+
+            if (Input.GetMouseButtonDown(0))
             {
-                var run    = skeleton.CollectWireRun(node);
-                bool allSet = true;
-                foreach (var n in run)
-                    if (n.wireSetProgress < 1f) { allSet = false; break; }
-
-                if (allSet && run.Count > 1)
-                    SetHighlightRun(run);
-                else
-                    SetHighlight(node, HighlightMode.SingleGreen);
-
-                if (Input.GetMouseButtonDown(0))
-                {
-                    skeleton.UnwireRun(node);
-                    SetHighlight(null, HighlightMode.None);
-                }
-                return;
+                skeleton.UnwireRun(node);
+                SetHighlight(null, HighlightMode.None);
             }
+            return;
         }
         SetHighlight(null, HighlightMode.None);
     }
@@ -446,23 +533,74 @@ public class TreeInteraction : MonoBehaviour
 
     void HandlePasteHover()
     {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-        if (Physics.Raycast(ray, out RaycastHit hit) && hit.collider.gameObject == gameObject)
+        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        TreeNode node = PickNode(ray, out _);
+        if (node != null && node.hasWound && !node.pasteApplied)
         {
-            TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
-            if (node != null && node.hasWound && !node.pasteApplied)
+            SetHighlight(node, HighlightMode.Paste);
+            if (Input.GetMouseButtonDown(0))
             {
-                SetHighlight(node, HighlightMode.Paste);
+                skeleton.ApplyPaste(node);
+                SetHighlight(null, HighlightMode.None);
+            }
+            return;
+        }
+        SetHighlight(null, HighlightMode.None);
+    }
 
-                if (Input.GetMouseButtonDown(0))
-                {
-                    skeleton.ApplyPaste(node);
-                    SetHighlight(null, HighlightMode.None);
-                }
+    // ── Air Layer ─────────────────────────────────────────────────────────────
+
+    void HandleAirLayerHover()
+    {
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        if (!Physics.Raycast(ray, out RaycastHit hit))
+        {
+            SetHighlight(null, HighlightMode.None);
+            return;
+        }
+
+        // Priority 1: hit a wrap cylinder directly — click to unwrap if ready.
+        foreach (var layer in skeleton.airLayers)
+        {
+            if (layer.wrapObject != null && hit.collider.gameObject == layer.wrapObject)
+            {
+                SetHighlight(null, HighlightMode.None);
+                if (layer.rootsSpawned && Input.GetMouseButtonDown(0))
+                    skeleton.UnwrapAirLayer(layer);
                 return;
             }
         }
-        SetHighlight(null, HighlightMode.None);
+
+        // Priority 2: hit the tree mesh — place a new air layer.
+        if (hit.collider.gameObject != gameObject)
+        {
+            SetHighlight(null, HighlightMode.None);
+            return;
+        }
+
+        TreeNode node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
+        if (node == null || node == skeleton.root || node.isRoot)
+        {
+            SetHighlight(null, HighlightMode.None);
+            return;
+        }
+
+        // Don't allow placing on a node that already has a layer.
+        foreach (var l in skeleton.airLayers)
+        {
+            if (l.node == node)
+            {
+                SetHighlight(null, HighlightMode.None);
+                return;
+            }
+        }
+
+        SetHighlight(node, HighlightMode.AirLayer);
+        if (Input.GetMouseButtonDown(0))
+        {
+            skeleton.PlaceAirLayer(node);
+            SetHighlight(null, HighlightMode.None);
+        }
     }
 
     // ── Highlight ─────────────────────────────────────────────────────────────
@@ -486,6 +624,7 @@ public class TreeInteraction : MonoBehaviour
             case HighlightMode.SingleGold:  highlightMat.color = ColWire;       break;
             case HighlightMode.SingleGreen: highlightMat.color = ColRemoveWire; break;
             case HighlightMode.Paste:       highlightMat.color = ColPaste;      break;
+            case HighlightMode.AirLayer:    highlightMat.color = ColAirLayer;   break;
         }
 
         RebuildHighlightMesh(node, singleNode: mode != HighlightMode.TrimSubtree);

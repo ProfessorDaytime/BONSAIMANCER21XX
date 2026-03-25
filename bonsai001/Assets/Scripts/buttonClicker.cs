@@ -5,6 +5,8 @@ using UnityEngine.UIElements;
 
 public class ButtonClicker : MonoBehaviour
 {
+    [SerializeField] TreeSkeleton skeleton;
+
     UIDocument buttonDocument;
     Button trimButton;
     Button waterButton;
@@ -13,6 +15,12 @@ public class ButtonClicker : MonoBehaviour
     Button rootPruneButton;
     Button quickWinterButton;
     Button pasteButton;
+    Button airLayerButton;
+    Slider selectionRadiusSlider;
+
+    VisualElement rootHealthPanel;
+    Label         rootHealthScoreLabel;
+    VisualElement rootHealthSectors;
 
     // Start is called before the first frame update
     void OnEnable(){
@@ -30,6 +38,30 @@ public class ButtonClicker : MonoBehaviour
         rootPruneButton  = buttonDocument.rootVisualElement.Q("RootPruneButton")  as Button;
         quickWinterButton = buttonDocument.rootVisualElement.Q("QuickWinterButton") as Button;
         pasteButton      = buttonDocument.rootVisualElement.Q("PasteButton")      as Button;
+        airLayerButton         = buttonDocument.rootVisualElement.Q("AirLayerButton")         as Button;
+        selectionRadiusSlider  = buttonDocument.rootVisualElement.Q("SelectionRadiusSlider") as Slider;
+
+        rootHealthPanel      = buttonDocument.rootVisualElement.Q("RootHealthPanel");
+        rootHealthScoreLabel = buttonDocument.rootVisualElement.Q("RootHealthScoreLabel") as Label;
+        rootHealthSectors    = buttonDocument.rootVisualElement.Q("RootHealthSectors");
+
+        // Build the 8 sector indicator squares
+        if (rootHealthSectors != null)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                var sq = new VisualElement();
+                sq.name = $"RootHealthSector{i}";
+                sq.style.width           = 14;
+                sq.style.height          = 14;
+                sq.style.borderTopLeftRadius     = 2;
+                sq.style.borderTopRightRadius    = 2;
+                sq.style.borderBottomLeftRadius  = 2;
+                sq.style.borderBottomRightRadius = 2;
+                sq.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.15f));
+                rootHealthSectors.Add(sq);
+            }
+        }
 
         if(trimButton != null)       Debug.Log("TRIM BUTTON");
         if(waterButton != null)      Debug.Log("WATER BUTTON");
@@ -44,6 +76,8 @@ public class ButtonClicker : MonoBehaviour
         rootPruneButton?.RegisterCallback<ClickEvent>(OnRootPruneButtonClick);
         quickWinterButton?.RegisterCallback<ClickEvent>(OnQuickWinterButtonClick);
         pasteButton?.RegisterCallback<ClickEvent>(OnPasteButtonClick);
+        airLayerButton?.RegisterCallback<ClickEvent>(OnAirLayerButtonClick);
+        selectionRadiusSlider?.RegisterValueChangedCallback(evt => GameManager.selectionRadius = evt.newValue);
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
@@ -82,6 +116,28 @@ public class ButtonClicker : MonoBehaviour
     public void OnRootPruneButtonClick(ClickEvent evt)
     {
         GameManager.Instance.ToggleRootPrune();
+        // Root health panel hidden until the air-layering system is built
+        // bool inRootMode = GameManager.Instance.state == GameState.RootPrune;
+        // if (rootHealthPanel != null)
+        //     rootHealthPanel.style.display = inRootMode ? DisplayStyle.Flex : DisplayStyle.None;
+        // if (inRootMode) UpdateRootHealthDisplay();
+    }
+
+    void UpdateRootHealthDisplay()
+    {
+        if (skeleton == null || rootHealthScoreLabel == null || rootHealthSectors == null) return;
+
+        int score = Mathf.RoundToInt(skeleton.RootHealthScore);
+        rootHealthScoreLabel.text = score.ToString();
+
+        float[] coverage = skeleton.RootHealthSectorCoverage;
+        for (int i = 0; i < 8 && i < rootHealthSectors.childCount; i++)
+        {
+            float t   = i < coverage.Length ? coverage[i] : 0f;
+            // Lerp dim grey → muted green based on sector coverage strength
+            var   col = Color.Lerp(new Color(0.15f, 0.15f, 0.15f), new Color(0.3f, 0.75f, 0.3f), t);
+            rootHealthSectors[i].style.backgroundColor = new StyleColor(col);
+        }
     }
 
     public void OnQuickWinterButtonClick(ClickEvent evt)
@@ -98,6 +154,11 @@ public class ButtonClicker : MonoBehaviour
     public void OnPasteButtonClick(ClickEvent evt)
     {
         ToolManager.Instance.SelectTool(ToolType.Paste);
+    }
+
+    public void OnAirLayerButtonClick(ClickEvent evt)
+    {
+        ToolManager.Instance.SelectTool(ToolType.AirLayer);
     }
 
 

@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-03-23
+Last updated: 2026-03-24
 
 ---
 
@@ -8,6 +8,74 @@ Last updated: 2026-03-23
 
 Work through these in order. Do not start the next item until the current one is
 shippable (playable without obvious breakage).
+
+Items 1–6 are complete. The queue below is the next phase.
+
+### 7. Nebari Development
+**Goal:** Surface root flare scoring and shaping. Encourage roots to hug the soil
+surface and radiate outward evenly — the defining aesthetic of a quality bonsai base.
+
+**Scope:** `TreeSkeleton.cs`, `TreeInteraction.cs`, UI
+- Nebari score: measures how evenly roots radiate from the trunk at soil level
+  (angular coverage + surface exposure vs. buried depth)
+- Visual feedback: score or quality indicator in UI
+- Root pruning already in place (RootPrune state); this layer adds scoring on top
+- Possible: root training tool to nudge surface roots into better positions
+- Depends on: Root System (done ✓), Root Area box (done ✓)
+
+---
+
+### 8. Ishitsuki (Root-over-Rock)
+**Goal:** Player places a rock near the trunk; roots detect it and route over/around
+it over multiple seasons, gripping the surface.
+
+**Scope:** New rock placement system, `TreeSkeleton.cs`, `TreeInteraction.cs`
+- Rock prop: player places/positions a rock GameObject near the trunk base
+- Roots detect nearby rock geometry and deflect to hug its surface
+- Over seasons, roots partially embed into rock crevices (visual only — offset mesh)
+- Depends on: Root System (done ✓), Root Area box (done ✓)
+
+---
+
+### 9. Watering System
+**Goal:** Water the tree to keep it healthy. Neglect causes drought stress that
+slows growth and eventually damages nodes. Creates a real maintenance loop.
+
+**Scope:** `GameManager.cs`, `TreeSkeleton.cs`, UI
+- Soil moisture level (float 0→1), drains over time at a species-configurable rate
+- Watering can tool/button fills moisture back to 1
+- Drought damage feeds into existing `NodeHealth` via `DamageType.Drought`
+- Moisture visible in UI (soil indicator or pot texture change — TBD)
+- Low moisture → `Drought` damage accumulates on all nodes each season
+- Very low moisture → dormancy (mirrors health < 0.25 behaviour already in place)
+- Depends on: Health System (done ✓)
+
+---
+
+### 10. Pinching Tool
+**Goal:** Light spring maintenance — remove the soft shoot tip between the first
+leaf pair before it hardens. Keeps internodes short without trauma.
+
+**Scope:** `ToolManager.cs`, `TreeInteraction.cs`, `TreeSkeleton.cs`
+- New `ToolType.Pinch`; highlights soft new-growth tips (current season only)
+- On click: removes tip node, triggers `backBudStimulated` on parent (same as trim)
+- No wound created (too small); tiny health cost vs. shears
+- Depends on: Bud System (done ✓)
+
+---
+
+### 11. Defoliation
+**Goal:** Remove leaves strategically to encourage finer ramification and
+back-budding. Risk/reward — safe in early summer on healthy trees only.
+
+**Scope:** `LeafManager.cs`, `TreeInteraction.cs`, new defoliation mode
+- Partial defoliation: remove one leaf per pair (~50% surface) — always safe
+- Full defoliation: remove all leaves — meaningful health cost, large back-bud boost
+- Timing enforced: only available in early summer (June); outside window = disabled tool
+- Smaller replacement leaves next season (scale parameter on `LeafManager`)
+- Depends on: Bud System (done ✓), Leaf system
+
+---
 
 ### 1. Tight-Angle Geometry  ✓ *done*
 **Goal:** Prevent vertex pinching where branches bend sharply.
@@ -137,7 +205,7 @@ and `CameraOrbit` (Option A — no new classes needed).
 
 ---
 
-### 5. Bud System
+### 5. Bud System  ✓ *done*
 **Goal:** Spring growth emerges from pre-formed buds set the previous late summer.
 Gives the simulation biological accuracy and enables back-budding, apical dominance
 tuning, and the pinching mechanic. Applies to all tree species.
@@ -181,7 +249,7 @@ backBudStimulated    bool     tip ancestry was trimmed; boosted lateral chance n
 
 ---
 
-### 6. Wound System
+### 6. Wound System  ✓ *done*
 **Goal:** Trimming branches leaves wounds that are a real health risk without care.
 Players manage wounds with cut paste. Wounds heal slowly over seasons, visually
 and mechanically. Thin tip cuts barely matter; removing a large branch unprotected
@@ -261,21 +329,9 @@ wound prefab
 - Japanese maple specifics (opposite bud pairs, bark evolution stages,
   red spring flush) added here once generic systems are solid
 
-### Nebari Development
-- Visible surface root flare (nebari) scoring and shaping tools
-- Encourage roots to hug the soil surface and radiate outward evenly
-- Player feedback: nebari score / quality rating visible in UI
-- Tied to spread radius system already in place
-
 ### Camera & Input
 - Full Unity Input System migration (currently legacy `Input.*`)
 - Wire animation skip key revisited as part of this
-
-### Ishitsuki (Root-over-Rock)
-- Depends on: rock/prop placement system (not yet built)
-- Player places a rock near the trunk; roots detect it and route around/over it
-- Roots grip crevices in the rock surface over multiple seasons
-- Visual: roots partially embed into rock geometry over time
 
 ### Multi-Tree Planting
 - Plant two trees in the same pot
@@ -304,3 +360,8 @@ wound prefab
 - Health system foundation: `health` on `TreeNode`, `DamageType` enum, `ApplyDamage`, health-gated growth (`TreeSkeleton`, `NodeHealth.cs`)
 - Wire colour progression: silver → gold pulse → orange → red (`WireRenderer`)
 - Root system: `isRoot` flag, gravity-biased growth, `PlantRoot`, `RootPrune` state, lift animation, soil-plane interaction, pitch relaxation (`TreeSkeleton`, `TreeMeshBuilder`, `TreeInteraction`, `CameraOrbit`)
+- Bud system: terminal buds set in August, bud GameObjects spawned/destroyed, back-budding on trim (up to 3 ancestors stimulated), `backBudActivationBoost`, old-wood bud chance, show/hide toggles for terminal and lateral bud prefabs (`TreeSkeleton`, `TreeNode`)
+- Wound system: half-torus wound visualization on trim, `woundRadius`/`woundFaceNormal`/`woundAge`, health drain per season, cut paste tool + Paste button UI, `pasteApplied` tints wound, subdivision-cut detection (smaller ring), wound cleanup on subtree removal (`TreeSkeleton`, `TreeNode`, `TreeInteraction`, `ToolManager`, `buttonClicker`, `ButtonUI.uxml`)
+- Growth stability: `maxBranchNodes` hard cap, `vigorFactor` scaling lateral/back-bud chances as tree fills up; fixed `InvalidOperationException` in back-budding loop (snapshot `allNodes` before iteration) that was silently aborting spring music (`TreeSkeleton`)
+- Root Area box containment: `rootAreaTransform` reference replaces radial spread; `RootDistRatio` checks XZ walls + Y floor + Y ceiling in Root Area local space; `DeflectFromRootAreaWalls` deflects all six faces (`TreeSkeleton`)
+- Pot-bound root system: `boundaryPressure` counter per root node, thickening over seasons, `boundaryGrowthScale` slows terminal growth near walls, `wallSegmentScale` shortens segments near walls for smoother curves, `potBoundInnerBoost` stimulates low-depth fill-in laterals, `potBoundMaxFillPerYear` budget independent of outer cap (capped at 1.5× `maxTotalRootNodes`) (`TreeSkeleton`, `TreeNode`)

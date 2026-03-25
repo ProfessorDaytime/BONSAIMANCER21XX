@@ -189,6 +189,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 57745b993d32cc44bab0257f7c5f8f71, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  skeleton: {fileID: 1486295570}
 --- !u!1 &295539243
 GameObject:
   m_ObjectHideFlags: 0
@@ -1867,6 +1868,7 @@ MonoBehaviour:
   depthSpeedDecay: 0.85
   branchSegmentLength: 1
   rootSegmentLength: 1
+  wallSegmentScale: 0.35
   segmentLengthDecay: 0.8
   rootSegmentLengthDecay: 0.95
   terminalRadius: 0.04
@@ -1906,6 +1908,10 @@ MonoBehaviour:
   targetTrunkRoots: 21
   trunkRootsPerYear: 2
   rootAreaTransform: {fileID: 986802796}
+  rootHealthMaxDepth: 3
+  rootHealthSurfaceDepth: 0.3
+  rootHealthTargetRadius: 0.04
+  rootHealthBalanceRadius: 1.5
   rootSpreadMultiplier: 2
   rootFillLateralChance: 0.884
   boundaryPressureThreshold: 3
@@ -1921,6 +1927,12 @@ MonoBehaviour:
   rootLiftHeight: 4
   rootLiftSpeed: 4
   rootSurfaceSnapDist: 0.8
+  airLayerWrapPrefab: {fileID: 0}
+  airLayerSeasonsToRoot: 1
+  airLayerRootCount: 8
+  airLayerRootSegments: 3
+  airLayerRootTargetLength: 0.33
+  airLayerRootRadiusMultiplier: 0.704
   seedHideLength: 0.25
   meshBuilder: {fileID: 0}
   plantingNormal: {x: 0, y: 1, z: 0}

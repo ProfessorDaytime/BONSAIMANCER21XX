@@ -24,6 +24,8 @@ public class GameManager : MonoBehaviour
     public static bool canRemoveWire = false;
     public static bool canPaste      = false;
     public static bool canRootWork   = false;
+    public static bool canAirLayer     = false;
+    public static float selectionRadius = 0f;
 
     // Saved state to restore when exiting RootPrune mode.
     static GameState preRootPruneState = GameState.Idle;
