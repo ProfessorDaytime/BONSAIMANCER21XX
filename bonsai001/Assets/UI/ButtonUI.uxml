@@ -4,8 +4,10 @@
     <ui:Button text="Wire" display-tooltip-when-elided="true" name="WireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Unwire" display-tooltip-when-elided="true" name="RemoveWireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Paste" display-tooltip-when-elided="true" name="PasteButton" style="position: absolute; right: 0; top: 0; height: 101px; width: 130px; cursor: initial;" />
+    <ui:Button text="Confirm" display-tooltip-when-elided="true" name="ConfirmOrientButton" style="position: absolute; right: 0; top: 0; height: 101px; width: 130px; cursor: initial; display: none;" />
     <ui:Button text="Roots" display-tooltip-when-elided="true" name="RootPruneButton" style="position: absolute; right: 0; top: 89px; height: 101px; width: 130px; cursor: initial;" />
     <ui:Button text="Air Layer" display-tooltip-when-elided="true" name="AirLayerButton" style="position: absolute; right: 0; top: 178px; height: 101px; width: 130px; cursor: initial;" />
+    <ui:Button text="Place Rock" display-tooltip-when-elided="true" name="PlaceRockButton" style="position: absolute; right: 0; top: 178px; height: 101px; width: 130px; cursor: initial; display: none;" />
     <ui:Button text="Quick Winter" display-tooltip-when-elided="true" name="QuickWinterButton" style="position: absolute; right: 0; top: 311px; height: 101px; width: 130px; cursor: initial; background-color: rgb(64,64,64); color: rgb(200,200,200);" />
     <ui:VisualElement name="SelectionBar" style="position: absolute; bottom: 20px; left: 0; right: 0; align-items: center; flex-direction: row; justify-content: center;">
         <ui:Label text="Selection" name="SelectionLabel" style="color: rgb(200,200,200); font-size: 12px; margin-right: 10px; -unity-text-align: middle-left;" />

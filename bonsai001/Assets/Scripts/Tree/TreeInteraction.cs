@@ -87,9 +87,26 @@ public class TreeInteraction : MonoBehaviour
     // Direction preview arrow
     LineRenderer aimPreview;
 
-    // ── Selection sphere ──────────────────────────────────────────────────────
-    GameObject selectionSphere;
-    Material   sphereMat;
+    // ── Selection cursor (screen-space GL circle) ─────────────────────────────
+    Material glCircleMat;
+    float    selCirclePixelRadius;
+    Color    selCircleColor;
+
+    // ── Selection diagnostics ─────────────────────────────────────────────────
+    struct FailedClick
+    {
+        public Vector3 camPos;
+        public Vector3 camFwd;
+        public Vector2 mouseScreen;
+        public float   selRadius;
+        public float   selPixelRadius;
+        public Ray     ray;
+        // Top candidates at click time (node id, DistToRay, isRoot)
+        public (int id, float dist, bool isRoot, Vector3 worldPos)[] nearest;
+    }
+    readonly System.Collections.Generic.List<FailedClick> failedClicks = new();
+    bool diagArmed; // true after 1+ failed clicks, waiting for F or a trim
+    readonly System.Collections.Generic.List<GameObject> diagMarkers = new();
 
     // ── Unity ─────────────────────────────────────────────────────────────────
 
@@ -125,47 +142,64 @@ public class TreeInteraction : MonoBehaviour
         aimPreview.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         aimPreview.enabled           = false;
 
-        // ── Selection sphere ──────────────────────────────────────────────────
-        selectionSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        selectionSphere.name = "_SelectionSphere";
-        var sCol = selectionSphere.GetComponent<Collider>();
-        if (sCol != null) Destroy(sCol);
-        sphereMat = new Material(Shader.Find("Standard"));
-        sphereMat.SetFloat("_Mode", 3f);
-        sphereMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        sphereMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-        sphereMat.SetInt("_ZWrite", 0);
-        sphereMat.EnableKeyword("_ALPHABLEND_ON");
-        sphereMat.renderQueue = 3000;
-        selectionSphere.GetComponent<Renderer>().material = sphereMat;
-        selectionSphere.SetActive(false);
+        // ── Selection cursor ──────────────────────────────────────────────────
+        // Drawn as a screen-space GL circle in OnRenderObject so its pixel
+        // size is always consistent regardless of camera distance or angle.
+        glCircleMat = new Material(Shader.Find("Hidden/Internal-Colored"));
+        glCircleMat.hideFlags = HideFlags.HideAndDontSave;
+        glCircleMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        glCircleMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        glCircleMat.SetInt("_Cull",   0);
+        glCircleMat.SetInt("_ZWrite", 0);
+        glCircleMat.SetInt("_ZTest",  (int)UnityEngine.Rendering.CompareFunction.Always);
     }
 
     // ── Selection sphere & node picking ───────────────────────────────────────
 
-    void UpdateSelectionSphere()
+    void UpdateSelectionCursor()
     {
-        float radius = GameManager.selectionRadius;
-        Ray   ray    = cam.ScreenPointToRay(Input.mousePosition);
+        float r = GameManager.selectionRadius;
+        if (r <= 0f) { selCirclePixelRadius = 0f; return; }
 
-        if (radius <= 0f)
+        // Use camera-to-tree distance as a fixed reference depth so the circle
+        // never changes size while hovering over geometry at varying depths.
+        // DistToRay is purely screen-space so any consistent depth reference works.
+        float depth = Vector3.Distance(cam.transform.position, transform.position);
+
+        // Convert world-unit radius to screen pixels at this depth.
+        // Same formula as perspective projection: pixelR = worldR * focalLength / depth
+        float halfFovRad  = cam.fieldOfView * 0.5f * Mathf.Deg2Rad;
+        float focalLength = cam.pixelHeight * 0.5f / Mathf.Tan(halfFovRad);
+        selCirclePixelRadius = r * focalLength / Mathf.Max(depth, 0.01f);
+
+        Color col = ToolColor();
+        col.a = 0.9f;
+        selCircleColor = col;
+    }
+
+    // Draws a screen-space circle at the cursor using GL after all geometry renders.
+    void OnRenderObject()
+    {
+        if (Camera.current != cam || selCirclePixelRadius <= 0f) return;
+
+        Vector2 mouse = Input.mousePosition;
+        glCircleMat.SetPass(0);
+        GL.PushMatrix();
+        GL.LoadPixelMatrix(0, cam.pixelWidth, 0, cam.pixelHeight);
+        GL.Begin(GL.LINES);
+        GL.Color(selCircleColor);
+        const int segs = 48;
+        for (int i = 0; i < segs; i++)
         {
-            selectionSphere.SetActive(false);
-            return;
+            float a1 = (float)i       / segs * Mathf.PI * 2f;
+            float a2 = (float)(i + 1) / segs * Mathf.PI * 2f;
+            GL.Vertex3(mouse.x + Mathf.Cos(a1) * selCirclePixelRadius,
+                       mouse.y + Mathf.Sin(a1) * selCirclePixelRadius, 0f);
+            GL.Vertex3(mouse.x + Mathf.Cos(a2) * selCirclePixelRadius,
+                       mouse.y + Mathf.Sin(a2) * selCirclePixelRadius, 0f);
         }
-
-        // Position at raycast hit, or project to a fixed depth if ray hits nothing.
-        Vector3 spherePos = Physics.Raycast(ray, out RaycastHit hit)
-            ? hit.point
-            : ray.GetPoint(Vector3.Distance(cam.transform.position, transform.position));
-
-        selectionSphere.SetActive(true);
-        selectionSphere.transform.position   = spherePos;
-        selectionSphere.transform.localScale = Vector3.one * radius * 2f;
-
-        Color col  = ToolColor();
-        col.a      = 0.22f;
-        sphereMat.color = col;
+        GL.End();
+        GL.PopMatrix();
     }
 
     Color ToolColor()
@@ -186,38 +220,54 @@ public class TreeInteraction : MonoBehaviour
 
     /// <summary>
     /// Picks the most relevant node at the cursor.
-    /// When selectionRadius > 0 finds the nearest node within that world-space
-    /// distance from the camera ray — works even when the ray misses all colliders.
-    /// When radius is 0 falls back to exact triangle hit on the tree mesh.
+    /// When selectionRadius > 0, uses perpendicular distance from each node to
+    /// the camera ray (depth-independent — equivalent to screen-space XY radius).
+    /// <paramref name="filter"/> limits which nodes are considered; pass null to accept all.
+    /// When radius is 0, falls back to exact triangle hit on the tree mesh.
     /// </summary>
-    TreeNode PickNode(Ray ray, out RaycastHit hit)
+    TreeNode PickNode(Ray ray, out RaycastHit hit, System.Func<TreeNode, bool> filter = null)
     {
-        Physics.Raycast(ray, out hit);   // attempt hit but don't require it
+        Physics.Raycast(ray, out hit);
         float r = GameManager.selectionRadius;
-        if (r > 0f) return NodeNearRay(ray, r);
+        if (r > 0f) return NodeNearRay(ray, r, filter);
         if (!hit.collider || hit.collider.gameObject != gameObject) return null;
-        return meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
+        var node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
+        return (node != null && (filter == null || filter(node))) ? node : null;
     }
 
-    /// <summary>Returns the nearest node whose base or tip is within <paramref name="radius"/>
-    /// world units of the camera ray.</summary>
-    TreeNode NodeNearRay(Ray ray, float radius)
+    /// <summary>Returns the nearest node within <paramref name="radius"/> world units
+    /// of the camera ray (perpendicular / screen-space distance), optionally filtered.</summary>
+    TreeNode NodeNearRay(Ray ray, float radius, System.Func<TreeNode, bool> filter = null)
     {
         TreeNode best     = null;
         float    bestDist = radius;
         foreach (var node in skeleton.allNodes)
         {
-            float d = Mathf.Min(
-                DistToRay(transform.TransformPoint(node.worldPosition), ray),
-                DistToRay(transform.TransformPoint(node.tipPosition),   ray));
+            if (filter != null && !filter(node)) continue;
+            float d = SegmentDistToRay(
+                transform.TransformPoint(node.worldPosition),
+                transform.TransformPoint(node.tipPosition),
+                ray);
             if (d < bestDist) { bestDist = d; best = node; }
         }
         return best;
     }
 
-    // Perpendicular distance from a world point to an infinite ray.
+    // Perpendicular (screen-space) distance from a world point to a ray.
     static float DistToRay(Vector3 point, Ray ray) =>
         Vector3.Cross(ray.direction, point - ray.origin).magnitude;
+
+    // Minimum perpendicular distance from any point on segment A→B to a ray.
+    // Uses the analytic closest-t on the segment rather than sampling endpoints only,
+    // so long or angled segments are selected even when the cursor is over their middle.
+    static float SegmentDistToRay(Vector3 a, Vector3 b, Ray ray)
+    {
+        Vector3 u  = Vector3.Cross(a - ray.origin, ray.direction);
+        Vector3 v  = Vector3.Cross(b - a,          ray.direction);
+        float   vv = Vector3.Dot(v, v);
+        float   t  = (vv < 1e-8f) ? 0f : Mathf.Clamp01(-Vector3.Dot(u, v) / vv);
+        return DistToRay(a + t * (b - a), ray);
+    }
 
     void Update()
     {
@@ -227,7 +277,7 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
 
-        UpdateSelectionSphere();
+        UpdateSelectionCursor();
 
         // Wire animation blocks all other interaction until complete
         if (wirePhase == WirePhase.Animating)
@@ -243,7 +293,10 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
 
-        if (GameManager.canRootWork)
+        var gstate = GameManager.Instance.state;
+        if (GameManager.canRootWork &&
+            gstate != GameState.RockPlace &&
+            gstate != GameState.TreeOrient)
             HandleRootWorkHover();
         else if (GameManager.canWire)
             HandleWireHover();
@@ -269,18 +322,37 @@ public class TreeInteraction : MonoBehaviour
     {
         Ray ray = cam.ScreenPointToRay(Input.mousePosition);
 
+        // Diagnostic: F key dumps recorded failed clicks.
+        if (Input.GetKeyDown(KeyCode.F) && diagArmed)
+            DumpSelectionDiagnostics();
+
         // Priority 1: trim an existing root.
-        TreeNode rootNode = PickNode(ray, out RaycastHit hit);
-        if (rootNode != null && rootNode.isRoot && rootNode != skeleton.root)
+        TreeNode rootNode = PickNode(ray, out RaycastHit hit, n => n.isRoot && n != skeleton.root);
+        if (rootNode != null)
         {
             SetHighlight(rootNode, HighlightMode.TrimSubtree);
             if (Input.GetMouseButtonDown(0))
             {
                 SetHighlight(null, HighlightMode.None);
+                // If there were queued failed clicks, log this as the intended target.
+                if (diagArmed)
+                {
+                    Vector3 wp = transform.TransformPoint(rootNode.worldPosition);
+                    Debug.LogWarning($"[SelDiag] INTENDED TARGET after {failedClicks.Count} missed click(s): " +
+                                     $"node={rootNode.id} isRoot={rootNode.isRoot} " +
+                                     $"worldPos={wp:F3} radius={rootNode.radius:F4}");
+                    failedClicks.Clear();
+                    diagArmed = false;
+                }
                 skeleton.TrimNode(rootNode);
             }
             return;
         }
+
+        // Record a failed click (clicked but no root found).
+        if (Input.GetMouseButtonDown(0))
+            RecordFailedClick(ray);
+
 
         // Priority 2: plant a new root by clicking the planting surface.
         Plane soilPlane = new Plane(skeleton.plantingNormal, skeleton.plantingSurfacePoint);
@@ -318,13 +390,107 @@ public class TreeInteraction : MonoBehaviour
         SetHighlight(null, HighlightMode.None);
     }
 
+    void RecordFailedClick(Ray ray)
+    {
+        // Collect the 8 nearest nodes (by DistToRay) regardless of filter,
+        // so we can see what was close but not selected.
+        var candidates = new System.Collections.Generic.List<(int id, float dist, bool isRoot, Vector3 worldPos)>();
+        foreach (var node in skeleton.allNodes)
+        {
+            float d = SegmentDistToRay(
+                transform.TransformPoint(node.worldPosition),
+                transform.TransformPoint(node.tipPosition),
+                ray);
+            candidates.Add((node.id, d, node.isRoot, transform.TransformPoint(node.worldPosition)));
+        }
+        candidates.Sort((a, b) => a.dist.CompareTo(b.dist));
+
+        var entry = new FailedClick
+        {
+            camPos        = cam.transform.position,
+            camFwd        = cam.transform.forward,
+            mouseScreen   = Input.mousePosition,
+            selRadius     = GameManager.selectionRadius,
+            selPixelRadius = selCirclePixelRadius,
+            ray           = ray,
+            nearest       = candidates.GetRange(0, Mathf.Min(8, candidates.Count)).ToArray()
+        };
+        failedClicks.Add(entry);
+        diagArmed = true;
+        Debug.Log($"[SelDiag] Failed click #{failedClicks.Count} recorded. " +
+                  $"selRadius={entry.selRadius:F3} pixelR={entry.selPixelRadius:F1} — " +
+                  $"nearest node: id={entry.nearest[0].id} dist={entry.nearest[0].dist:F4} isRoot={entry.nearest[0].isRoot}. " +
+                  $"Press F to dump full diagnostics.");
+    }
+
+    void DumpSelectionDiagnostics()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[SelDiag] ══ DUMP: {failedClicks.Count} failed click(s) ══");
+        for (int i = 0; i < failedClicks.Count; i++)
+        {
+            var fc = failedClicks[i];
+            sb.AppendLine($"  Click {i + 1}: mouse={fc.mouseScreen} selRadius={fc.selRadius:F3} " +
+                          $"pixelR={fc.selPixelRadius:F1}");
+            sb.AppendLine($"    cam pos={fc.camPos:F3}  fwd={fc.camFwd:F3}");
+            sb.AppendLine($"    ray origin={fc.ray.origin:F3}  dir={fc.ray.direction:F3}");
+            sb.AppendLine($"    Nearest nodes by DistToRay:");
+            foreach (var n in fc.nearest)
+                sb.AppendLine($"      node={n.id,4}  distToRay={n.dist:F4}  isRoot={n.isRoot}  pos={n.worldPos:F3}" +
+                              (n.dist <= fc.selRadius ? "  ← IN RADIUS" : "  ← OUTSIDE"));
+        }
+        sb.AppendLine("[SelDiag] ══ Markers placed at candidate nodes — trim the one you meant. ══");
+        Debug.LogWarning(sb.ToString());
+
+        SpawnDiagMarkers();
+        failedClicks.Clear();
+        diagArmed = false;
+    }
+
+    void SpawnDiagMarkers()
+    {
+        ClearDiagMarkers();
+
+        // Collect unique root-node world positions from all failed clicks (top 3 each).
+        var seen = new System.Collections.Generic.HashSet<int>();
+        foreach (var fc in failedClicks)
+        {
+            int shown = 0;
+            foreach (var n in fc.nearest)
+            {
+                if (!n.isRoot || seen.Contains(n.id)) continue;
+                seen.Add(n.id);
+
+                // Cyan sphere = in radius, orange = outside
+                bool inRadius = n.dist <= fc.selRadius;
+                var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                go.name = $"_DiagMarker_node{n.id}";
+                Destroy(go.GetComponent<Collider>());
+                go.transform.position   = n.worldPos;
+                go.transform.localScale = Vector3.one * 0.06f;
+                var mat = new Material(Shader.Find("Unlit/Color"))
+                    { color = inRadius ? new Color(0f, 1f, 1f) : new Color(1f, 0.5f, 0f) };
+                go.GetComponent<Renderer>().material = mat;
+                diagMarkers.Add(go);
+                if (++shown >= 3) break;
+            }
+        }
+    }
+
+    void ClearDiagMarkers()
+    {
+        foreach (var go in diagMarkers)
+            if (go != null) Destroy(go);
+        diagMarkers.Clear();
+    }
+
     // ── Trim ──────────────────────────────────────────────────────────────────
 
     void HandleTrimHover()
     {
         Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
-        TreeNode node = PickNode(ray, out _);
-        if (node != null && node != skeleton.root && !node.isRoot)
+        TreeNode node = PickNode(ray, out _, n => n != skeleton.root && !n.isRoot);
+        if (node != null)
         {
             SetHighlight(node, HighlightMode.TrimSubtree);
             if (Input.GetMouseButtonDown(0))
@@ -342,8 +508,8 @@ public class TreeInteraction : MonoBehaviour
     void HandleWireHover()
     {
         Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
-        TreeNode node = PickNode(ray, out _);
-        if (node != null && node != skeleton.root && (!node.isRoot || node.isAirLayerRoot) && !node.hasWire)
+        TreeNode node = PickNode(ray, out _, n => n != skeleton.root && (!n.isRoot || n.isAirLayerRoot) && !n.hasWire);
+        if (node != null)
         {
             SetHighlight(node, HighlightMode.SingleGold);
             if (Input.GetMouseButtonDown(0))
@@ -506,8 +672,9 @@ public class TreeInteraction : MonoBehaviour
     void HandleRemoveWireHover()
     {
         Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
-        TreeNode node = PickNode(ray, out _);
-        if (node != null && node.hasWire)
+        // Training wires (Ishitsuki) are locked until fully set — exclude them while silver
+        TreeNode node = PickNode(ray, out _, n => n.hasWire);
+        if (node != null)
         {
             var  run    = skeleton.CollectWireRun(node);
             bool allSet = true;
@@ -526,6 +693,24 @@ public class TreeInteraction : MonoBehaviour
             }
             return;
         }
+
+        // Check for Ishitsuki binding wire — locked until fully set (gold)
+        var ishWire = skeleton.GetComponentInChildren<IshitsukiWire>();
+        if (ishWire != null && ishWire.IsNearRay(ray, 0.15f))
+        {
+            if (ishWire.WireSetProgress >= 1f)
+            {
+                // Reuse SingleGreen highlight on the tree mesh as a visual cue
+                SetHighlight(skeleton.root, HighlightMode.SingleGreen);
+                if (Input.GetMouseButtonDown(0))
+                {
+                    Destroy(ishWire.gameObject);
+                    SetHighlight(null, HighlightMode.None);
+                }
+            }
+            return;
+        }
+
         SetHighlight(null, HighlightMode.None);
     }
 
@@ -534,8 +719,8 @@ public class TreeInteraction : MonoBehaviour
     void HandlePasteHover()
     {
         Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
-        TreeNode node = PickNode(ray, out _);
-        if (node != null && node.hasWound && !node.pasteApplied)
+        TreeNode node = PickNode(ray, out _, n => n.hasWound && !n.pasteApplied);
+        if (node != null)
         {
             SetHighlight(node, HighlightMode.Paste);
             if (Input.GetMouseButtonDown(0))

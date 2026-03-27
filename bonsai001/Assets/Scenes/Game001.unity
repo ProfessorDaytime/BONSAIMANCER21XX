@@ -1438,7 +1438,7 @@ PrefabInstance:
       addedObject: {fileID: 1644556599}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1644556598}
+      addedObject: {fileID: 1644556603}
   m_SourcePrefab: {fileID: 100100000, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
 --- !u!1 &1451882128
 GameObject:
@@ -1825,6 +1825,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ringSegments: 8
   renderRoots: 0
+  rootVisibilityDepth: -0.5
   thinRadius: 0.04
   thickRadius: 0.14
   newGrowthFadeDays: 200
@@ -1867,7 +1868,7 @@ MonoBehaviour:
   baseGrowSpeed: 0.07
   depthSpeedDecay: 0.85
   branchSegmentLength: 1
-  rootSegmentLength: 1
+  rootSegmentLength: 0.25
   wallSegmentScale: 0.35
   segmentLengthDecay: 0.8
   rootSegmentLengthDecay: 0.95
@@ -1927,12 +1928,14 @@ MonoBehaviour:
   rootLiftHeight: 4
   rootLiftSpeed: 4
   rootSurfaceSnapDist: 0.8
+  rockCollider: {fileID: 0}
+  rockInfluenceRadius: 0.4
   airLayerWrapPrefab: {fileID: 0}
   airLayerSeasonsToRoot: 1
   airLayerRootCount: 8
   airLayerRootSegments: 3
   airLayerRootTargetLength: 0.33
-  airLayerRootRadiusMultiplier: 0.704
+  airLayerRootRadiusMultiplier: 0.1
   seedHideLength: 0.25
   meshBuilder: {fileID: 0}
   plantingNormal: {x: 0, y: 1, z: 0}
@@ -2391,33 +2394,6 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
   m_PrefabInstance: {fileID: 1409144293}
   m_PrefabAsset: {fileID: 0}
---- !u!54 &1644556598
-Rigidbody:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1644556597}
-  serializedVersion: 4
-  m_Mass: 1
-  m_Drag: 0
-  m_AngularDrag: 0.05
-  m_CenterOfMass: {x: 0, y: 0, z: 0}
-  m_InertiaTensor: {x: 1, y: 1, z: 1}
-  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ImplicitCom: 1
-  m_ImplicitTensor: 1
-  m_UseGravity: 1
-  m_IsKinematic: 0
-  m_Interpolate: 0
-  m_Constraints: 0
-  m_CollisionDetection: 0
 --- !u!64 &1644556599
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -2440,6 +2416,22 @@ MeshCollider:
   m_Convex: 1
   m_CookingOptions: 30
   m_Mesh: {fileID: -328722998657791732, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
+--- !u!114 &1644556603
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1644556597}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 46adc6136a56a1348b04bbe5ec2fed08, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  treeTransform: {fileID: 1486295577}
+  rotateSensitivity: 0.4
+  rollSensitivity: 15
+  liftSensitivity: 0.15
 --- !u!1 &1876513874
 GameObject:
   m_ObjectHideFlags: 0

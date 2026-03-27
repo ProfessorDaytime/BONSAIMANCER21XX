@@ -46,10 +46,16 @@ public class TreeMeshBuilder : MonoBehaviour
     bool          isDirty;
 
     /// <summary>
-    /// When false (default), root nodes are excluded from the mesh.
-    /// Set to true by TreeSkeleton when entering RootPrune mode.
+    /// When false (default), only roots above rootVisibilityDepth are rendered.
+    /// Set to true by TreeSkeleton when entering RootPrune mode (shows all roots).
     /// </summary>
     [HideInInspector] public bool renderRoots = false;
+
+    [Header("Root Visibility")]
+    [Tooltip("Roots whose local-Y base position is at or above this value render in normal mode. " +
+             "Roots below this depth are hidden unless RootPrune mode is active. " +
+             "0 = soil surface; negative values reveal shallow underground roots.")]
+    [SerializeField] [Range(-0.5f, 0.5f)] public float rootVisibilityDepth = 0f;
 
     // New-growth tint settings
 
@@ -356,7 +362,9 @@ public class TreeMeshBuilder : MonoBehaviour
         bool hasRenderedChild = false;
         foreach (var child in node.children)
         {
-            if (child.isRoot && !child.isAirLayerRoot && !renderRoots) continue;
+            // Air layer roots always render.
+            // Normal roots: show in RootPrune mode, OR when their base is above the visibility threshold.
+            if (child.isRoot && !child.isAirLayerRoot && !renderRoots && child.worldPosition.y < rootVisibilityDepth) continue;
             // Skip zero-length children: they produce degenerate (zero-area) triangles
             // that corrupt RecalculateNormals at the shared tip ring, causing a one-frame
             // visual glitch where the parent tip looks wrong at the start of each season.

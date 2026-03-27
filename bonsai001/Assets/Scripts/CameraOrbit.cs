@@ -100,7 +100,15 @@ public class CameraOrbit : MonoBehaviour
         if (target == null) return;
 
         float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (scroll != 0f)
+        // Block zoom when rock is grabbed (scroll = Y lift) or when right-click is
+        // held in a rock mode (scroll = roll). Free zoom all other times.
+        bool inRockMode = GameManager.Instance != null &&
+                          (GameManager.Instance.state == GameState.RockPlace ||
+                           GameManager.Instance.state == GameState.TreeOrient);
+        bool blockScroll = RockPlacer.RockGrabbed ||
+                           RockPlacer.TreeGrabbed ||
+                           (inRockMode && Input.GetMouseButton(1));
+        if (scroll != 0f && !blockScroll)
         {
             radius = Mathf.Clamp(radius - scroll * zoomSpeed * radius, zoomMin, zoomMax);
             ApplyOrbit();
@@ -111,10 +119,12 @@ public class CameraOrbit : MonoBehaviour
         {
             bool blocked = false;
 
-            // Don't start a drag during wire operations — the click belongs to TreeInteraction.
+            // Don't start a drag during wire, rock-placement, or when tree is grabbed.
             if (GameManager.Instance != null &&
-                (GameManager.Instance.state == GameState.Wiring ||
-                 GameManager.Instance.state == GameState.WireAnimate))
+                (GameManager.Instance.state == GameState.Wiring     ||
+                 GameManager.Instance.state == GameState.WireAnimate ||
+                 GameManager.Instance.state == GameState.RockPlace  ||
+                 RockPlacer.TreeGrabbed))
             {
                 blocked = true;
             }

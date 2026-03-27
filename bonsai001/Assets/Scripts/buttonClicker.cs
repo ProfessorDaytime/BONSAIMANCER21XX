@@ -16,30 +16,33 @@ public class ButtonClicker : MonoBehaviour
     Button quickWinterButton;
     Button pasteButton;
     Button airLayerButton;
+    Button placeRockButton;
+    Button confirmOrientButton;
     Slider selectionRadiusSlider;
 
     VisualElement rootHealthPanel;
     Label         rootHealthScoreLabel;
     VisualElement rootHealthSectors;
 
-    // Start is called before the first frame update
-    void OnEnable(){
-
+    void OnEnable()
+    {
         buttonDocument = GetComponent<UIDocument>();
 
         if(buttonDocument == null){
             Debug.LogError("No button document found");
         }
 
-        trimButton       = buttonDocument.rootVisualElement.Q("TrimButton")       as Button;
-        waterButton      = buttonDocument.rootVisualElement.Q("WaterButton")      as Button;
-        wireButton       = buttonDocument.rootVisualElement.Q("WireButton")       as Button;
-        removeWireButton = buttonDocument.rootVisualElement.Q("RemoveWireButton") as Button;
-        rootPruneButton  = buttonDocument.rootVisualElement.Q("RootPruneButton")  as Button;
-        quickWinterButton = buttonDocument.rootVisualElement.Q("QuickWinterButton") as Button;
-        pasteButton      = buttonDocument.rootVisualElement.Q("PasteButton")      as Button;
-        airLayerButton         = buttonDocument.rootVisualElement.Q("AirLayerButton")         as Button;
-        selectionRadiusSlider  = buttonDocument.rootVisualElement.Q("SelectionRadiusSlider") as Slider;
+        trimButton         = buttonDocument.rootVisualElement.Q("TrimButton")         as Button;
+        waterButton        = buttonDocument.rootVisualElement.Q("WaterButton")        as Button;
+        wireButton         = buttonDocument.rootVisualElement.Q("WireButton")         as Button;
+        removeWireButton   = buttonDocument.rootVisualElement.Q("RemoveWireButton")   as Button;
+        rootPruneButton    = buttonDocument.rootVisualElement.Q("RootPruneButton")    as Button;
+        quickWinterButton  = buttonDocument.rootVisualElement.Q("QuickWinterButton")  as Button;
+        pasteButton        = buttonDocument.rootVisualElement.Q("PasteButton")        as Button;
+        airLayerButton     = buttonDocument.rootVisualElement.Q("AirLayerButton")     as Button;
+        placeRockButton    = buttonDocument.rootVisualElement.Q("PlaceRockButton")    as Button;
+        confirmOrientButton= buttonDocument.rootVisualElement.Q("ConfirmOrientButton")as Button;
+        selectionRadiusSlider = buttonDocument.rootVisualElement.Q("SelectionRadiusSlider") as Slider;
 
         rootHealthPanel      = buttonDocument.rootVisualElement.Q("RootHealthPanel");
         rootHealthScoreLabel = buttonDocument.rootVisualElement.Q("RootHealthScoreLabel") as Label;
@@ -77,8 +80,38 @@ public class ButtonClicker : MonoBehaviour
         quickWinterButton?.RegisterCallback<ClickEvent>(OnQuickWinterButtonClick);
         pasteButton?.RegisterCallback<ClickEvent>(OnPasteButtonClick);
         airLayerButton?.RegisterCallback<ClickEvent>(OnAirLayerButtonClick);
+        placeRockButton?.RegisterCallback<ClickEvent>(OnPlaceRockButtonClick);
+        confirmOrientButton?.RegisterCallback<ClickEvent>(OnConfirmOrientButtonClick);
         selectionRadiusSlider?.RegisterValueChangedCallback(evt => GameManager.selectionRadius = evt.newValue);
+
+        GameManager.OnGameStateChanged += OnGameStateChanged;
     }
+
+    void OnDisable()
+    {
+        GameManager.OnGameStateChanged -= OnGameStateChanged;
+    }
+
+    // ── Button swap logic ────────────────────────────────────────────────────
+
+    void OnGameStateChanged(GameState state)
+    {
+        bool inRootLift   = GameManager.IsRootLiftActive(state);
+        bool inRockPlace  = state == GameState.RockPlace;
+        bool inTreeOrient = state == GameState.TreeOrient;
+        bool inRootPrune  = state == GameState.RootPrune;
+
+        // Air Layer slot → Place Rock while in any root-lift state
+        if (airLayerButton   != null) airLayerButton.style.display   = inRootLift ? DisplayStyle.None : DisplayStyle.Flex;
+        if (placeRockButton  != null) placeRockButton.style.display  = inRootPrune ? DisplayStyle.Flex : DisplayStyle.None;
+
+        // Paste slot → Confirm Orientation while placing rock or orienting tree
+        bool showConfirm = inRockPlace || inTreeOrient;
+        if (pasteButton        != null) pasteButton.style.display        = showConfirm ? DisplayStyle.None : DisplayStyle.Flex;
+        if (confirmOrientButton!= null) confirmOrientButton.style.display= showConfirm ? DisplayStyle.Flex : DisplayStyle.None;
+    }
+
+    // ── Handlers ─────────────────────────────────────────────────────────────
 
     public void OnTreeButtonClick(ClickEvent evt){
         ToolManager.Instance.SelectTool(ToolType.SmallClippers);
@@ -96,12 +129,9 @@ public class ButtonClicker : MonoBehaviour
                 GameManager.Instance.UpdateGameState(GameState.BranchGrow);
                 GameManager.waterings++;
                 Debug.Log("The tree has been watered");
-                // AudioManager.Instance.PlaySFX("Water");
             }
         }
-        
-        
-     }
+    }
 
     public void OnWireButtonClick(ClickEvent evt)
     {
@@ -116,11 +146,6 @@ public class ButtonClicker : MonoBehaviour
     public void OnRootPruneButtonClick(ClickEvent evt)
     {
         GameManager.Instance.ToggleRootPrune();
-        // Root health panel hidden until the air-layering system is built
-        // bool inRootMode = GameManager.Instance.state == GameState.RootPrune;
-        // if (rootHealthPanel != null)
-        //     rootHealthPanel.style.display = inRootMode ? DisplayStyle.Flex : DisplayStyle.None;
-        // if (inRootMode) UpdateRootHealthDisplay();
     }
 
     void UpdateRootHealthDisplay()
@@ -134,7 +159,6 @@ public class ButtonClicker : MonoBehaviour
         for (int i = 0; i < 8 && i < rootHealthSectors.childCount; i++)
         {
             float t   = i < coverage.Length ? coverage[i] : 0f;
-            // Lerp dim grey → muted green based on sector coverage strength
             var   col = Color.Lerp(new Color(0.15f, 0.15f, 0.15f), new Color(0.3f, 0.75f, 0.3f), t);
             rootHealthSectors[i].style.backgroundColor = new StyleColor(col);
         }
@@ -161,5 +185,13 @@ public class ButtonClicker : MonoBehaviour
         ToolManager.Instance.SelectTool(ToolType.AirLayer);
     }
 
+    public void OnPlaceRockButtonClick(ClickEvent evt)
+    {
+        GameManager.Instance.UpdateGameState(GameState.RockPlace);
+    }
 
+    public void OnConfirmOrientButtonClick(ClickEvent evt)
+    {
+        GameManager.Instance.ConfirmRockOrient();
+    }
 }

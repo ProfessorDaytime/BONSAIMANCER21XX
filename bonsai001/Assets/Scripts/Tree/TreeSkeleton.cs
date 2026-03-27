@@ -259,6 +259,13 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Distance from the planting surface at which roots begin to hug the surface.")]
     [SerializeField] float rootSurfaceSnapDist = 0.8f;
 
+    [Header("Ishitsuki Rock")]
+    [Tooltip("Convex MeshCollider of the placed rock. Set at runtime by RockPlacer on orientation confirm.")]
+    public Collider rockCollider;
+
+    [Tooltip("World-unit radius around the rock surface within which roots deflect to follow it.")]
+    [SerializeField] float rockInfluenceRadius = 0.4f;
+
     [Header("Air Layering")]
     [Tooltip("Prefab spawned at the air layer site to represent the coconut coir wrap. Optional — system works without it.")]
     [SerializeField] GameObject airLayerWrapPrefab;
@@ -584,15 +591,17 @@ public class TreeSkeleton : MonoBehaviour
             meshBuilder.SetDirty();
         }
 
-        bool inRootMode = (state == GameState.RootPrune);
+        // TreeOrient lowers the tree so you orient at working height, not suspended in the air.
+        // RootPrune and RockPlace still lift. Everything else grounds the tree.
+        bool inRootMode = state == GameState.RootPrune || state == GameState.RockPlace;
         liftTarget = inRootMode ? rootLiftHeight : 0f;
-        if (meshBuilder.renderRoots != inRootMode)
+        if (meshBuilder.renderRoots != GameManager.IsRootLiftActive(state))
         {
             meshBuilder.renderRoots = inRootMode;
             meshBuilder.SetDirty();
         }
 
-        if (inRootMode)
+        if (state == GameState.RootPrune)
         {
             int rootCount = 0;
             foreach (var n in allNodes) if (n.isRoot) rootCount++;
@@ -1642,10 +1651,52 @@ public class TreeSkeleton : MonoBehaviour
                           + Vector3.down      * rootGravityWeight
                           + rand).normalized;
 
-            // When near the planting surface, blend toward a surface-tangent direction
-            // so roots flow along the rock face instead of going through it.
-            Plane surface = new Plane(plantingNormal, plantingSurfacePoint);
             Vector3 worldTip = transform.TransformPoint(node.tipPosition);
+            bool nearRock = false;
+
+            // ── Rock surface deflection (Ishitsuki) ───────────────────────────
+            if (rockCollider != null)
+            {
+                Vector3 closestPt = Physics.ClosestPoint(worldTip, rockCollider,
+                    rockCollider.transform.position, rockCollider.transform.rotation);
+                float distToRock = Vector3.Distance(worldTip, closestPt);
+
+                if (distToRock < rockInfluenceRadius)
+                {
+                    nearRock = true;
+
+                    // Get surface normal via raycast from outside inward (world space).
+                    Vector3 rockCenter = rockCollider.bounds.center;
+                    Vector3 outward    = closestPt - rockCenter;
+                    if (outward.sqrMagnitude < 0.001f) outward = Vector3.up;
+                    outward.Normalize();
+
+                    Vector3 surfaceNormal = outward;
+                    Ray normalRay = new Ray(closestPt + outward * 0.5f, -outward);
+                    if (rockCollider.Raycast(normalRay, out RaycastHit normalHit, 1f))
+                        surfaceNormal = normalHit.normal;
+
+                    // dir is in local space — convert to world for the projection.
+                    Vector3 worldDir = transform.TransformDirection(dir);
+
+                    Vector3 surfaceDir = Vector3.ProjectOnPlane(worldDir, surfaceNormal);
+                    if (surfaceDir.sqrMagnitude < 0.001f)
+                        surfaceDir = Vector3.ProjectOnPlane(Vector3.down, surfaceNormal);
+                    surfaceDir = (surfaceDir.normalized + Vector3.down * rootGravityWeight * 3f).normalized;
+
+                    float blend = 1f - Mathf.Clamp01(distToRock / rockInfluenceRadius);
+                    Vector3 worldBlended = Vector3.Slerp(worldDir, surfaceDir, blend).normalized;
+
+                    // Convert back to local space.
+                    dir = transform.InverseTransformDirection(worldBlended);
+
+                    Debug.Log($"[Rock] Deflect node={node.id} dist={distToRock:F3} blend={blend:F2} surfaceNormal={surfaceNormal}");
+                }
+            }
+
+            // When near the planting surface, blend toward a surface-tangent direction
+            // so roots flow along the soil face instead of going through it.
+            Plane surface = new Plane(plantingNormal, plantingSurfacePoint);
             float distToSurface = surface.GetDistanceToPoint(worldTip);
 
             if (distToSurface >= 0f && distToSurface < rootSurfaceSnapDist)
@@ -1655,16 +1706,16 @@ public class TreeSkeleton : MonoBehaviour
                 {
                     float blend = 1f - Mathf.Clamp01(distToSurface / rootSurfaceSnapDist);
                     dir = Vector3.Slerp(dir, surfaceDir.normalized, blend).normalized;
-                    Debug.Log($"[Root] Surface snap node={node.id} depth={node.depth} | dist={distToSurface:F2} blend={blend:F2} | dir={dir}");
                 }
             }
 
-            // Clamp: roots must never grow upward — project to horizontal if Y > 0
-            if (dir.y > 0f)
+            // Clamp: roots must never grow upward — EXCEPT when near the rock,
+            // where they may need to crest an edge to get over the side.
+            if (!nearRock && dir.y > 0f)
             {
                 dir = Vector3.ProjectOnPlane(dir, Vector3.up);
                 if (dir.sqrMagnitude < 0.001f)
-                    dir = radial;  // fall back to radial outward if fully vertical
+                    dir = radial;
                 dir.Normalize();
             }
 
@@ -2007,6 +2058,31 @@ public class TreeSkeleton : MonoBehaviour
     }
 
     // Wiring
+
+    /// <summary>
+    /// Auto-wires all unrimmed root nodes when the player confirms Ishitsuki orientation.
+    /// Wires hold the current root direction (no bending); locked from removal until set.
+    /// </summary>
+    void SpawnTrainingWires()
+    {
+        // Lock in current world Y as the new rest position so the lift system
+        // considers the tree already grounded here — no lowering animation.
+        // currentLift = 0 means "at initY", so set initY to current Y and reset lift.
+        initY       = transform.position.y;
+        currentLift = 0f;
+        // liftTarget will be set to 0 by OnGameStateChanged when the restore state fires.
+
+        int count = 0;
+        foreach (var node in allNodes)
+        {
+            if (!node.isRoot || node.isTrimmed || node.hasWire) continue;
+            WireNode(node, node.growDirection);
+            node.isTrainingWire = true;
+            count++;
+        }
+        meshBuilder.SetDirty();
+        Debug.Log($"[Ishitsuki] SpawnTrainingWires — wired {count} root nodes, new initY={initY:F3}");
+    }
 
     /// <summary>
     /// Attaches a wire to a node.

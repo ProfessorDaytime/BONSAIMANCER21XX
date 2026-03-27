@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 ---
 
@@ -26,14 +26,94 @@ surface and radiate outward evenly — the defining aesthetic of a quality bonsa
 ---
 
 ### 8. Ishitsuki (Root-over-Rock)
-**Goal:** Player places a rock near the trunk; roots detect it and route over/around
-it over multiple seasons, gripping the surface.
+**Goal:** Player positions a rock, trims roots to a few keepers, orients the tree
+on the rock, then seasons of growth grip the roots to the surface.
 
-**Scope:** New rock placement system, `TreeSkeleton.cs`, `TreeInteraction.cs`
-- Rock prop: player places/positions a rock GameObject near the trunk base
-- Roots detect nearby rock geometry and deflect to hug its surface
-- Over seasons, roots partially embed into rock crevices (visual only — offset mesh)
-- Depends on: Root System (done ✓), Root Area box (done ✓)
+**Depends on:** Root System ✓, Root Area box ✓
+
+---
+
+#### Gameplay Flow
+
+1. **Enter RootPrune mode** — tree lifts, roots revealed (existing)
+2. **Trim roots** — prune down to a few strong candidates (existing)
+3. **Place Rock** — new button replaces Air Layer in RootPrune mode
+   - Enters `GameState.RockPlace`
+   - Rock in scene becomes grabbable; camera orbit still active
+   - **Input (rock grabbed):**
+     - Mouse move → rock tracks cursor projected onto horizontal plane at rock's current Y
+     - Scroll wheel (no right-click) → raise/lower rock (allows burial in soil)
+     - Right drag → rotate rock on yaw + pitch
+     - Right drag + scroll → rotate rock on roll axis
+     - Left click rock → grab; left click again → confirm placement
+4. **Orient Tree** — auto-enters `GameState.TreeOrient` after rock confirmed
+   - Player rotates/tilts the entire tree transform to sit on the rock however they want
+   - **Input:**
+     - Right drag → rotate tree on 2 axes
+     - Right drag + scroll → rotate on 3rd axis (roll)
+     - Left drag → camera orbit (unchanged)
+   - "Confirm Orientation" button (replaces Paste button in RootPrune mode) → lock in
+5. **Exit RootPrune** — tree lowers onto rock in chosen orientation
+6. **Training wires appear** — auto-generated, animated in (same timing feel as branch wires)
+   - Wires hold roots against rock surface
+   - Follow same colour lifecycle: silver → gold (set) → orange → red (damage)
+   - **Cannot be removed until gold** (set progress >= 1.0, ~2 growing seasons)
+   - Removed with the existing RemoveWire tool once eligible
+
+---
+
+#### Rock Detection
+
+- Rock has a **Convex MeshCollider** (set in inspector)
+- During root growth steps: `Physics.ClosestPoint(tipWorldPos, rockCollider, ...)` per root node
+- One call per root node per growth step — negligible cost on low-poly rock
+- Surface normal approximated as `(tipPos - closestPoint).normalized`
+- If within influence radius, root deflects to follow rock surface downward
+
+#### Root Growth Over Rock
+
+- `ContinuationDirection` for root nodes checks distance to rock surface
+- Within influence radius: blend growth direction toward rock surface tangent, biased downward
+- Roots follow the rock face to its base, then continue into soil (gravity + water seeking)
+- Roots may spread slightly radially but always trend downward for underground water
+
+#### Visual Gripping (Mesh)
+
+- `TreeMeshBuilder`: root nodes within a small distance of rock surface get ring verts
+  nudged toward the surface
+- Young thin roots barely touch; old thick roots appear to press into / embed in surface
+- Embedding depth scales with root radius and seasons elapsed near rock
+- Visual only — no physics change
+
+#### UI Button Swaps (in RootPrune / RockPlace / TreeOrient modes)
+
+| Normal mode | RootPrune / Rock modes |
+|---|---|
+| Air Layer button | → **Place Rock** button |
+| Paste button | → **Confirm Orientation** button (works for both rock confirm and tree orient confirm) |
+
+Buttons revert when exiting RootPrune.
+
+#### New GameStates
+
+```
+RockPlace    // rock grabbed and being positioned; camera orbit still active
+TreeOrient   // tree transform being rotated onto rock; camera orbit still active
+```
+
+#### Implementation Order
+
+1. Add `RockPlace` and `TreeOrient` to `GameState` enum (`GameManager.cs`)
+2. Rock placement input + 3D drag (`TreeInteraction.cs` or new `RockPlacer.cs`)
+3. Tree orient input — rotate tree transform via right-drag/scroll (`TreeInteraction.cs`)
+4. UI button swaps (`ButtonClicker.cs`, `ButtonUI.uxml`)
+5. Training wire auto-generation on orientation confirm (`TreeSkeleton.cs`)
+6. Root deflection during growth (`TreeSkeleton.ContinuationDirection`)
+7. Mesh gripping visual (`TreeMeshBuilder.cs`)
+
+#### Known Related Issue
+Some roots appear outside the Root Area Box — worth investigating after core Ishitsuki
+is working, as the deflection system touches the same growth code.
 
 ---
 

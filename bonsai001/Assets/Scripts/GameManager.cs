@@ -263,8 +263,10 @@ public class GameManager : MonoBehaviour
 
         state = newState;
 
-        // RootPrune is the only state that allows root interaction.
-        canRootWork = (newState == GameState.RootPrune);
+        // Root interaction is active in RootPrune and its sub-states.
+        canRootWork = (newState == GameState.RootPrune  ||
+                       newState == GameState.RockPlace  ||
+                       newState == GameState.TreeOrient);
 
         Debug.Log("GAME STATE: " + newState);
 
@@ -299,6 +301,10 @@ public class GameManager : MonoBehaviour
             case GameState.RootPrune:
                 HandleRootPruneState();
                 break;
+            case GameState.RockPlace:
+                break;
+            case GameState.TreeOrient:
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
         }
@@ -326,9 +332,45 @@ public class GameManager : MonoBehaviour
         s == GameState.BranchGrow || s == GameState.LeafGrow ||
         s == GameState.LeafFall   || s == GameState.TimeGo;
 
+    /// <summary>True while the player is in any root-work sub-state (lift is active).</summary>
+    public static bool IsRootLiftActive(GameState s) =>
+        s == GameState.RootPrune ||
+        s == GameState.RockPlace ||
+        s == GameState.TreeOrient;
+
+    /// <summary>
+    /// Called by Confirm Orientation button.
+    /// If placing rock → move to tree orient step.
+    /// If orienting tree → lock in position (no lowering animation) and exit root mode entirely.
+    /// </summary>
+    public void ConfirmRockOrient()
+    {
+        if (state == GameState.RockPlace)
+        {
+            UpdateGameState(GameState.TreeOrient);
+        }
+        else if (state == GameState.TreeOrient)
+        {
+            // Fire BEFORE the state change so TreeSkeleton can lock in the new Y
+            // before OnGameStateChanged resets liftTarget to 0.
+            OnRockOrientConfirmed?.Invoke();
+
+            // Exit root mode directly — skip the RootPrune detour so the tree
+            // doesn't lower back to the original ground position.
+            GameState restore = IsTimeTickingState(preRootPruneState)
+                ? preRootPruneState
+                : GameState.LeafFall;
+            Debug.Log($"[Rock] ConfirmRockOrient — restoring to {restore} (skipping lower anim)");
+            UpdateGameState(restore);
+        }
+    }
+
+    /// <summary>Fired when the player finalises tree orientation on the rock.</summary>
+    public static event System.Action OnRockOrientConfirmed;
+
     public void ToggleRootPrune()
     {
-        if (state == GameState.RootPrune)
+        if (IsRootLiftActive(state))
         {
             // Exit: restore the state that was active before we entered root mode.
             // If preRootPruneState isn't a time-ticking state, fall back to LeafFall
@@ -370,4 +412,6 @@ public enum GameState {
     Wiring,
     WireAnimate,  // time frozen; spring-bend animation playing
     RootPrune,    // tree lifted, root mesh visible, root trim/placement active
+    RockPlace,    // rock grabbed and being positioned in 3D space
+    TreeOrient,   // tree transform being rotated onto the placed rock
 }
