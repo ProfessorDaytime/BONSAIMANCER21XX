@@ -51,6 +51,12 @@ public class TreeMeshBuilder : MonoBehaviour
     /// </summary>
     [HideInInspector] public bool renderRoots = false;
 
+    /// <summary>Rock collider for Ishitsuki mesh gripping. Set by RockPlacer on confirm.</summary>
+    [HideInInspector] public Collider rockCollider;
+
+    // Set each ProcessNode call — tells AddRing whether to grip the rock surface.
+    bool gripCurrentNode;
+
     [Header("Root Visibility")]
     [Tooltip("Roots whose local-Y base position is at or above this value render in normal mode. " +
              "Roots below this depth are hidden unless RootPrune mode is active. " +
@@ -159,6 +165,12 @@ public class TreeMeshBuilder : MonoBehaviour
         // -1 signals "generate a base ring for me" (only the root node needs this).
         ProcessNode(skeleton.root, -1, 0f, Vector3.zero, Vector3.zero);
 
+        // Underground stub: reuses the trunk base ring (indices 0..ringSegments) as the
+        // top of a short downward cylinder, sealed with a flat bottom cap.
+        // Skipped for Ishitsuki (tree is on a rock, not planted underground).
+        if (rockCollider == null)
+            AddUndergroundCap(skeleton.root);
+
         mesh.Clear();
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
@@ -247,11 +259,15 @@ public class TreeMeshBuilder : MonoBehaviour
             frameRight = frameRight.normalized;
         }
 
+        // Flag AddRing to push verts onto rock surface for Ishitsuki gripping.
+        // Applies to all nodes — the 0.12 m distance guard in AddRing keeps it safe.
+        gripCurrentNode = rockCollider != null;
+
         // Compute vertex colors for this segment.
         // Still-growing segments are tinted deep blue for debugging.
         // Thin branches get a green new-growth tint; thick branches are bark-colored.
-        Color baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age);
-        Color tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age);
+        Color baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age, node.isRoot);
+        Color tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age, node.isRoot);
 
         // Base ring
 
@@ -424,32 +440,99 @@ public class TreeMeshBuilder : MonoBehaviour
             float cos   = Mathf.Cos(angle);
             float sin   = Mathf.Sin(angle);
 
-            Vector3 offset = (axisRight * cos + axisFwd * sin) * radius;
-            vertices.Add(center + offset);
+            Vector3 localPos = center + (axisRight * cos + axisFwd * sin) * radius;
 
-            // U = angle around circumference (0..1)
-            // V = cumulative height from root * bark tile scale
+            // Ishitsuki mesh gripping: push root ring verts to the rock surface
+            // so the mesh hugs the rock rather than clipping through it.
+            if (gripCurrentNode && rockCollider != null)
+            {
+                Vector3 worldPos  = transform.TransformPoint(localPos);
+                Vector3 closestPt = Physics.ClosestPoint(worldPos, rockCollider,
+                    rockCollider.transform.position, rockCollider.transform.rotation);
+                if (Vector3.Distance(worldPos, closestPt) < 0.12f)
+                {
+                    Vector3 outward = closestPt - rockCollider.bounds.center;
+                    if (outward.sqrMagnitude < 0.001f) outward = Vector3.up;
+                    localPos = transform.InverseTransformPoint(closestPt + outward.normalized * 0.008f);
+                }
+            }
+
+            vertices.Add(localPos);
             uvs.Add(new Vector2(t, heightV * 0.4f));
-
             colors.Add(vertexColor);
         }
     }
 
     /// <summary>
     /// Returns the vertex color for a ring of the given radius.
-    /// Thin branches (radius <= thinRadius) get the full new-growth tint.
-    /// Thick branches (radius >= thickRadius) are white (no tint -- pure bark).
-    /// In between, the tint fades linearly.
+    /// alpha = bark blend weight: 0 = fully new growth, 1 = fully bark.
+    /// vertex.r encodes node type for the shader:
+    ///   0 = branch (new growth = green _NGColor)
+    ///   1 = root   (new growth = white _NGRootColor)
     /// </summary>
-    Color GrowthColor(float radius, float age)
+    Color GrowthColor(float radius, float age, bool isRoot = false)
     {
-        // alpha = bark blend weight: 0 = fully new growth, 1 = fully bark.
-        // Fades whichever comes first: branch getting thick OR enough time passing.
-        // Vertex RGB is white — colours are controlled entirely by the shader material.
         float radiusT = Mathf.InverseLerp(thinRadius, thickRadius, radius);
         float ageT    = newGrowthFadeDays > 0f ? Mathf.Clamp01(age / newGrowthFadeDays) : 1f;
         float t       = Mathf.Max(radiusT, ageT);
-        return new Color(1f, 1f, 1f, t);
+        float rootBit = isRoot ? 1f : 0f;
+        return new Color(rootBit, 1f, 1f, t);
+    }
+
+    /// <summary>
+    /// Appends a short underground cylinder below the trunk base ring plus a flat
+    /// bottom cap, so the mesh is sealed at the soil line.
+    /// The trunk base ring (always at vertex indices 0..ringSegments after ProcessNode)
+    /// is reused as the cylinder top — no seam.
+    /// </summary>
+    void AddUndergroundCap(TreeNode root)
+    {
+        if (root == null) return;
+
+        const float undergroundDepth = 0.25f;
+
+        Color   color     = GrowthColor(root.radius, root.age, false);
+        Vector3 botCenter = root.worldPosition + Vector3.down * undergroundDepth;
+
+        // Match the orientation the trunk base ring was built with:
+        // axisUp=up → axisRight=right, axisFwd=forward (Cross(right,up)=forward).
+        Vector3 axisRight = Vector3.right;
+        Vector3 axisFwd   = Vector3.forward;
+
+        // Bottom ring
+        int topRingStart = 0;               // trunk base ring, built first in ProcessNode
+        int botRingStart = vertices.Count;
+
+        for (int i = 0; i <= ringSegments; i++)
+        {
+            float   t     = (float)i / ringSegments;
+            float   angle = t * Mathf.PI * 2f;
+            Vector3 pos   = botCenter
+                          + (axisRight * Mathf.Cos(angle) + axisFwd * Mathf.Sin(angle)) * root.radius;
+            vertices.Add(pos);
+            uvs.Add(new Vector2(t, undergroundDepth * 0.4f));
+            colors.Add(color);
+        }
+
+        // Cylinder walls: same winding as ProcessNode (lower ring = b, upper ring = t → outward normals)
+        for (int i = 0; i < ringSegments; i++)
+        {
+            int b0 = botRingStart + i,   b1 = botRingStart + i + 1;
+            int t0 = topRingStart + i,   t1 = topRingStart + i + 1;
+            triangles.Add(b0); triangles.Add(t0); triangles.Add(b1);
+            triangles.Add(b1); triangles.Add(t0); triangles.Add(t1);
+        }
+
+        // Bottom cap — fan, normal pointing down (opposite of tip cap winding)
+        int capCenter = vertices.Count;
+        vertices.Add(botCenter);
+        uvs.Add(new Vector2(0.5f, undergroundDepth * 0.4f));
+        colors.Add(color);
+        for (int i = 0; i < ringSegments; i++)
+        {
+            int r0 = botRingStart + i, r1 = botRingStart + i + 1;
+            triangles.Add(capCenter); triangles.Add(r0); triangles.Add(r1);
+        }
     }
 
     // Public API (Phase 3 tool interaction)

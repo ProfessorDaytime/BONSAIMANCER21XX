@@ -21,7 +21,8 @@ Shader "Custom/BarkVertexColor"
         _BarkOcclusionStr ("Occlusion Strength",Range(0,1)) = 1.0
 
         [Header(New Growth)]
-        _NGColor          ("Color",             Color)      = (0.5,0.95,0.4,1)
+        _NGColor          ("Color (branches)",  Color)      = (0.5,0.95,0.4,1)
+        _NGRootColor      ("Color (roots)",     Color)      = (0.92,0.90,0.85,1)
         _NGTex            ("Albedo",            2D)         = "white" {}
         [Normal]
         _NGBump           ("Normal Map",        2D)         = "bump"  {}
@@ -60,6 +61,7 @@ Shader "Custom/BarkVertexColor"
         sampler2D _NGEmissionMap;
         sampler2D _NGOcclusionMap;
         fixed4 _NGColor;
+        fixed4 _NGRootColor;
         fixed4 _NGEmissionColor;
         half   _NGGlossiness;
         half   _NGMetallic;
@@ -77,8 +79,10 @@ Shader "Custom/BarkVertexColor"
             float blend = saturate(IN.color.a);
 
             // Sample both material sets
+            // vertex.r encodes node type: 0 = branch (green), 1 = root (white)
+            fixed4 ngColorSelected = lerp(_NGColor, _NGRootColor, IN.color.r);
             fixed4 barkAlbedo = tex2D(_BarkTex, IN.uv_BarkTex) * _BarkColor;
-            fixed4 ngAlbedo   = tex2D(_NGTex,   IN.uv_NGTex)   * _NGColor;
+            fixed4 ngAlbedo   = tex2D(_NGTex,   IN.uv_NGTex)   * ngColorSelected;
 
             fixed3 barkNormal = UnpackNormal(tex2D(_BarkBump,   IN.uv_BarkTex));
             fixed3 ngNormal   = UnpackNormal(tex2D(_NGBump,     IN.uv_NGTex));

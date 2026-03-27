@@ -305,6 +305,7 @@ public class TreeSkeleton : MonoBehaviour
     bool  isGrowing       = false;
     int   lastGrownYear   = -1;
     int   startYear       = -1;
+    int   startMonth      = -1;
     float cachedTreeHeight = 1f;  // updated each spring; used for root spread radius
     int   lastRecalcDay   = -1;   // tracks last in-game day RecalculateRadii was run mid-season
 
@@ -392,8 +393,17 @@ public class TreeSkeleton : MonoBehaviour
         initY = transform.position.y;
     }
 
-    void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
-    void OnDisable() => GameManager.OnGameStateChanged -= OnGameStateChanged;
+    void OnEnable()
+    {
+        GameManager.OnGameStateChanged   += OnGameStateChanged;
+        GameManager.OnRockOrientConfirmed += SpawnTrainingWires;
+    }
+
+    void OnDisable()
+    {
+        GameManager.OnGameStateChanged   -= OnGameStateChanged;
+        GameManager.OnRockOrientConfirmed -= SpawnTrainingWires;
+    }
 
     void Update()
     {
@@ -415,12 +425,18 @@ public class TreeSkeleton : MonoBehaviour
             transform.position = new Vector3(p.x, initY + currentLift, p.z);
         }
 
-        // Hide the seed once the trunk sprout has grown enough to be visible
-        if (seedObject != null && seedObject.activeSelf &&
-            root != null && root.length >= seedHideLength)
+        // Hide the seed after ~1 in-game month OR once the sprout is tall enough.
+        if (seedObject != null && seedObject.activeSelf && root != null)
         {
-            seedObject.SetActive(false);
-            Debug.Log("[Tree] Seed hidden -- sprout emerged");
+            bool sproutVisible = root.length >= seedHideLength;
+            bool monthPassed   = startMonth >= 0 &&
+                                 (GameManager.year * 12 + GameManager.month) >
+                                 (startYear  * 12 + startMonth);
+            if (sproutVisible || monthPassed)
+            {
+                seedObject.SetActive(false);
+                Debug.Log("[Tree] Seed hidden");
+            }
         }
 
         // Keep air layer wraps sized to the trunk every frame so they can't be swallowed.
@@ -1117,8 +1133,9 @@ public class TreeSkeleton : MonoBehaviour
         woundObjects.Clear();
 
         allNodes.Clear();
-        nextId    = 0;
-        startYear = GameManager.year;
+        nextId     = 0;
+        startYear  = GameManager.year;
+        startMonth = GameManager.month;
 
         // Create the seed visual -- an elongated sphere at the soil surface.
         // It disappears once the sprout grows past seedHideLength.
@@ -2067,21 +2084,83 @@ public class TreeSkeleton : MonoBehaviour
     {
         // Lock in current world Y as the new rest position so the lift system
         // considers the tree already grounded here — no lowering animation.
-        // currentLift = 0 means "at initY", so set initY to current Y and reset lift.
         initY       = transform.position.y;
         currentLift = 0f;
-        // liftTarget will be set to 0 by OnGameStateChanged when the restore state fires.
 
-        int count = 0;
-        foreach (var node in allNodes)
-        {
-            if (!node.isRoot || node.isTrimmed || node.hasWire) continue;
-            WireNode(node, node.growDirection);
-            node.isTrainingWire = true;
-            count++;
-        }
+        // Share rock collider with the mesh builder for gripping visuals.
+        meshBuilder.rockCollider = rockCollider;
+
+        // Drape existing roots onto the rock surface immediately.
+        DrapeRootsOverRock();
+
         meshBuilder.SetDirty();
-        Debug.Log($"[Ishitsuki] SpawnTrainingWires — wired {count} root nodes, new initY={initY:F3}");
+        Debug.Log($"[Ishitsuki] SpawnTrainingWires — initY={initY:F3}");
+    }
+
+    /// <summary>
+    /// Walks all root nodes parent-first and snaps each one onto the rock surface,
+    /// bending its growDirection to follow the surface tangent downward.
+    /// Called once when the player confirms orientation.
+    /// </summary>
+    void DrapeRootsOverRock()
+    {
+        if (rockCollider == null || root == null) return;
+
+        float snapRadius = rockCollider.bounds.extents.magnitude * 1.5f;
+        int   snapped    = 0;
+
+        var queue = new Queue<TreeNode>();
+        foreach (var child in root.children)
+            if (child.isRoot) queue.Enqueue(child);
+
+        while (queue.Count > 0)
+        {
+            TreeNode node = queue.Dequeue();
+
+            // Re-chain from parent tip (parent position may have just changed).
+            if (node.parent != null && node.parent.isRoot)
+                node.worldPosition = node.parent.tipPosition;
+
+            Vector3 worldPos  = transform.TransformPoint(node.worldPosition);
+            Vector3 closestPt = Physics.ClosestPoint(worldPos, rockCollider,
+                rockCollider.transform.position, rockCollider.transform.rotation);
+            float dist = Vector3.Distance(worldPos, closestPt);
+
+            if (dist < snapRadius)
+            {
+                // Surface normal via raycast from slightly outside.
+                Vector3 outward = closestPt - rockCollider.bounds.center;
+                if (outward.sqrMagnitude < 0.001f) outward = Vector3.up;
+                outward.Normalize();
+                Vector3 surfaceNormal = outward;
+                if (rockCollider.Raycast(new Ray(closestPt + outward * 0.5f, -outward),
+                        out RaycastHit hit, 1f))
+                    surfaceNormal = hit.normal;
+
+                // Move node base to surface with small clearance.
+                node.worldPosition = transform.InverseTransformPoint(
+                    closestPt + surfaceNormal * 0.025f);
+
+                // Bend growDirection to surface tangent, biased downward.
+                Vector3 worldDir = transform.TransformDirection(node.growDirection);
+                Vector3 tangent  = Vector3.ProjectOnPlane(worldDir, surfaceNormal);
+                if (tangent.sqrMagnitude < 0.001f)
+                {
+                    Vector3 radialOut = new Vector3(
+                        worldPos.x - rockCollider.bounds.center.x, 0f,
+                        worldPos.z - rockCollider.bounds.center.z).normalized;
+                    tangent = Vector3.ProjectOnPlane(radialOut, surfaceNormal);
+                }
+                tangent = (tangent.normalized + Vector3.down * 0.4f).normalized;
+                node.growDirection = transform.InverseTransformDirection(tangent).normalized;
+                snapped++;
+            }
+
+            foreach (var child in node.children)
+                if (child.isRoot && !child.isTrimmed) queue.Enqueue(child);
+        }
+
+        Debug.Log($"[Ishitsuki] DrapeRootsOverRock — snapped {snapped} root nodes");
     }
 
     /// <summary>
