@@ -227,9 +227,33 @@ public class TreeInteraction : MonoBehaviour
     /// </summary>
     TreeNode PickNode(Ray ray, out RaycastHit hit, System.Func<TreeNode, bool> filter = null)
     {
-        Physics.Raycast(ray, out hit);
         float r = GameManager.selectionRadius;
-        if (r > 0f) return NodeNearRay(ray, r, filter);
+        if (r > 0f)
+        {
+            hit = default;
+            return NodeNearRay(ray, r, filter);
+        }
+
+        // In Ishitsuki mode the rock collider sits between the camera and trunk
+        // segments that are inside or behind it — Physics.Raycast would stop at
+        // the rock and never reach the tree mesh. Use RaycastAll and walk the hits
+        // in distance order, picking the first one on the tree's own collider.
+        if (skeleton.rockCollider != null)
+        {
+            hit = default;
+            var hits = Physics.RaycastAll(ray);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (var h in hits)
+            {
+                if (h.collider.gameObject != gameObject) continue;
+                hit = h;
+                var rn = meshBuilder.NodeFromTriangleIndex(h.triangleIndex);
+                return (rn != null && (filter == null || filter(rn))) ? rn : null;
+            }
+            return null;
+        }
+
+        Physics.Raycast(ray, out hit);
         if (!hit.collider || hit.collider.gameObject != gameObject) return null;
         var node = meshBuilder.NodeFromTriangleIndex(hit.triangleIndex);
         return (node != null && (filter == null || filter(node))) ? node : null;

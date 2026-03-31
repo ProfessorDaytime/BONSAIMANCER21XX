@@ -59,6 +59,7 @@ public class RockPlacer : MonoBehaviour
 
     void OnEnable()
     {
+        Debug.Log("[RockPlacer] OnEnable — subscribing events");
         GameManager.OnGameStateChanged  += OnGameStateChanged;
         GameManager.OnRockOrientConfirmed += OnOrientConfirmed;
     }
@@ -84,13 +85,17 @@ public class RockPlacer : MonoBehaviour
     {
         rightDragging = false;
 
+        Debug.Log($"[RockPlacer] OnOrientConfirmed fired | rockCollider={rockCollider} treeTransform={treeTransform}");
         if (rockCollider == null || treeTransform == null) return;
 
         var skeleton   = treeTransform.GetComponent<TreeSkeleton>();
         float trunkRad = (skeleton != null && skeleton.root != null) ? skeleton.root.radius : 0.1f;
 
         if (skeleton != null)
+        {
             skeleton.rockCollider = rockCollider;
+            skeleton.SpawnTrainingWires();   // drape roots + set mesh gripping; must run AFTER rockCollider is set
+        }
 
         var wireGO = new GameObject("IshitsukiBindingWires");
         wireGO.transform.SetParent(treeTransform, false);

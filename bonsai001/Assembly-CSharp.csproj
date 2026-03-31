@@ -63,6 +63,7 @@
      <Compile Include="Assets\Scripts\Leaf.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeNode.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeMeshBuilder.cs" />
+     <Compile Include="Assets\Scripts\Tree\PreGrowRootsToSoil_backup_2026-03-31.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexJitter.cs" />
      <Compile Include="Assets\Scripts\Tree\NodeHealth.cs" />
      <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_DigitValidator.cs" />

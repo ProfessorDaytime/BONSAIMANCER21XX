@@ -42,6 +42,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
     TreeSkeleton  skeleton;
     Mesh          mesh;
+    Material      _dbgRainbowMat;
     MeshCollider  meshCollider;
     bool          isDirty;
 
@@ -165,11 +166,10 @@ public class TreeMeshBuilder : MonoBehaviour
         // -1 signals "generate a base ring for me" (only the root node needs this).
         ProcessNode(skeleton.root, -1, 0f, Vector3.zero, Vector3.zero);
 
-        // Underground stub: reuses the trunk base ring (indices 0..ringSegments) as the
-        // top of a short downward cylinder, sealed with a flat bottom cap.
-        // Skipped for Ishitsuki (tree is on a rock, not planted underground).
-        if (rockCollider == null)
-            AddUndergroundCap(skeleton.root);
+        // Seal the trunk base with an underground cylinder stub in all modes.
+        // In Ishitsuki the rock sits in a pot of soil — the stub provides visual grounding
+        // and hides the open bottom regardless of rock orientation.
+        AddUndergroundCap(skeleton.root);
 
         mesh.Clear();
         mesh.SetVertices(vertices);
@@ -265,9 +265,11 @@ public class TreeMeshBuilder : MonoBehaviour
 
         // Compute vertex colors for this segment.
         // Still-growing segments are tinted deep blue for debugging.
-        // Thin branches get a green new-growth tint; thick branches are bark-colored.
-        Color baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age, node.isRoot);
-        Color tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age, node.isRoot);
+        // Exposed roots (above soil line) bark faster than buried ones.
+        bool isExposed = node.isRoot && node.worldPosition.y > rootVisibilityDepth;
+        Color baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age, node.isRoot, isExposed);
+        Color tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age, node.isRoot, isExposed);
+
 
         // Base ring
 
@@ -378,9 +380,9 @@ public class TreeMeshBuilder : MonoBehaviour
         bool hasRenderedChild = false;
         foreach (var child in node.children)
         {
-            // Air layer roots always render.
+            // Air layer roots and Ishitsuki training cables always render regardless of depth.
             // Normal roots: show in RootPrune mode, OR when their base is above the visibility threshold.
-            if (child.isRoot && !child.isAirLayerRoot && !renderRoots && child.worldPosition.y < rootVisibilityDepth) continue;
+            if (child.isRoot && !child.isAirLayerRoot && !child.isTrainingWire && !renderRoots && child.worldPosition.y < rootVisibilityDepth) continue;
             // Skip zero-length children: they produce degenerate (zero-area) triangles
             // that corrupt RecalculateNormals at the shared tip ring, causing a one-frame
             // visual glitch where the parent tip looks wrong at the start of each season.
@@ -444,12 +446,20 @@ public class TreeMeshBuilder : MonoBehaviour
 
             // Ishitsuki mesh gripping: push root ring verts to the rock surface
             // so the mesh hugs the rock rather than clipping through it.
-            if (gripCurrentNode && rockCollider != null)
+            // Physics.ClosestPoint only works on convex MeshColliders — guard to avoid
+            // a warning flood that crashes VS Code on non-convex rock meshes.
+            var  rockMC_  = rockCollider as MeshCollider;
+            bool canGrip_ = rockCollider != null && (rockMC_ == null || rockMC_.convex);
+            if (gripCurrentNode && canGrip_)
             {
                 Vector3 worldPos  = transform.TransformPoint(localPos);
                 Vector3 closestPt = Physics.ClosestPoint(worldPos, rockCollider,
                     rockCollider.transform.position, rockCollider.transform.rotation);
-                if (Vector3.Distance(worldPos, closestPt) < 0.12f)
+                // Only push vertices that are genuinely inside or flush with the rock.
+                // A large threshold here snaps exterior vertices of adjacent rings to
+                // different rock faces, producing distorted quads. 0.01 m catches only
+                // truly interior / flush verts without deforming surrounding geometry.
+                if (Vector3.Distance(worldPos, closestPt) < 0.01f)
                 {
                     Vector3 outward = closestPt - rockCollider.bounds.center;
                     if (outward.sqrMagnitude < 0.001f) outward = Vector3.up;
@@ -463,6 +473,32 @@ public class TreeMeshBuilder : MonoBehaviour
         }
     }
 
+    /// How many single-child hops from this node to the chain terminal.
+    static int RootDepthFromTip(TreeNode node)
+    {
+        int d = 0;
+        var n = node;
+        while (n.children.Count == 1 && n.children[0].isRoot) { d++; n = n.children[0]; }
+        return d;
+    }
+
+    /// Rainbow: 0=Red 1=Orange 2=Yellow 3=Green 4=Cyan 5=NavyBlue 6=DeepPurple 7+=Magenta
+    static Color RootRainbowColor(int d)
+    {
+        switch (d)
+        {
+            case 0:  return Color.red;
+            case 1:  return new Color(1f, 0.5f, 0f);          // orange
+            case 2:  return Color.yellow;
+            case 3:  return Color.green;
+            case 4:  return Color.cyan;
+            case 5:  return new Color(0f, 0f, 0.6f);           // navy
+            case 6:  return new Color(0.3f, 0f, 0.6f);         // deep purple
+            case 7:  return Color.magenta;
+            default: return Color.white;
+        }
+    }
+
     /// <summary>
     /// Returns the vertex color for a ring of the given radius.
     /// alpha = bark blend weight: 0 = fully new growth, 1 = fully bark.
@@ -470,13 +506,41 @@ public class TreeMeshBuilder : MonoBehaviour
     ///   0 = branch (new growth = green _NGColor)
     ///   1 = root   (new growth = white _NGRootColor)
     /// </summary>
-    Color GrowthColor(float radius, float age, bool isRoot = false)
+    Color GrowthColor(float radius, float age, bool isRoot = false, bool isExposed = false)
     {
+        // Exposed roots (above soil) develop bark ~3× faster than buried ones.
+        float fadeDays = (isRoot && isExposed && newGrowthFadeDays > 0f)
+            ? newGrowthFadeDays / 3f
+            : newGrowthFadeDays;
         float radiusT = Mathf.InverseLerp(thinRadius, thickRadius, radius);
-        float ageT    = newGrowthFadeDays > 0f ? Mathf.Clamp01(age / newGrowthFadeDays) : 1f;
+        float ageT    = fadeDays > 0f ? Mathf.Clamp01(age / fadeDays) : 1f;
         float t       = Mathf.Max(radiusT, ageT);
         float rootBit = isRoot ? 1f : 0f;
         return new Color(rootBit, 1f, 1f, t);
+    }
+
+    /// <summary>
+    /// Seals the trunk base ring with a flat downward-facing cap (Ishitsuki mode).
+    /// No underground cylinder — the rock surface is directly below the trunk.
+    /// </summary>
+    void AddTrunkBaseCap(TreeNode root)
+    {
+        if (root == null) return;
+
+        Color color = GrowthColor(root.radius, root.age, true);
+
+        // Fan the existing trunk base ring (vertices 0..ringSegments) to a center point.
+        // Winding: capCenter → r0 → r1  →  normal points down (away from tree).
+        int capCenter = vertices.Count;
+        vertices.Add(root.worldPosition);
+        uvs.Add(new Vector2(0.5f, 0f));
+        colors.Add(color);
+
+        for (int i = 0; i < ringSegments; i++)
+        {
+            int r0 = i, r1 = i + 1;
+            triangles.Add(capCenter); triangles.Add(r0); triangles.Add(r1);
+        }
     }
 
     /// <summary>
@@ -491,7 +555,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
         const float undergroundDepth = 0.25f;
 
-        Color   color     = GrowthColor(root.radius, root.age, false);
+        Color   color     = GrowthColor(root.radius, root.age, true);
         Vector3 botCenter = root.worldPosition + Vector3.down * undergroundDepth;
 
         // Match the orientation the trunk base ring was built with:
@@ -554,4 +618,46 @@ public class TreeMeshBuilder : MonoBehaviour
         }
         return null;
     }
+
+    // ── Root rainbow GL overlay ───────────────────────────────────────────────
+    /*
+    void OnRenderObject()
+    {
+        if (skeleton == null || skeleton.root == null) return;
+
+        if (_dbgRainbowMat == null)
+        {
+            Shader sh = Shader.Find("Hidden/Internal-Colored");
+            if (sh == null) return;
+            _dbgRainbowMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            _dbgRainbowMat.SetInt("_ZWrite", 0);
+            _dbgRainbowMat.SetInt("_Cull",   0);
+            _dbgRainbowMat.SetInt("_ZTest",  (int)UnityEngine.Rendering.CompareFunction.Always);
+        }
+
+        _dbgRainbowMat.SetPass(0);
+        GL.PushMatrix();
+        GL.MultMatrix(transform.localToWorldMatrix);
+        GL.Begin(GL.LINES);
+
+        DrawRootRainbow(skeleton.root);
+
+        GL.End();
+        GL.PopMatrix();
+    }
+
+    void DrawRootRainbow(TreeNode node)
+    {
+        if (node.isRoot)
+        {
+            int   d    = RootDepthFromTip(node);
+            Color col  = RootRainbowColor(d);
+            GL.Color(col);
+            GL.Vertex(node.worldPosition);
+            GL.Vertex(node.tipPosition);
+        }
+        foreach (var child in node.children)
+            DrawRootRainbow(child);
+    }
+    */
 }

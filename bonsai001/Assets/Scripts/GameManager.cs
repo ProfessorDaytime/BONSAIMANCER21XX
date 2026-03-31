@@ -353,6 +353,7 @@ public class GameManager : MonoBehaviour
         {
             // Fire BEFORE the state change so TreeSkeleton can lock in the new Y
             // before OnGameStateChanged resets liftTarget to 0.
+            Debug.Log("[GM] Firing OnRockOrientConfirmed frame=" + Time.frameCount + " subscribers=" + (OnRockOrientConfirmed == null ? 0 : OnRockOrientConfirmed.GetInvocationList().Length));
             OnRockOrientConfirmed?.Invoke();
 
             // Exit root mode directly — skip the RootPrune detour so the tree

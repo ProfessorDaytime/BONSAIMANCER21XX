@@ -179,7 +179,7 @@ public class CameraOrbit : MonoBehaviour
             float panDelta = Input.GetAxis("Mouse Y");
             panY -= panDelta * panSpeed * radius;
             ApplyOrbit();
-            Debug.Log($"[CameraOrbit] pan → startRadius={radius:F2} startPanY={panY:F2}");
+            // Debug.Log($"[CameraOrbit] pan → startRadius={radius:F2} startPanY={panY:F2}");
         }
 
         if (!isDragging) return;

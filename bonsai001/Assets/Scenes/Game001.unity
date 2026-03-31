@@ -1043,6 +1043,21 @@ MonoBehaviour:
   vignette: 1.17
   rgbSplit: 0.00192
   brightness: 1.25
+  maskStrength: 0.341
+  maskScale: 1.21
+  maskType: 0
+  bloomStrength: 0.15
+  bloomRadius: 2
+  persistence: 0.071
+  horizontalBlur: 1
+  beamWidth: 0.4
+  interlaceStrength: 0
+  noiseStrength: 0.0402
+  horizontalJitter: 0.00113
+  rollSpeed: 1
+  cornerConvergence: 0.002
+  inputGamma: 2.45
+  outputGamma: 2.5
 --- !u!1 &980914154
 GameObject:
   m_ObjectHideFlags: 0
@@ -1425,6 +1440,10 @@ PrefabInstance:
       propertyPath: m_ConstrainProportionsScale
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: -7511558181221131132, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 8e6d037381fcd8b46be990f61d564fa3, type: 2}
     - target: {fileID: 919132149155446097, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
       propertyPath: m_Name
       value: Rock01
@@ -1825,6 +1844,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ringSegments: 8
   renderRoots: 0
+  rockCollider: {fileID: 0}
   rootVisibilityDepth: -0.5
   thinRadius: 0.04
   thickRadius: 0.14
@@ -1928,8 +1948,11 @@ MonoBehaviour:
   rootLiftHeight: 4
   rootLiftSpeed: 4
   rootSurfaceSnapDist: 0.8
-  rockCollider: {fileID: 0}
+  rockCollider: {fileID: 1644556599}
+  isIshitsukiMode: 0
   rockInfluenceRadius: 0.4
+  debugSoilYOverride: 0
+  debugSoilY: 80
   airLayerWrapPrefab: {fileID: 0}
   airLayerSeasonsToRoot: 1
   airLayerRootCount: 8
@@ -2413,7 +2436,7 @@ MeshCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 5
-  m_Convex: 1
+  m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: -328722998657791732, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
 --- !u!114 &1644556603

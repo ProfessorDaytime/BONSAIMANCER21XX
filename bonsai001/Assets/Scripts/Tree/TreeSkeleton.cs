@@ -263,8 +263,29 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Convex MeshCollider of the placed rock. Set at runtime by RockPlacer on orientation confirm.")]
     public Collider rockCollider;
 
+    /// <summary>
+    /// True once a rock has been confirmed. Unlike rockCollider, this never goes null
+    /// even if the Collider reference somehow gets cleared — used to gate Ishitsuki-mode
+    /// logic everywhere so we don't depend on rockCollider != null as the mode flag.
+    /// </summary>
+    [HideInInspector] public bool isIshitsukiMode = false;
+
     [Tooltip("World-unit radius around the rock surface within which roots deflect to follow it.")]
     [SerializeField] float rockInfluenceRadius = 0.4f;
+
+    [Tooltip("Enable to override the auto-computed soil Y with the value below. Useful for testing root draping.")]
+    [SerializeField] bool  debugSoilYOverride = false;
+
+    [Tooltip("Manual soil Y world position. Only used when Debug Soil Y Override is enabled. Defaults to -9999 which auto-populates from the computed soilY on first use — then you can nudge it.")]
+    [SerializeField] float debugSoilY = -9999f;
+
+    // ── Soil debug GL overlay (set by SpawnTrainingWires, rendered by OnRenderObject) ──
+    bool    _soilDbgActive;
+    float   _soilDbgEndTime;
+    float   _soilDbgSoilY, _soilDbgRockTop, _soilDbgRockBot;
+    Vector3 _soilDbgCenter;
+    float   _soilDbgR;
+    Material _soilDbgMat;
 
     [Header("Air Layering")]
     [Tooltip("Prefab spawned at the air layer site to represent the coconut coir wrap. Optional — system works without it.")]
@@ -393,16 +414,54 @@ public class TreeSkeleton : MonoBehaviour
         initY = transform.position.y;
     }
 
-    void OnEnable()
-    {
-        GameManager.OnGameStateChanged   += OnGameStateChanged;
-        GameManager.OnRockOrientConfirmed += SpawnTrainingWires;
-    }
+    void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
+    void OnDisable() => GameManager.OnGameStateChanged -= OnGameStateChanged;
 
-    void OnDisable()
+    // ── Soil debug GL overlay — renders into both Game View and Scene View ────
+    void OnRenderObject()
     {
-        GameManager.OnGameStateChanged   -= OnGameStateChanged;
-        GameManager.OnRockOrientConfirmed -= SpawnTrainingWires;
+        if (!_soilDbgActive) return;
+        if (Time.realtimeSinceStartup > _soilDbgEndTime) { _soilDbgActive = false; return; }
+
+        if (_soilDbgMat == null)
+        {
+            Shader sh = Shader.Find("Hidden/Internal-Colored");
+            if (sh == null) return;
+            _soilDbgMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            _soilDbgMat.SetInt("_ZWrite", 0);
+            _soilDbgMat.SetInt("_Cull",   0);
+            _soilDbgMat.SetInt("_ZTest",  (int)UnityEngine.Rendering.CompareFunction.Always);
+        }
+
+        _soilDbgMat.SetPass(0);
+        GL.PushMatrix();
+        GL.Begin(GL.LINES);
+
+        Vector3 c = _soilDbgCenter;
+        float   r = _soilDbgR;
+
+        // GREEN cross + 4 tall pillars = soilY (where roots stop)
+        GL.Color(Color.green);
+        GL.Vertex3(c.x - r, _soilDbgSoilY, c.z);     GL.Vertex3(c.x + r, _soilDbgSoilY, c.z);
+        GL.Vertex3(c.x, _soilDbgSoilY, c.z - r);     GL.Vertex3(c.x, _soilDbgSoilY, c.z + r);
+        // Vertical pillars so they're visible edge-on
+        GL.Vertex3(c.x - r, _soilDbgSoilY, c.z - r); GL.Vertex3(c.x - r, _soilDbgSoilY + 3f, c.z - r);
+        GL.Vertex3(c.x + r, _soilDbgSoilY, c.z - r); GL.Vertex3(c.x + r, _soilDbgSoilY + 3f, c.z - r);
+        GL.Vertex3(c.x - r, _soilDbgSoilY, c.z + r); GL.Vertex3(c.x - r, _soilDbgSoilY + 3f, c.z + r);
+        GL.Vertex3(c.x + r, _soilDbgSoilY, c.z + r); GL.Vertex3(c.x + r, _soilDbgSoilY + 3f, c.z + r);
+
+        // RED cross = rock bottom bound (old wrong soilY target)
+        GL.Color(Color.red);
+        GL.Vertex3(c.x - r, _soilDbgRockBot, c.z);   GL.Vertex3(c.x + r, _soilDbgRockBot, c.z);
+        GL.Vertex3(c.x, _soilDbgRockBot, c.z - r);   GL.Vertex3(c.x, _soilDbgRockBot, c.z + r);
+
+        // CYAN cross = rock top bound
+        GL.Color(Color.cyan);
+        GL.Vertex3(c.x - r, _soilDbgRockTop, c.z);   GL.Vertex3(c.x + r, _soilDbgRockTop, c.z);
+        GL.Vertex3(c.x, _soilDbgRockTop, c.z - r);   GL.Vertex3(c.x, _soilDbgRockTop, c.z + r);
+
+        GL.End();
+        GL.PopMatrix();
     }
 
     void Update()
@@ -512,9 +571,19 @@ public class TreeSkeleton : MonoBehaviour
 
             if (node.length >= node.targetLength)
             {
-                bool belowCap = node.isRoot
-                    ? node.depth < maxRootDepth
-                    : node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
+                bool belowCap;
+                if (node.isRoot && isIshitsukiMode)
+                {
+                    // Ishitsuki: roots stop at soil surface, not at depth limit.
+                    Vector3 tipW = transform.TransformPoint(node.tipPosition);
+                    belowCap = tipW.y > plantingSurfacePoint.y;
+                }
+                else
+                {
+                    belowCap = node.isRoot
+                        ? node.depth < maxRootDepth
+                        : node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
+                }
 
                 if (belowCap)
                 {
@@ -678,6 +747,16 @@ public class TreeSkeleton : MonoBehaviour
             Debug.Log($"[GRoot] Auto-planted {rootsToAdd} trunk roots | trunkRoots={trunkRootCount + rootsToAdd}/{targetTrunkRoots} year={GameManager.year}");
         }
 
+        // In Ishitsuki mode, pre-grow ALL trunk root cables toward soil before the
+        // terminals list is built below.  This does two things:
+        //   (a) Newly auto-planted roots get their chains draped over the rock immediately.
+        //   (b) Existing mid-rock terminals from prior years get extended further.
+        // Both cases prevent ContinuationDirection() from spawning children in random
+        // air directions off the mid-rock positions.
+        Debug.Log($"[PreGrow] year={GameManager.year} StartNewGrowingSeason: isIshitsukiMode={isIshitsukiMode} rockCollider={(rockCollider != null ? rockCollider.name : "NULL")}");
+        if (isIshitsukiMode)
+            PreGrowRootsToSoil();
+
         // Elongate existing segments — lower-depth segments grow longer each year
         if (baseElongation > 0f)
         {
@@ -724,9 +803,19 @@ public class TreeSkeleton : MonoBehaviour
         {
             if (node.isGrowing && !node.isTrimmed) resuming++;
 
-            bool belowCap = node.isRoot
-                ? node.depth < maxRootDepth
-                : node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
+            bool belowCap;
+            if (node.isRoot && isIshitsukiMode)
+            {
+                // Ishitsuki: roots stop at soil surface, not at depth limit.
+                Vector3 tipW = transform.TransformPoint(node.tipPosition);
+                belowCap = tipW.y > plantingSurfacePoint.y;
+            }
+            else
+            {
+                belowCap = node.isRoot
+                    ? node.depth < maxRootDepth
+                    : node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
+            }
 
             if (node.isRoot)
             {
@@ -778,16 +867,21 @@ public class TreeSkeleton : MonoBehaviour
             {
                 if (currentRootCount >= maxTotalRootNodes) continue;  // hard cap reached
 
-                float distRatio = RootDistRatio(terminal);
-                if (distRatio >= 1.3f) continue;  // beyond hard outer boundary — stop
+                bool isIshitsuki = isIshitsukiMode;
+                float distRatio  = RootDistRatio(terminal);
+                if (!isIshitsuki && distRatio >= 1.3f) continue;  // beyond hard outer boundary — stop
+                // In Ishitsuki mode all root cable growth is handled exclusively by
+                // PreGrowRootsToSoil (called each spring before this loop).  Skip here
+                // to prevent ContinuationDirection from sending cables in wrong directions.
+                if (isIshitsuki) continue;
 
-                if (distRatio >= 0.8f) childLength *= wallSegmentScale;
+                if (!isIshitsuki && distRatio >= 0.8f) childLength *= wallSegmentScale;
 
                 var cont = CreateNode(terminal.tipPosition, ContinuationDirection(terminal), nodeRadius, childLength, terminal);
                 cont.isRoot = true;
                 currentRootCount++;
 
-                float lateralScale  = Mathf.Clamp01(1f - distRatio);
+                float lateralScale  = isIshitsuki ? 0f : Mathf.Clamp01(1f - distRatio);
                 float lateralChance = rootLateralChance * lateralScale;
                 if (currentRootCount < maxTotalRootNodes && Random.value < lateralChance)
                 {
@@ -888,6 +982,8 @@ public class TreeSkeleton : MonoBehaviour
         foreach (var node in allNodes)
         {
             if (!node.isRoot || node.isTrimmed) continue;
+            // Ishitsuki roots are outside the pot by design — do not treat as pot-bound.
+            if (isIshitsukiMode) continue;
 
             float distRatio = RootDistRatio(node);
             if (distRatio >= 0.85f)
@@ -1446,14 +1542,20 @@ public class TreeSkeleton : MonoBehaviour
             foreach (var n in allNodes) if (n.isRoot) rootCount++;
             if (rootCount >= maxTotalRootNodes) return;
 
-            float distRatio = RootDistRatio(node);
-            if (distRatio >= 1.3f) return;  // hard outer boundary — no further growth
+            float distRatio   = RootDistRatio(node);
+            bool  isIshitsuki = isIshitsukiMode;
+            if (!isIshitsuki && distRatio >= 1.3f) return;  // hard outer boundary — no further growth
+            if (isIshitsuki)
+            {
+                Vector3 tipW = transform.TransformPoint(node.tipPosition);
+                if (tipW.y <= plantingSurfacePoint.y) return;
+            }
 
             var rootCont = CreateNode(node.tipPosition, ContinuationDirection(node), nodeRadius, segLength, node);
             rootCont.isRoot = true;
             rootCount++;
 
-            float lateralScale  = Mathf.Clamp01(1f - distRatio);
+            float lateralScale  = isIshitsuki ? 0f : Mathf.Clamp01(1f - distRatio);
             float lateralChance = rootLateralChance * Mathf.Pow(rootLateralDepthDecay, node.depth) * lateralScale;
             if (rootCount < maxTotalRootNodes && Random.value < lateralChance)
             {
@@ -1663,8 +1765,10 @@ public class TreeSkeleton : MonoBehaviour
                 radial = new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f));
             radial = radial.normalized;
 
+            // Ishitsuki: suppress radial spread on the rock face — roots flow DOWN, not outward.
+            bool isIshitsuki = isIshitsukiMode;
             Vector3 dir = (node.growDirection * inertiaWeight
-                          + radial            * rootRadialWeight
+                          + (isIshitsuki ? Vector3.zero : radial * rootRadialWeight)
                           + Vector3.down      * rootGravityWeight
                           + rand).normalized;
 
@@ -1672,18 +1776,36 @@ public class TreeSkeleton : MonoBehaviour
             bool nearRock = false;
 
             // ── Rock surface deflection (Ishitsuki) ───────────────────────────
+            // Note: all pre-grown Ishitsuki cables are handled by PreGrowRootsToSoil.
+            // This block only fires for any organic root growth that slips through
+            // (e.g. auto-planted trunk roots before their first pre-grow pass).
+            // Use a raycast-based closest-point approximation instead of
+            // Physics.ClosestPoint, which requires a convex MeshCollider.
             if (rockCollider != null)
             {
-                Vector3 closestPt = Physics.ClosestPoint(worldTip, rockCollider,
-                    rockCollider.transform.position, rockCollider.transform.rotation);
+                float effectiveRadius = rockInfluenceRadius * 2f;
+
+                // Approximate closest surface point: cast a ray from worldTip toward
+                // the rock centre; the hit point is on the surface facing us.
+                Vector3 rockCenter = rockCollider.bounds.center;
+                Vector3 toCenter   = (rockCenter - worldTip).normalized;
+                Vector3 closestPt  = rockCenter; // fallback
+                if (rockCollider.Raycast(new Ray(worldTip, toCenter), out RaycastHit cpHit, effectiveRadius * 3f))
+                    closestPt = cpHit.point;
+                else
+                {
+                    // Also try from outside in (root may be inside/near the rock)
+                    Vector3 outside = worldTip - toCenter * effectiveRadius * 2f;
+                    if (rockCollider.Raycast(new Ray(outside, toCenter), out RaycastHit cpHit2, effectiveRadius * 4f))
+                        closestPt = cpHit2.point;
+                }
                 float distToRock = Vector3.Distance(worldTip, closestPt);
 
-                if (distToRock < rockInfluenceRadius)
+                if (distToRock < effectiveRadius)
                 {
                     nearRock = true;
 
                     // Get surface normal via raycast from outside inward (world space).
-                    Vector3 rockCenter = rockCollider.bounds.center;
                     Vector3 outward    = closestPt - rockCenter;
                     if (outward.sqrMagnitude < 0.001f) outward = Vector3.up;
                     outward.Normalize();
@@ -1696,18 +1818,55 @@ public class TreeSkeleton : MonoBehaviour
                     // dir is in local space — convert to world for the projection.
                     Vector3 worldDir = transform.TransformDirection(dir);
 
+                    // Project onto rock surface, fall back to pure-down if tangent is zero.
                     Vector3 surfaceDir = Vector3.ProjectOnPlane(worldDir, surfaceNormal);
                     if (surfaceDir.sqrMagnitude < 0.001f)
                         surfaceDir = Vector3.ProjectOnPlane(Vector3.down, surfaceNormal);
-                    surfaceDir = (surfaceDir.normalized + Vector3.down * rootGravityWeight * 3f).normalized;
 
-                    float blend = 1f - Mathf.Clamp01(distToRock / rockInfluenceRadius);
-                    Vector3 worldBlended = Vector3.Slerp(worldDir, surfaceDir, blend).normalized;
+                    // On near-horizontal surfaces (top of rock) gravity is perpendicular
+                    // to the plane, so adding it then re-projecting would kill it entirely.
+                    // Instead: push radially outward toward the rock edge so the root flows
+                    // off the top and down the side, THEN let gravity do its work on the face.
+                    float upDot = Vector3.Dot(surfaceNormal, Vector3.up);
+                    if (upDot > 0.5f)
+                    {
+                        Vector3 radialOut = worldTip - rockCollider.bounds.center;
+                        radialOut.y = 0f;
+                        if (radialOut.sqrMagnitude > 0.001f)
+                        {
+                            Vector3 edgePush = Vector3.ProjectOnPlane(radialOut.normalized, surfaceNormal);
+                            if (edgePush.sqrMagnitude > 0.001f)
+                                surfaceDir = (surfaceDir.normalized + edgePush.normalized * upDot).normalized;
+                        }
+                    }
 
-                    // Convert back to local space.
-                    dir = transform.InverseTransformDirection(worldBlended);
+                    // Gravity bias — NOT re-projected, so it works on all surface angles.
+                    // On vertical faces this pulls strongly downward; on horizontal faces
+                    // the slight inward lean is harmless (segments are short).
+                    surfaceDir = (surfaceDir.normalized + Vector3.down * rootGravityWeight * 20f).normalized;
 
-                    Debug.Log($"[Rock] Deflect node={node.id} dist={distToRock:F3} blend={blend:F2} surfaceNormal={surfaceNormal}");
+                    // Full adhesion regardless of height — real Ishitsuki roots grip the
+                    // rock all the way from crown to soil, never float off mid-face.
+                    // Blend: 1.0 on surface → 0.6 at far edge of influence.
+                    float blend = Mathf.Lerp(0.6f, 1.0f,
+                        1f - Mathf.Clamp01(distToRock / effectiveRadius));
+                    dir = transform.InverseTransformDirection(
+                        Vector3.Slerp(worldDir, surfaceDir, blend).normalized);
+                }
+            }
+
+            // Roots in free air past the rock edge: fall nearly straight down to reach soil.
+            if (!nearRock)
+            {
+                float heightAboveSoil = transform.TransformPoint(node.tipPosition).y - plantingSurfacePoint.y;
+                if (heightAboveSoil > 0.05f)
+                {
+                    // 0.95 max blend → almost straight down; faster than before so
+                    // roots don't hang horizontally past the rock edge.
+                    float fallBlend = Mathf.Clamp01(heightAboveSoil / 0.3f) * (isIshitsuki ? 0.95f : 0.85f);
+                    Vector3 worldDirFall = transform.TransformDirection(dir);
+                    worldDirFall = Vector3.Slerp(worldDirFall, Vector3.down, fallBlend).normalized;
+                    dir = transform.InverseTransformDirection(worldDirFall);
                 }
             }
 
@@ -2080,21 +2239,101 @@ public class TreeSkeleton : MonoBehaviour
     /// Auto-wires all unrimmed root nodes when the player confirms Ishitsuki orientation.
     /// Wires hold the current root direction (no bending); locked from removal until set.
     /// </summary>
-    void SpawnTrainingWires()
+    public void SpawnTrainingWires()
     {
+        string rootAreaInfo = rootAreaTransform != null ? rootAreaTransform.position.ToString() : "NULL";
+        Debug.Log("[SpawnWires] frame=" + Time.frameCount
+                  + " | rockCollider=" + (rockCollider != null)
+                  + " meshBuilder=" + (meshBuilder != null)
+                  + " rootAreaTransform=" + (rootAreaTransform != null)
+                  + "\n  rootAreaTransform.position=" + rootAreaInfo
+                  + "\n  plantingSurfacePoint.y BEFORE=" + plantingSurfacePoint.y.ToString("F3")
+                  + "\n  transform.position=" + transform.position);
+
+        // Mark Ishitsuki mode permanently — this flag never goes null.
+        isIshitsukiMode = true;
+
         // Lock in current world Y as the new rest position so the lift system
         // considers the tree already grounded here — no lowering animation.
         initY       = transform.position.y;
         currentLift = 0f;
 
-        // Share rock collider with the mesh builder for gripping visuals.
-        meshBuilder.rockCollider = rockCollider;
+        // Set soil surface Y from the root area transform so Ishitsuki root chains
+        // stop at the actual visible tray/soil surface.
+        // rootAreaTransform.position.y IS the visible soil — the rock may be partially
+        // buried below it, so we must NOT use min(areaY, rockBase).
+        {
+            float areaY    = rootAreaTransform != null ? rootAreaTransform.position.y : plantingSurfacePoint.y;
+            float rockBase = rockCollider      != null ? rockCollider.bounds.min.y     : areaY;
+            Debug.Log($"[SpawnWires] year={GameManager.year} soilY: areaY(rootArea)={areaY:F3} rockBase={rockBase:F3} → using areaY={areaY:F3}");
+            plantingSurfacePoint = new Vector3(plantingSurfacePoint.x, areaY, plantingSurfacePoint.z);
+        }
 
-        // Drape existing roots onto the rock surface immediately.
-        DrapeRootsOverRock();
+        // Share rock collider with the mesh builder for gripping visuals.
+        if (meshBuilder != null) meshBuilder.rockCollider = rockCollider;
+
+        // ── Diagnostic snapshot ───────────────────────────────────────────────
+        Vector3 treeWorldPos  = transform.position;
+        Vector3 rockWorldPos  = rockCollider != null ? rockCollider.transform.position : Vector3.zero;
+        Bounds  rockBounds    = rockCollider != null ? rockCollider.bounds : new Bounds();
+        Vector3 rootAreaPos   = rootAreaTransform != null ? rootAreaTransform.position : Vector3.zero;
+        Debug.Log($"[Ishitsuki] year={GameManager.year} WORLD POSITIONS:" +
+                  $"\n  tree.position      = {treeWorldPos}" +
+                  $"\n  rock.position      = {rockWorldPos}" +
+                  $"\n  rock.bounds.min    = {rockBounds.min}" +
+                  $"\n  rock.bounds.max    = {rockBounds.max}" +
+                  $"\n  rock.bounds.center = {rockBounds.center}" +
+                  $"\n  rootArea.position  = {rootAreaPos}" +
+                  $"\n  soilY (after fix)  = {plantingSurfacePoint.y:F3}" +
+                  $"\n  rockTopY           = {rockBounds.max.y:F3}" +
+                  $"\n  rockBottomY        = {rockBounds.min.y:F3}" +
+                  $"\n  rockHeightAboveSoil= {rockBounds.max.y - plantingSurfacePoint.y:F3}" +
+                  $"\n  rockScale          = {(rockCollider != null ? rockCollider.transform.lossyScale.ToString() : "N/A")}");
+
+        // Log trunk root starting positions before draping.
+        if (root != null)
+        {
+            int ri = 0;
+            foreach (var child in root.children)
+            {
+                if (!child.isRoot) continue;
+                Vector3 wPos = transform.TransformPoint(child.worldPosition);
+                Vector3 wTip = transform.TransformPoint(child.tipPosition);
+                Debug.Log($"[Ishitsuki] year={GameManager.year} TrunkRoot[{ri}] depth={child.depth}" +
+                          $" worldPos={wPos} tipWorld={wTip}" +
+                          $" tipY={wTip.y:F3} soilY={plantingSurfacePoint.y:F3}" +
+                          $" distAboveSoil={wTip.y - plantingSurfacePoint.y:F3}");
+                ri++;
+            }
+        }
+        // ── Game-view debug markers (GL lines — visible in Game View without Gizmos) ──
+        {
+            _soilDbgSoilY   = plantingSurfacePoint.y;
+            _soilDbgRockTop = rockCollider != null ? rockCollider.bounds.max.y : _soilDbgSoilY + 2f;
+            _soilDbgRockBot = rockCollider != null ? rockCollider.bounds.min.y : _soilDbgSoilY;
+            _soilDbgCenter  = rockCollider != null ? rockCollider.bounds.center : transform.position;
+            _soilDbgR       = rockCollider != null ? rockCollider.bounds.extents.magnitude * 1.1f : 1.5f;
+            _soilDbgActive  = true;
+            _soilDbgEndTime = Time.realtimeSinceStartup + 60f;
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
+        // Clear existing trunk-root chains so PreGrowRootsToSoil builds fresh cables
+        // from the correct trunk-tip positions instead of from the draped chain tips
+        // (which can end up above the trunk after DrapeRootsOverRock adds an upward bias).
+        if (root != null)
+        {
+            foreach (var child in root.children)
+                if (child.isRoot) child.children.Clear();
+        }
+
+        // Pre-grow root cables from the trunk base all the way to the soil.
+        // In real Ishitsuki the roots are already established before rock placement —
+        // what takes years is new thin roots filling in, not the original cables reaching soil.
+        PreGrowRootsToSoil();
 
         meshBuilder.SetDirty();
-        Debug.Log($"[Ishitsuki] SpawnTrainingWires — initY={initY:F3}");
+        Debug.Log($"[Ishitsuki] year={GameManager.year} SpawnTrainingWires — initY={initY:F3} soilY={plantingSurfacePoint.y:F3}");
     }
 
     /// <summary>
@@ -2117,16 +2356,39 @@ public class TreeSkeleton : MonoBehaviour
         {
             TreeNode node = queue.Dequeue();
 
-            // Re-chain from parent tip (parent position may have just changed).
-            if (node.parent != null && node.parent.isRoot)
-                node.worldPosition = node.parent.tipPosition;
+            Vector3 worldPos = transform.TransformPoint(node.worldPosition);
 
-            Vector3 worldPos  = transform.TransformPoint(node.worldPosition);
-            Vector3 closestPt = Physics.ClosestPoint(worldPos, rockCollider,
-                rockCollider.transform.position, rockCollider.transform.rotation);
+            // Nodes inside the rock bounds can't use Physics.ClosestPoint reliably.
+            // Shoot a ray from the trunk base in this root's own radial direction so
+            // each root projects to a different surface point and they fan out naturally.
+            Vector3 closestPt;
+            bool    insideBounds = rockCollider.bounds.Contains(worldPos);
+            if (insideBounds)
+            {
+                // Radial direction: horizontal XZ offset of this node from the trunk base.
+                Vector3 localRadial = node.worldPosition - root.worldPosition;
+                localRadial.y = 0f;
+                if (localRadial.sqrMagnitude < 0.001f)
+                    localRadial = new Vector3(node.growDirection.x, 0f, node.growDirection.z);
+                Vector3 worldRadial   = transform.TransformDirection(localRadial).normalized;
+                if (worldRadial.sqrMagnitude < 0.001f) worldRadial = Vector3.forward;
+                Vector3 trunkWorldPos = transform.TransformPoint(root.worldPosition);
+                if (rockCollider.Raycast(new Ray(trunkWorldPos, worldRadial),
+                        out RaycastHit bHit, 10f))
+                    closestPt = bHit.point;
+                else
+                    closestPt = Physics.ClosestPoint(worldPos, rockCollider,
+                        rockCollider.transform.position, rockCollider.transform.rotation);
+            }
+            else
+            {
+                closestPt = Physics.ClosestPoint(worldPos, rockCollider,
+                    rockCollider.transform.position, rockCollider.transform.rotation);
+            }
+
             float dist = Vector3.Distance(worldPos, closestPt);
 
-            if (dist < snapRadius)
+            if (insideBounds || dist < snapRadius)
             {
                 // Surface normal via raycast from slightly outside.
                 Vector3 outward = closestPt - rockCollider.bounds.center;
@@ -2151,7 +2413,17 @@ public class TreeSkeleton : MonoBehaviour
                         worldPos.z - rockCollider.bounds.center.z).normalized;
                     tangent = Vector3.ProjectOnPlane(radialOut, surfaceNormal);
                 }
-                tangent = (tangent.normalized + Vector3.down * 0.4f).normalized;
+                // Add gravity bias then re-project onto the surface plane so the
+                // direction stays truly tangent — without this re-projection the
+                // direction has an inward component and tipPosition dips into the rock,
+                // forcing the next segment to angle sharply upward (the zigzag).
+                // A small outward-normal offset keeps the tip just above the surface.
+                tangent = Vector3.ProjectOnPlane(
+                    (tangent.normalized + Vector3.down * 0.4f).normalized,
+                    surfaceNormal);
+                if (tangent.sqrMagnitude < 0.001f)
+                    tangent = Vector3.ProjectOnPlane(Vector3.down, surfaceNormal);
+                tangent = (tangent.normalized + surfaceNormal * 0.08f).normalized;
                 node.growDirection = transform.InverseTransformDirection(tangent).normalized;
                 snapped++;
             }
@@ -2161,6 +2433,250 @@ public class TreeSkeleton : MonoBehaviour
         }
 
         Debug.Log($"[Ishitsuki] DrapeRootsOverRock — snapped {snapped} root nodes");
+    }
+
+    /// <summary>
+    /// For each trunk root snapped to the rock surface, pre-spawns a fully-grown chain
+    /// of nodes tracing the rock face down to the soil level.
+    ///
+    /// Real Ishitsuki roots are established BEFORE placement — the tree was trained to
+    /// the rock over years before the player places it. Only the new fill-in roots that
+    /// grow afterward should take a long time. The initial cables reach soil immediately.
+    /// </summary>
+    void PreGrowRootsToSoil()
+    {
+        if (root == null) return;
+        if (rockCollider == null)
+        {
+            Debug.LogWarning($"[PreGrow] year={GameManager.year} rockCollider is NULL (isIshitsukiMode={isIshitsukiMode}) — cannot drape roots.");
+            return;
+        }
+
+        float soilY = debugSoilYOverride ? debugSoilY : plantingSurfacePoint.y;
+        if (debugSoilYOverride && debugSoilY <= -9998f)
+        {
+            debugSoilY = plantingSurfacePoint.y;
+            soilY      = debugSoilY;
+        }
+
+        float segLen     = rootSegmentLength * 0.5f;
+        int   grown      = 0;
+        float rockSearchR = rockCollider.bounds.extents.magnitude * 2.5f;
+
+        var trunkRoots = new List<TreeNode>();
+        foreach (var child in root.children)
+            if (child.isRoot) trunkRoots.Add(child);
+
+        Debug.Log($"[PreGrow] year={GameManager.year} soilY={soilY:F3} segLen={segLen:F3} trunkRoots={trunkRoots.Count}");
+
+        int strandIndex = 0;
+        foreach (var startNode in trunkRoots)
+        {
+            TreeNode current     = startNode;
+            int      strandGrown = 0;
+
+            // ── Phase 1: fast-forward to the chain tip ────────────────────────────
+            while (current.children.Count > 0)
+                current = current.children[0];
+
+            Vector3 existingTip = transform.TransformPoint(current.tipPosition);
+            if (existingTip.y <= soilY + 0.05f)
+            {
+                Debug.Log($"[PreGrow] year={GameManager.year} strand={strandIndex} tip already at soil tipY={existingTip.y:F3}");
+                strandIndex++;
+                continue;
+            }
+
+            // ── Find entry point on rock face this strand is aimed at ─────────────
+            // Each trunk root points in a different XZ direction from the trunk.
+            // Cast from outside the rock bounds inward along that direction so every
+            // strand starts on its own face — not all piling onto the nearest one.
+            Vector3 startTip  = transform.TransformPoint(startNode.tipPosition);
+            Vector3 strandDir = transform.TransformDirection(startNode.growDirection).normalized;
+            Vector3 strandXZ  = new Vector3(strandDir.x, 0f, strandDir.z);
+            if (strandXZ.sqrMagnitude < 0.001f)
+                strandXZ = new Vector3(strandDir.x, strandDir.z, 0f);
+            if (strandXZ.sqrMagnitude < 0.001f)
+                strandXZ = Vector3.right;
+            strandXZ = strandXZ.normalized;
+
+            Vector3 rockCenter  = rockCollider.bounds.center;
+            float   rockTopY    = rockCollider.bounds.max.y;
+            float   surfOffset  = rootTerminalRadius * 2f; // float nodes one full diameter above surface
+
+            // ── Entry point: two-step — find XZ edge, then scan down from above it ─────
+            // Step 1: horizontal ray at rock center Y (the widest cross-section) finds the
+            //         outermost XZ position of the rock in this strand's direction.
+            //         This almost always hits, unlike a ray at startTip.y which can miss
+            //         near the rock top where the mesh tapers.
+            float   entryY    = Mathf.Max(startTip.y, rockTopY) + 0.5f;
+            float   entryDist = rockCollider.bounds.size.y + 1.5f;
+
+            Vector3 horizOrig = rockCenter + strandXZ * rockSearchR;
+            horizOrig.y       = rockCenter.y; // widest Y cross-section
+            Vector3 edgeXZ;
+            if (rockCollider.Raycast(new Ray(horizOrig, -strandXZ), out RaycastHit edgeHit, rockSearchR * 2f))
+            {
+                edgeXZ = edgeHit.point; // outer surface XZ at widest Y
+            }
+            else
+            {
+                // Ray missed — rock has a concave face in this direction at the equator.
+                // Fall back to the bounding-box edge (guaranteed outside the mesh) so
+                // toEdge snaps never land inside the rock.
+                float projExtent = Mathf.Abs(strandXZ.x) * rockCollider.bounds.extents.x
+                                 + Mathf.Abs(strandXZ.z) * rockCollider.bounds.extents.z;
+                edgeXZ = new Vector3(rockCenter.x + strandXZ.x * projExtent,
+                                     rockCenter.y,
+                                     rockCenter.z + strandXZ.z * projExtent);
+            }
+
+            // Step 2: edgeXZ is the rock's outermost XZ in this strand's direction at
+            //         its widest Y cross-section. Used as snap target when under-rock.
+            //         baseWorld starts at the trunk-root tip — no entry scan landing, so
+            //         there is no mesh gap between the trunk root and the first pre-grown node.
+            Vector3 baseWorld       = startTip;
+            bool    hasHitExterior  = false;
+
+            // ── Phase 2: step down the rock face to soil ──────────────────────────
+            // Each step re-queries the rock exterior by shooting a horizontal ray from
+            // outside the rock along the strand's fixed XZ direction at the new Y level.
+            //
+            // Before the first exterior hit: if the horizontal ray misses, check whether
+            // we are still inside the rock with a downward ray. If so, snap XZ to edgeXZ
+            // (the outer edge at the rock's widest section) so the chain exits the rock
+            // instead of tunnelling through it.
+            //
+            // After the first exterior hit: a horizontal miss means we have descended past
+            // the rock's lower surface — free-fall straight down to soil.
+            for (int step = 0; step < 120; step++)
+            {
+                if (baseWorld.y <= soilY + 0.05f)
+                {
+                    Debug.Log($"[PreGrow] year={GameManager.year} strand={strandIndex} step={step} REACHED SOIL baseY={baseWorld.y:F3}");
+                    break;
+                }
+
+                // Advance Y by one segment downward.
+                float targetY = baseWorld.y - segLen;
+                if (targetY < soilY) targetY = soilY;
+
+                // Horizontal ray: from outside the rock inward along strandXZ at targetY.
+                Vector3 scanOrig = rockCenter + strandXZ * rockSearchR;
+                scanOrig.y       = targetY;
+                bool hitRock     = rockCollider.Raycast(new Ray(scanOrig, -strandXZ), out RaycastHit hit, rockSearchR * 2f);
+
+                Vector3 nodePos;
+                Vector3 tangent;
+
+                string stepMode;
+                if (hitRock)
+                {
+                    // Exterior surface found — float one full root diameter above it.
+                    nodePos         = hit.point + hit.normal * surfOffset;
+                    tangent         = nodePos - baseWorld;
+                    tangent         = tangent.sqrMagnitude > 0.001f ? tangent.normalized : Vector3.down;
+                    stepMode        = "exterior";
+                    hasHitExterior  = true;
+                }
+                else if (!hasHitExterior)
+                {
+                    // Haven't reached the exterior yet — check whether the trunk-root tip
+                    // (or a prior node) is inside the rock by shooting down from above.
+                    Vector3 checkOrig = new Vector3(baseWorld.x, rockTopY + 0.5f, baseWorld.z);
+                    float   checkDist = rockTopY - soilY + 1f;
+                    bool underRock    = rockCollider.Raycast(new Ray(checkOrig, Vector3.down), out RaycastHit checkHit, checkDist)
+                                       && checkHit.point.y > targetY;
+                    if (underRock)
+                    {
+                        // Snap XZ directly to the outer edge at this Y — jumps chain
+                        // onto the rock exterior without drifting through the interior.
+                        nodePos  = new Vector3(edgeXZ.x, targetY, edgeXZ.z);
+                        tangent  = (nodePos - baseWorld).sqrMagnitude > 0.001f
+                                   ? (nodePos - baseWorld).normalized
+                                   : Vector3.down;
+                        stepMode = "toEdge";
+                    }
+                    else
+                    {
+                        // We're above the rock and the ray just missed — free-fall.
+                        nodePos  = new Vector3(baseWorld.x, targetY, baseWorld.z);
+                        tangent  = Vector3.down;
+                        stepMode = "freeFall";
+                    }
+                }
+                else
+                {
+                    // Horizontal ray missed after tracking the exterior — the rock's side
+                    // face has tapered away.  Before free-falling, try a downward ray from
+                    // the outer edge (edgeXZ) to find the rock's lower curved surface.
+                    // This lets the chain follow the lower hemisphere of a round rock
+                    // instead of hanging in space at the equatorial XZ.
+                    Vector3 downOrig = new Vector3(edgeXZ.x, baseWorld.y + 0.1f, edgeXZ.z);
+                    float   downDist = baseWorld.y - soilY + 0.5f;
+                    if (rockCollider.Raycast(new Ray(downOrig, Vector3.down), out RaycastHit lowerHit, downDist)
+                        && lowerHit.point.y < baseWorld.y)
+                    {
+                        // Lower rock face found — float above it.
+                        nodePos   = lowerHit.point + lowerHit.normal * surfOffset;
+                        nodePos.y = Mathf.Clamp(nodePos.y, soilY, baseWorld.y - 0.001f);
+                        tangent   = (nodePos - baseWorld).sqrMagnitude > 0.001f
+                                    ? (nodePos - baseWorld).normalized
+                                    : Vector3.down;
+                        stepMode  = "lowerFace";
+                    }
+                    else
+                    {
+                        // Nothing found — rock is fully below us, drop straight to soil.
+                        nodePos  = new Vector3(baseWorld.x, targetY, baseWorld.z);
+                        tangent  = Vector3.down;
+                        stepMode = "freeFall";
+                    }
+                }
+
+                if (step == 0 || step % 5 == 0)
+                    Debug.Log($"[PreGrow] year={GameManager.year} s={strandIndex} step={step}" +
+                              $" targetY={targetY:F3} nodeY={nodePos.y:F3} mode={stepMode}");
+
+                Vector3 localPos = transform.InverseTransformPoint(baseWorld);
+                Vector3 localDir = transform.InverseTransformDirection(tangent).normalized;
+
+                var newNode              = CreateNode(localPos, localDir, rootTerminalRadius, segLen, current);
+                newNode.isRoot           = true;
+                newNode.isTrainingWire   = true;   // exempt from rootVisibilityDepth cull in TreeMeshBuilder
+                newNode.length           = segLen;
+                newNode.isGrowing        = false;
+                newNode.radius           = rootTerminalRadius;
+
+                current = newNode;
+                grown++;
+                strandGrown++;
+
+                // Advance to the new exterior surface point — NOT tangent * segLen.
+                baseWorld = nodePos;
+            }
+
+            // Prevent startNode from reaching targetLength in the Update growth loop and
+            // firing SpawnChildren — which would append a second air-growing continuation
+            // root alongside the pre-grown chain. Mark it fully grown but frozen.
+            if (startNode.isGrowing)
+            {
+                startNode.length    = startNode.targetLength;
+                startNode.isGrowing = false;
+                startNode.radius    = rootTerminalRadius;
+                startNode.minRadius = rootTerminalRadius;
+            }
+
+            Vector3 finalTip = transform.TransformPoint(current.tipPosition);
+            Debug.Log($"[PreGrow] year={GameManager.year} strand={strandIndex} DONE grew={strandGrown} finalTipY={finalTip.y:F3} soilY={soilY:F3} aboveSoil={finalTip.y - soilY:F3}");
+            strandIndex++;
+        }
+
+        // After pre-growing, rebuild radii so the new nodes feed into the pipe model.
+        if (grown > 0)
+            RecalculateRadii(root);
+
+        Debug.Log($"[Ishitsuki] year={GameManager.year} PreGrowRootsToSoil — spawned {grown} pre-grown nodes total");
     }
 
     /// <summary>
@@ -2180,6 +2696,124 @@ public class TreeSkeleton : MonoBehaviour
         node.wireSetProgress       = 0f;
         node.wireDamageProgress    = 0f;
         node.wireAgeDays           = 0f;
+    }
+
+    // ── Mesh surface helpers ──────────────────────────────────────────────────
+
+    struct RockSurfaceHit { public Vector3 point, normal; public float dist; }
+
+    /// <summary>
+    /// Finds the closest point on any triangle of the mesh to <paramref name="worldPos"/>.
+    /// Works for any shape — convex, concave, overhang — from any position.
+    /// Uses interpolated per-vertex normals (barycentric) to avoid zero-normal on shared vertices.
+    /// </summary>
+    static RockSurfaceHit ClosestPointOnMesh(
+        Vector3   worldPos,
+        Vector3[] verts,
+        int[]     tris,
+        Vector3[] normals,   // mesh.normals — per-vertex, pre-computed by Unity
+        Transform xform)
+    {
+        Vector3 local   = xform.InverseTransformPoint(worldPos);
+        float   minSq   = float.MaxValue;
+        Vector3 bestPt  = local;
+        int     bestI   = 0;
+
+        for (int i = 0; i < tris.Length; i += 3)
+        {
+            Vector3 a = verts[tris[i]];
+            Vector3 b = verts[tris[i + 1]];
+            Vector3 c = verts[tris[i + 2]];
+
+            Vector3 cp = ClosestPointOnTriangle(local, a, b, c);
+            float   sq = (cp - local).sqrMagnitude;
+            if (sq >= minSq) continue;
+
+            minSq  = sq;
+            bestPt = cp;
+            bestI  = i;
+        }
+
+        // Interpolate surface normal at bestPt using barycentric coords + per-vertex normals.
+        // This never produces zero even when bestPt is exactly on a shared vertex,
+        // because per-vertex normals are averaged over all adjacent faces by Unity.
+        Vector3 bestN = Vector3.up;
+        if (normals != null && normals.Length > 0)
+        {
+            int     iA = tris[bestI], iB = tris[bestI + 1], iC = tris[bestI + 2];
+            Vector3 a  = verts[iA],   b  = verts[iB],       c  = verts[iC];
+
+            // Compute barycentric coords of bestPt on triangle (a, b, c).
+            // bestPt = a*(1-u-v) + b*v + c*u  →  wA=1-u-v, wB=v, wC=u
+            Vector3 v0 = c - a, v1 = b - a, v2 = bestPt - a;
+            float d00 = Vector3.Dot(v0, v0), d01 = Vector3.Dot(v0, v1), d02 = Vector3.Dot(v0, v2);
+            float d11 = Vector3.Dot(v1, v1), d12 = Vector3.Dot(v1, v2);
+            float denom = d00 * d11 - d01 * d01;
+
+            Vector3 interpolated;
+            if (Mathf.Abs(denom) < 1e-10f)
+            {
+                // Degenerate (zero-area) triangle — fall back to cross product
+                interpolated = Vector3.Cross(b - a, c - a);
+            }
+            else
+            {
+                float invD = 1f / denom;
+                float wC   = (d11 * d02 - d01 * d12) * invD;   // weight for vertex C
+                float wB   = (d00 * d12 - d01 * d02) * invD;   // weight for vertex B
+                float wA   = 1f - wB - wC;                     // weight for vertex A
+                // Clamp to [0,1] to handle floating-point noise at triangle edges
+                wA = Mathf.Clamp01(wA); wB = Mathf.Clamp01(wB); wC = Mathf.Clamp01(wC);
+                float sum = wA + wB + wC;
+                if (sum > 1e-6f) { wA /= sum; wB /= sum; wC /= sum; }
+                interpolated = normals[iA] * wA + normals[iB] * wB + normals[iC] * wC;
+            }
+
+            if (interpolated.sqrMagnitude > 1e-6f)
+                bestN = interpolated.normalized;
+            // else bestN stays Vector3.up (safe fallback)
+        }
+
+        return new RockSurfaceHit
+        {
+            point  = xform.TransformPoint(bestPt),
+            normal = xform.TransformDirection(bestN),
+            dist   = Mathf.Sqrt(minSq)
+        };
+    }
+
+    /// <summary>
+    /// Returns the closest point on triangle (a,b,c) to point p.
+    /// All in the same local space. Standard Ericson/Christer method.
+    /// </summary>
+    static Vector3 ClosestPointOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+    {
+        Vector3 ab = b - a, ac = c - a, ap = p - a;
+        float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);
+        if (d1 <= 0f && d2 <= 0f) return a;
+
+        Vector3 bp = p - b;
+        float d3 = Vector3.Dot(ab, bp), d4 = Vector3.Dot(ac, bp);
+        if (d3 >= 0f && d4 <= d3) return b;
+
+        Vector3 cp = p - c;
+        float d5 = Vector3.Dot(ab, cp), d6 = Vector3.Dot(ac, cp);
+        if (d6 >= 0f && d5 <= d6) return c;
+
+        float vc = d1 * d4 - d3 * d2;
+        if (vc <= 0f && d1 >= 0f && d3 <= 0f)
+            return a + ab * (d1 / (d1 - d3));
+
+        float vb = d5 * d2 - d1 * d6;
+        if (vb <= 0f && d2 >= 0f && d6 <= 0f)
+            return a + ac * (d2 / (d2 - d6));
+
+        float va = d3 * d6 - d5 * d4;
+        if (va <= 0f && (d4 - d3) >= 0f && (d5 - d6) >= 0f)
+            return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+
+        float denom = 1f / (va + vb + vc);
+        return a + ab * (vb * denom) + ac * (vc * denom);
     }
 
     /// <summary>

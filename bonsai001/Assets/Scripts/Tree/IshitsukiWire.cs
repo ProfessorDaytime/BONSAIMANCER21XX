@@ -122,14 +122,15 @@ public class IshitsukiWire : MonoBehaviour
                 float   angle = s * Mathf.PI * 2f / loopSamples;
                 Vector3 dir   = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
 
-                // Rock: cast far out and find closest surface point in this direction
-                Vector3 farPt    = loopCenter + dir * searchRadius;
-                Vector3 rockPt   = Physics.ClosestPoint(farPt, rockCollider,
-                                       rockCollider.transform.position,
-                                       rockCollider.transform.rotation);
-                // XZ distance from loop centre to rock surface in this direction
-                float rockDist = new Vector2(rockPt.x - loopCenter.x,
-                                             rockPt.z - loopCenter.z).magnitude;
+                // Rock: ray from outside inward to find the surface in this direction.
+                // Physics.Raycast works on any MeshCollider (convex or not), unlike
+                // Physics.ClosestPoint which requires convex.
+                Vector3 farPt   = loopCenter + dir * searchRadius;
+                Vector3 inward  = (loopCenter - farPt).normalized;
+                float   rockDist = b.extents.magnitude; // fallback = rough bounding-sphere radius
+                if (Physics.Raycast(farPt, inward, out RaycastHit wireHit, searchRadius * 2f))
+                    rockDist = new Vector2(wireHit.point.x - loopCenter.x,
+                                          wireHit.point.z - loopCenter.z).magnitude;
 
                 // Trunk: project trunk XZ onto this direction, add radius
                 float trunkDist = 0f;
