@@ -49,7 +49,7 @@ public class TreeInteraction : MonoBehaviour
 
     // ── Highlight state ───────────────────────────────────────────────────────
 
-    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste, AirLayer }
+    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste, AirLayer, Pinch, Defoliate }
 
     TreeNode        highlightedNode;
     HighlightMode   highlightMode = HighlightMode.None;
@@ -62,6 +62,8 @@ public class TreeInteraction : MonoBehaviour
     static readonly Color ColPaste      = new Color(0.2f, 0.8f, 0.9f);   // cyan (wound with paste)
     static readonly Color ColAirLayer   = new Color(0.0f, 0.85f, 0.85f); // teal (air layer placement)
     static readonly Color ColRootWork   = new Color(0.9f, 0.45f, 0.1f);  // orange (root work)
+    static readonly Color ColPinch      = new Color(0.55f, 1.0f, 0.15f); // lime-green (pinch tip)
+    static readonly Color ColDefoliate  = new Color(1.0f,  0.75f, 0.0f); // amber (defoliate)
 
     // ── Wire aim / animation state ────────────────────────────────────────────
 
@@ -214,6 +216,8 @@ public class TreeInteraction : MonoBehaviour
             case ToolType.RemoveWire: return ColRemoveWire;
             case ToolType.Paste:      return ColPaste;
             case ToolType.AirLayer:   return ColAirLayer;
+            case ToolType.Pinch:      return ColPinch;
+            case ToolType.Defoliate:  return ColDefoliate;
             default:                  return Color.white;
         }
     }
@@ -332,6 +336,10 @@ public class TreeInteraction : MonoBehaviour
             HandlePasteHover();
         else if (GameManager.canAirLayer)
             HandleAirLayerHover();
+        else if (GameManager.canPinch)
+            HandlePinchHover();
+        else if (GameManager.canDefoliate)
+            HandleDefoliateHover();
         else
             SetHighlight(null, HighlightMode.None);
     }
@@ -812,6 +820,50 @@ public class TreeInteraction : MonoBehaviour
         }
     }
 
+    // ── Pinch ─────────────────────────────────────────────────────────────────
+
+    void HandlePinchHover()
+    {
+        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        // Only target terminal, growing, non-root branch nodes
+        TreeNode node = PickNode(ray, out _, n => n.isTerminal && n.isGrowing && !n.isRoot && !n.isTrimmed);
+        if (node != null)
+        {
+            SetHighlight(node, HighlightMode.Pinch);
+            if (Input.GetMouseButtonDown(0))
+            {
+                SetHighlight(null, HighlightMode.None);
+                skeleton.PinchNode(node);
+            }
+            return;
+        }
+        SetHighlight(null, HighlightMode.None);
+    }
+
+    // ── Defoliate ─────────────────────────────────────────────────────────────
+
+    void HandleDefoliateHover()
+    {
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        var leafManager = skeleton.GetComponent<LeafManager>();
+
+        // Target terminal non-root nodes that currently have a leaf cluster
+        TreeNode node = PickNode(ray, out _,
+            n => n.isTerminal && !n.isRoot && !n.isTrimmed && leafManager != null && leafManager.NodeHasLeaves(n.id));
+
+        if (node != null)
+        {
+            SetHighlight(node, HighlightMode.Defoliate);
+            if (Input.GetMouseButtonDown(0))
+            {
+                SetHighlight(null, HighlightMode.None);
+                leafManager.DefoliateNode(node);
+            }
+            return;
+        }
+        SetHighlight(null, HighlightMode.None);
+    }
+
     // ── Highlight ─────────────────────────────────────────────────────────────
 
     void SetHighlight(TreeNode node, HighlightMode mode)
@@ -834,6 +886,8 @@ public class TreeInteraction : MonoBehaviour
             case HighlightMode.SingleGreen: highlightMat.color = ColRemoveWire; break;
             case HighlightMode.Paste:       highlightMat.color = ColPaste;      break;
             case HighlightMode.AirLayer:    highlightMat.color = ColAirLayer;   break;
+            case HighlightMode.Pinch:       highlightMat.color = ColPinch;      break;
+            case HighlightMode.Defoliate:   highlightMat.color = ColDefoliate;  break;
         }
 
         RebuildHighlightMesh(node, singleNode: mode != HighlightMode.TrimSubtree);

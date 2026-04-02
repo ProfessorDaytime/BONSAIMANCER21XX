@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-04-02  (items 1–14 complete)
+Last updated: 2026-04-02  (items 1–16 complete; item 17 GL debug in place)
 
 ---
 
@@ -9,21 +9,22 @@ Last updated: 2026-04-02  (items 1–14 complete)
 Work through these in order. Do not start the next item until the current one is
 shippable (playable without obvious breakage).
 
-Items 1–14 are complete. The queue below is the next phase.
+Items 1–16 are complete. The queue below is the next phase.
 
-### 15. Pinching Tool  ← NEXT
-**Goal:** Lighter spring action distinct from shears: remove the soft shoot tip between
-the first leaf pair after it unfolds.
-- Keeps internodes short and twigs fine without the trauma of hard pruning
-- Triggers `backBudStimulated` on nearby nodes (same as trim, lower health cost)
-- Increments `refinementLevel` on the pinched node — fastest path to fine internode
-  shortening since pinching can be done every shoot every spring
-- Does NOT consume energy from the leaf cluster — leaves stay, just tip removed
-- New tool type `ToolType.Pinch` in `ToolManager`; click a terminal growing tip to pinch
-- Depends on: Bud/Leaf Integration (done ✓), Refinement Level (done ✓)
+### 17. Root Visibility Bug (Post-Ishitsuki)  ← NEXT
+**Bug:** After root-on-rock (Ishitsuki) is confirmed, non-Ishitsuki roots (pot roots,
+surface roots) are invisible in RootPrune mode. Hover red outline works; mesh does not render.
 
-**Scope:** `ToolManager.cs` (new ToolType), `TreeInteraction.cs` (pinch hover + click),
-`TreeSkeleton.cs` (PinchNode method), `buttonClicker.cs` + `ButtonUI.uxml` (Pinch button)
+**GL debug overlay: DONE** — `debugRootVisibility` toggle on `TreeMeshBuilder`:
+- Cyan = isTrainingWire, Yellow = isAirLayerRoot, Green = included, Red = excluded by depth threshold
+- `[RootVis] BuildMesh` log prints `renderRoots`, threshold, included/skipped counts every rebuild
+- Toggle ON before and after Ishitsuki confirm to see which nodes go red
+
+**Next step:** Enable `debugRootVisibility` in Inspector, do an Ishitsuki confirm, enter
+RootPrune, check console for `[RootVis]` line and Game View for red lines. Then fix
+the flagged condition and remove/comment the toggle.
+
+**Scope:** `TreeMeshBuilder.cs` (fix condition), possibly `TreeSkeleton.cs`
 
 ---
 
@@ -714,4 +715,6 @@ int   seasonsSinceRepot;    // increments each spring
 - Dynamic leaf scale: `seasonLeafScale` computed each spring from root pressure × refinement × defoliation factor; `baseLeafScale` is the species default; `defoliationFactor` stubbed at 0, decays 0.2/season; `RootPressureFactor()` and `RefinementCap` exposed on `TreeSkeleton` (`LeafManager`, `TreeSkeleton`)
 - Per-branch vigor: `float branchVigor` on `TreeNode`; apical nudge each spring (`apicalVigorBonus / depth`), decay toward 1.0, clamp [0.2, 2.0]; multiplies `chordLength` and lateral chance; trim reduces vigor × 0.7 and scales refinement gain inversely (`TreeNode`, `TreeSkeleton`)
 - Watering system: `soilMoisture` drained per in-game day; drought accumulator applies `DamageType.Drought` each season; `public void Water()` refills to 1.0; moisture bar in HUD (blue→amber→red) below watering can button; watering button works during BranchGrow/TimeGo/Idle post-plant (`TreeSkeleton`, `buttonClicker`, `ButtonUI.uxml`)
+- Defoliation: `ToolType.Defoliate` + `canDefoliate`; `DefoliateNode()` strips a single cluster with fall animation, bumps `defoliationFactor` proportionally, stimulates 2 ancestors; `DefoliateAll()` strips all clusters, sets factor to 1.0, stimulates all nodes; amber highlight in `TreeInteraction`; "Defoliate" (per-node tool) + "Defo All" (one-shot) buttons; both greyed outside June–July via `SetButtonEnabled` (`LeafManager`, `ToolManager`, `TreeInteraction`, `buttonClicker`, `ButtonUI.uxml`, `GameManager`)
+- Pinching tool: `ToolType.Pinch`; `PinchNode()` on `TreeSkeleton` stops terminal growth, gains refinement, stimulates 2 ancestors, applies 25% trim trauma — no wound, leaves stay; lime-green highlight in `TreeInteraction`; Pinch button in HUD (`ToolManager`, `TreeSkeleton`, `TreeInteraction`, `buttonClicker`, `ButtonUI.uxml`, `GameManager`)
 - Save / Load system: `SaveManager` static class with `Save()`/`Load()` writing JSON to `Application.persistentDataPath/bonsai_save.json`; `SaveData` + `SaveNode` serializable classes capture all `TreeNode` fields + GameManager time + skeleton live state; `LoadFromSaveData()` on `TreeSkeleton` clears and rebuilds tree, re-spawns wounds, rebuilds mesh, restores leaves via `LeafManager.ForceSpawnLeaves`; auto-save fires each September (BranchGrow→TimeGo); manual Save button in Settings → Time tab with timestamp feedback (`SaveManager.cs`, `TreeSkeleton`, `LeafManager`, `buttonClicker`, `ButtonUI.uxml`)

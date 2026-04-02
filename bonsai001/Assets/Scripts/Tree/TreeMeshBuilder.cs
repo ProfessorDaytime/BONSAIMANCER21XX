@@ -50,6 +50,14 @@ public class TreeMeshBuilder : MonoBehaviour
     [Tooltip("Draw green→yellow→red rings on each branch node to visualise node health. Toggle at runtime.")]
     public bool debugHealthRings = false;
 
+    [Tooltip("Draw colored lines on every root node to diagnose root visibility bugs.\n" +
+             "Green  = included in mesh  (passes visibility check)\n" +
+             "Red    = excluded by depth threshold (y < rootVisibilityDepth)\n" +
+             "Cyan   = isTrainingWire (always rendered)\n" +
+             "Yellow = isAirLayerRoot (always rendered)\n" +
+             "Lines draw through geometry (ZTest Always) so they're visible in Game View.")]
+    public bool debugRootVisibility = false;
+
     /// <summary>
     /// When false (default), only roots above rootVisibilityDepth are rendered.
     /// Set to true by TreeSkeleton when entering RootPrune mode (shows all roots).
@@ -145,17 +153,25 @@ public class TreeMeshBuilder : MonoBehaviour
     {
         if (skeleton.root == null) return;
 
-        if (renderRoots)
+        if (renderRoots || debugRootVisibility)
         {
             int rootNodes = 0, rootTerminals = 0, rootDepthMax = 0;
+            int wouldSkip = 0, wouldInclude = 0;
             foreach (var n in skeleton.allNodes)
             {
                 if (!n.isRoot) continue;
                 rootNodes++;
                 if (n.isTerminal) rootTerminals++;
                 if (n.depth > rootDepthMax) rootDepthMax = n.depth;
+
+                // Replicate the exact skip condition from ProcessNode
+                bool skipped = n.isRoot && !n.isAirLayerRoot && !n.isTrainingWire
+                               && !renderRoots && n.worldPosition.y < rootVisibilityDepth;
+                if (skipped) wouldSkip++; else wouldInclude++;
             }
-            Debug.Log($"[GRoot] BuildMesh | rootNodes={rootNodes} rootTerminals={rootTerminals} maxRootDepth={rootDepthMax} totalNodes={skeleton.allNodes.Count}");
+            Debug.Log($"[RootVis] BuildMesh | renderRoots={renderRoots} threshold={rootVisibilityDepth:F3} " +
+                      $"| rootNodes={rootNodes} terminals={rootTerminals} maxDepth={rootDepthMax} " +
+                      $"| included={wouldInclude} skipped={wouldSkip}");
         }
 
         buildTimer.Restart();
@@ -672,7 +688,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
     void OnRenderObject()
     {
-        if (!debugHealthRings || skeleton == null || skeleton.root == null) return;
+        if (skeleton == null || skeleton.root == null) return;
 
         if (_dbgHealthMat == null)
         {
@@ -689,34 +705,68 @@ public class TreeMeshBuilder : MonoBehaviour
         GL.MultMatrix(transform.localToWorldMatrix);
         GL.Begin(GL.LINES);
 
-        foreach (var node in skeleton.allNodes)
+        if (debugHealthRings)
         {
-            if (node.isRoot || node.isTrimmed) continue;
-
-            float h   = node.health;
-            Color col = h <= 0.5f
-                ? Color.Lerp(Color.red,    Color.yellow, h * 2f)
-                : Color.Lerp(Color.yellow, Color.green,  (h - 0.5f) * 2f);
-            col.a = 1f;
-            GL.Color(col);
-
-            // Build a basis perpendicular to the growth direction
-            Vector3 fwd  = node.growDirection.sqrMagnitude > 0.001f
-                           ? node.growDirection.normalized
-                           : Vector3.up;
-            Vector3 side = Vector3.Cross(fwd, Vector3.up);
-            if (side.sqrMagnitude < 0.001f) side = Vector3.Cross(fwd, Vector3.right);
-            side.Normalize();
-            Vector3 up2  = Vector3.Cross(fwd, side).normalized;
-
-            float   r    = node.radius * 1.25f;  // ring sits just outside bark
-            const int N  = 16;
-            for (int i = 0; i < N; i++)
+            foreach (var node in skeleton.allNodes)
             {
-                float a0 = i       * Mathf.PI * 2f / N;
-                float a1 = (i + 1) * Mathf.PI * 2f / N;
-                GL.Vertex(node.worldPosition + side * (Mathf.Cos(a0) * r) + up2 * (Mathf.Sin(a0) * r));
-                GL.Vertex(node.worldPosition + side * (Mathf.Cos(a1) * r) + up2 * (Mathf.Sin(a1) * r));
+                if (node.isRoot || node.isTrimmed) continue;
+
+                float h   = node.health;
+                Color col = h <= 0.5f
+                    ? Color.Lerp(Color.red,    Color.yellow, h * 2f)
+                    : Color.Lerp(Color.yellow, Color.green,  (h - 0.5f) * 2f);
+                col.a = 1f;
+                GL.Color(col);
+
+                Vector3 fwd  = node.growDirection.sqrMagnitude > 0.001f
+                               ? node.growDirection.normalized
+                               : Vector3.up;
+                Vector3 side = Vector3.Cross(fwd, Vector3.up);
+                if (side.sqrMagnitude < 0.001f) side = Vector3.Cross(fwd, Vector3.right);
+                side.Normalize();
+                Vector3 up2  = Vector3.Cross(fwd, side).normalized;
+
+                float   r    = node.radius * 1.25f;
+                const int N  = 16;
+                for (int i = 0; i < N; i++)
+                {
+                    float a0 = i       * Mathf.PI * 2f / N;
+                    float a1 = (i + 1) * Mathf.PI * 2f / N;
+                    GL.Vertex(node.worldPosition + side * (Mathf.Cos(a0) * r) + up2 * (Mathf.Sin(a0) * r));
+                    GL.Vertex(node.worldPosition + side * (Mathf.Cos(a1) * r) + up2 * (Mathf.Sin(a1) * r));
+                }
+            }
+        }
+
+        if (debugRootVisibility)
+        {
+            // Draw a line from each root node's base to its tip, color-coded:
+            //   Cyan   = isTrainingWire      (always rendered — Ishitsuki cable)
+            //   Yellow = isAirLayerRoot      (always rendered — above-ground root)
+            //   Green  = included in mesh    (renderRoots=true OR y >= threshold)
+            //   Red    = excluded by depth   (y < threshold AND renderRoots=false)
+            //
+            // Lines always draw through geometry (ZTest Always) so they're visible
+            // in Game View even when the mesh covers them.
+
+            foreach (var node in skeleton.allNodes)
+            {
+                if (!node.isRoot) continue;
+
+                Color col;
+                if (node.isTrainingWire)
+                    col = Color.cyan;
+                else if (node.isAirLayerRoot)
+                    col = Color.yellow;
+                else if (renderRoots || node.worldPosition.y >= rootVisibilityDepth)
+                    col = Color.green;
+                else
+                    col = Color.red;
+
+                col.a = 1f;
+                GL.Color(col);
+                GL.Vertex(node.worldPosition);
+                GL.Vertex(node.tipPosition);
             }
         }
 

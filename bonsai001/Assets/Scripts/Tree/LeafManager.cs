@@ -321,6 +321,66 @@ public class LeafManager : MonoBehaviour
         return Mathf.Clamp(actual / potential, 0f, maxMultiplier);
     }
 
+    // ── Defoliation ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns true if the given node currently has a live leaf cluster.
+    /// Used by TreeInteraction to filter hover candidates.
+    /// </summary>
+    public bool NodeHasLeaves(int nodeId) => nodeLeaves.ContainsKey(nodeId);
+
+    /// <summary>
+    /// Strips the leaf cluster from a single node (fall animation).
+    /// Increases defoliationFactor proportionally and marks ancestors for back-budding.
+    /// </summary>
+    public void DefoliateNode(TreeNode node)
+    {
+        if (!nodeLeaves.ContainsKey(node.id)) return;
+
+        // Strip leaves with fall animation
+        StartFallingCluster(node.id);
+        node.hasLeaves = false;
+
+        // Stimulate back-buds on up to 2 ancestors (same as pinch)
+        TreeNode ancestor = node.parent;
+        for (int i = 0; i < 2 && ancestor != null; i++)
+        {
+            ancestor.backBudStimulated = true;
+            ancestor = ancestor.parent;
+        }
+
+        // Bump defoliationFactor — proportional to fraction of leaf nodes stripped
+        int total = 0;
+        foreach (var n in skeleton.allNodes)
+            if (!n.isRoot && !n.isTrimmed && n.isTerminal) total++;
+        defoliationFactor = Mathf.Clamp01(defoliationFactor + (total > 0 ? 1f / total : 0.1f));
+
+        Debug.Log($"[Defoliate] Stripped node={node.id} | defoliationFactor={defoliationFactor:F2}");
+    }
+
+    /// <summary>
+    /// Strips all leaf clusters from the tree at once.
+    /// Sets defoliationFactor to 1.0 (maximum miniaturization effect next spring).
+    /// </summary>
+    public void DefoliateAll()
+    {
+        var ids = new List<int>(nodeLeaves.Keys);
+        foreach (int id in ids)
+            StartFallingCluster(id);
+
+        // Clear hasLeaves on all branch nodes
+        foreach (var node in skeleton.allNodes)
+        {
+            if (!node.isRoot) node.hasLeaves = false;
+            // Back-bud stimulation on all non-root nodes
+            if (!node.isRoot && !node.isTrimmed)
+                node.backBudStimulated = true;
+        }
+
+        defoliationFactor = 1f;
+        Debug.Log($"[Defoliate] Full defoliation | defoliationFactor=1.0 | year={GameManager.year} month={GameManager.month}");
+    }
+
     /// <summary>
     /// Destroys all live leaf GameObjects and clears the tracking dictionaries.
     /// Called by SaveManager.Load() before re-spawning leaves from saved data.

@@ -2541,6 +2541,44 @@ public class TreeSkeleton : MonoBehaviour
     // Trimming
 
     /// <summary>
+    /// Pinches the soft growing tip of a terminal node.
+    /// Unlike TrimNode, no wound is created and leaves remain on the node.
+    /// The tip stops growing; back-buds are stimulated on nearby ancestors.
+    /// </summary>
+    public void PinchNode(TreeNode node)
+    {
+        if (node == null || !node.isTerminal || node.isRoot || node.isTrimmed)
+        {
+            Debug.Log("[Pinch] Ignored: node must be a non-root, non-trimmed terminal.");
+            return;
+        }
+
+        // Stop growth at current length — soft tissue only, no woody wound
+        node.isGrowing = false;
+        node.isTrimmed = true;
+
+        // Refinement gain (same rate as a trim cut but scaled by vigor — less effective on strong vigorous growth)
+        float refGain = refinementOnTrim / Mathf.Max(0.5f, node.branchVigor);
+        node.refinementLevel = Mathf.Min(node.refinementLevel + refGain, refinementCap);
+
+        // Vigor reduction — pinching weakens the tip slightly
+        node.branchVigor = Mathf.Max(vigorMin, node.branchVigor * vigorTrimMultiplier);
+
+        // Light health cost — much less than a hard cut (soft tissue only)
+        ApplyDamage(node, DamageType.TrimTrauma, trimTraumaDamage * 0.25f);
+
+        // Back-bud stimulation on up to 2 ancestors
+        TreeNode ancestor = node.parent;
+        for (int i = 0; i < 2 && ancestor != null && ancestor != root; i++)
+        {
+            ancestor.backBudStimulated = true;
+            ancestor = ancestor.parent;
+        }
+
+        meshBuilder.SetDirty();
+        Debug.Log($"[Pinch] Pinched node={node.id} depth={node.depth} refLevel={node.refinementLevel:F2} vigor={node.branchVigor:F2}");
+    }
+
     /// Removes a node and all its descendants.
     /// </summary>
     public void TrimNode(TreeNode node)

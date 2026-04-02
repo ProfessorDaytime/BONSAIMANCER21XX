@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire, Paste, AirLayer }
+public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire, Paste, AirLayer, Pinch, Defoliate }
 
 public class ToolManager : MonoBehaviour
 {
@@ -21,6 +21,8 @@ public class ToolManager : MonoBehaviour
         GameManager.canRemoveWire = tool == ToolType.RemoveWire;
         GameManager.canPaste      = tool == ToolType.Paste;
         GameManager.canAirLayer   = tool == ToolType.AirLayer;
+        GameManager.canPinch      = tool == ToolType.Pinch;
+        GameManager.canDefoliate  = tool == ToolType.Defoliate;
         Debug.Log($"[Tool] SelectTool={tool} | canTrim={GameManager.canTrim} canWire={GameManager.canWire} canRemoveWire={GameManager.canRemoveWire} canPaste={GameManager.canPaste} | gameState={GameManager.Instance?.state}");
     }
 
@@ -32,6 +34,8 @@ public class ToolManager : MonoBehaviour
         GameManager.canRemoveWire = false;
         GameManager.canPaste      = false;
         GameManager.canAirLayer   = false;
+        GameManager.canPinch      = false;
+        GameManager.canDefoliate  = false;
         Debug.Log($"[Tool] ClearTool | gameState={GameManager.Instance?.state}");
     }
 }

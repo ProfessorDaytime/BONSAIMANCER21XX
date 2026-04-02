@@ -10,6 +10,9 @@ public class ButtonClicker : MonoBehaviour
     UIDocument buttonDocument;
     Button trimButton;
     Button waterButton;
+    Button pinchButton;
+    Button defoliateButton;
+    Button defoliateAllButton;
     Button wireButton;
     Button removeWireButton;
     Button rootPruneButton;
@@ -67,6 +70,9 @@ public class ButtonClicker : MonoBehaviour
 
         trimButton          = root.Q("TrimButton")          as Button;
         waterButton         = root.Q("WaterButton")         as Button;
+        pinchButton         = root.Q("PinchButton")         as Button;
+        defoliateButton     = root.Q("DefoliateButton")     as Button;
+        defoliateAllButton  = root.Q("DefoliateAllButton")  as Button;
         wireButton          = root.Q("WireButton")          as Button;
         removeWireButton    = root.Q("RemoveWireButton")    as Button;
         rootPruneButton     = root.Q("RootPruneButton")     as Button;
@@ -137,6 +143,9 @@ public class ButtonClicker : MonoBehaviour
         // Wire up gameplay buttons
         trimButton?.RegisterCallback<ClickEvent>(OnTreeButtonClick);
         waterButton?.RegisterCallback<ClickEvent>(OnWaterButtonClick);
+        pinchButton?.RegisterCallback<ClickEvent>(OnPinchButtonClick);
+        defoliateButton?.RegisterCallback<ClickEvent>(OnDefoliateButtonClick);
+        defoliateAllButton?.RegisterCallback<ClickEvent>(OnDefoliateAllButtonClick);
         wireButton?.RegisterCallback<ClickEvent>(OnWireButtonClick);
         removeWireButton?.RegisterCallback<ClickEvent>(OnRemoveWireButtonClick);
         rootPruneButton?.RegisterCallback<ClickEvent>(OnRootPruneButtonClick);
@@ -214,6 +223,13 @@ public class ButtonClicker : MonoBehaviour
             saveStatusLabel.text = "";
             saveStatusClearTime  = 0f;
         }
+
+        // Defoliation buttons: only active in June/July during growing season
+        bool defoliationAllowed = (GameManager.month == 6 || GameManager.month == 7)
+                                && (GameManager.Instance.state == GameState.BranchGrow
+                                 || GameManager.Instance.state == GameState.TimeGo);
+        SetButtonEnabled(defoliateButton,    defoliationAllowed);
+        SetButtonEnabled(defoliateAllButton, defoliationAllowed);
 
         if (skeleton != null && moistureBarFill != null)
         {
@@ -367,6 +383,36 @@ public class ButtonClicker : MonoBehaviour
     public void OnTreeButtonClick(ClickEvent evt){
         ToolManager.Instance.SelectTool(ToolType.SmallClippers);
         AudioManager.Instance.PlaySFX("Trim");
+    }
+
+    public void OnPinchButtonClick(ClickEvent evt){
+        ToolManager.Instance.SelectTool(ToolType.Pinch);
+        AudioManager.Instance.PlaySFX("Trim");
+    }
+
+    public void OnDefoliateButtonClick(ClickEvent evt){
+        if (!IsDefoliationAllowed()) return;
+        ToolManager.Instance.SelectTool(ToolType.Defoliate);
+    }
+
+    public void OnDefoliateAllButtonClick(ClickEvent evt){
+        if (!IsDefoliationAllowed()) return;
+        ToolManager.Instance.ClearTool();
+        var leafMgr = skeleton != null ? skeleton.GetComponent<LeafManager>() : null;
+        leafMgr?.DefoliateAll();
+    }
+
+    bool IsDefoliationAllowed() =>
+        (GameManager.month == 6 || GameManager.month == 7)
+        && (GameManager.Instance.state == GameState.BranchGrow
+         || GameManager.Instance.state == GameState.TimeGo);
+
+    /// <summary>Visually dims a button and blocks pointer events when disabled.</summary>
+    static void SetButtonEnabled(Button btn, bool enabled)
+    {
+        if (btn == null) return;
+        btn.style.opacity = enabled ? 1f : 0.35f;
+        btn.pickingMode   = enabled ? PickingMode.Position : PickingMode.Ignore;
     }
 
     public void OnWaterButtonClick(ClickEvent evt){

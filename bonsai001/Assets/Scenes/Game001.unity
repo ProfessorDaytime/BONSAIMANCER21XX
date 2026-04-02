@@ -1844,6 +1844,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ringSegments: 8
   debugHealthRings: 0
+  debugRootVisibility: 1
   renderRoots: 0
   rockCollider: {fileID: 0}
   rootVisibilityDepth: -0.5
@@ -1926,6 +1927,16 @@ MonoBehaviour:
   refinementOnTrim: 0.5
   refinementOnBackBud: 0.25
   rootPressureFullRestriction: 8
+  apicalVigorBonus: 0.15
+  vigorDecayRate: 0.15
+  vigorTrimMultiplier: 0.7
+  vigorMin: 0.2
+  vigorMax: 2
+  drainRatePerDay: 0.1
+  droughtThreshold: 0.3
+  droughtDamagePerDay: 0.008
+  soilMoisture: 1
+  droughtDaysAccumulated: 0
   maxEnergyMultiplier: 1.5
   woundDrainRate: 0.05
   seasonsToHealPerUnit: 20

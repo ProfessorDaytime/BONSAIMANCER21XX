@@ -5,6 +5,9 @@
     <ui:VisualElement name="MoistureBarBg" style="width: 122px; height: 5px; margin-left: 4px; margin-top: -6px; background-color: rgba(20,20,20,0.85); border-radius: 3px;">
         <ui:VisualElement name="MoistureBarFill" style="height: 100%; width: 100%; background-color: rgb(80,160,255); border-radius: 3px;" />
     </ui:VisualElement>
+    <ui:Button text="Pinch" display-tooltip-when-elided="true" name="PinchButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
+    <ui:Button text="Defoliate" display-tooltip-when-elided="true" name="DefoliateButton" style="height: 50px; width: 130px; top: -1px; cursor: initial;" />
+    <ui:Button text="Defo All" display-tooltip-when-elided="true" name="DefoliateAllButton" style="height: 50px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Wire" display-tooltip-when-elided="true" name="WireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Unwire" display-tooltip-when-elided="true" name="RemoveWireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Paste" display-tooltip-when-elided="true" name="PasteButton" style="position: absolute; right: 0; top: 0; height: 101px; width: 130px; cursor: initial;" />
