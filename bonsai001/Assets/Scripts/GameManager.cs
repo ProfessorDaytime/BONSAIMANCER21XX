@@ -30,6 +30,9 @@ public class GameManager : MonoBehaviour
     // Saved state to restore when exiting RootPrune mode.
     static GameState preRootPruneState = GameState.Idle;
 
+    // Saved state to restore when unpausing.
+    static GameState prePauseState = GameState.Idle;
+
     /// <summary>
     /// How fast the tree grows this month (0 = dormant, 1 = peak spring growth).
     /// Drives TreeSkeleton.Update() — multiply all growth speeds by this value.
@@ -368,6 +371,25 @@ public class GameManager : MonoBehaviour
 
     /// <summary>Fired when the player finalises tree orientation on the rock.</summary>
     public static event System.Action OnRockOrientConfirmed;
+
+    /// <summary>
+    /// Toggles the game pause. Freezes Time.timeScale (stops all deltaTime-based
+    /// systems) and saves/restores the active game state.
+    /// </summary>
+    public void TogglePause()
+    {
+        if (state == GameState.GamePause)
+        {
+            Time.timeScale = 1f;
+            UpdateGameState(prePauseState);
+        }
+        else
+        {
+            prePauseState  = state;
+            Time.timeScale = 0f;
+            UpdateGameState(GameState.GamePause);
+        }
+    }
 
     public void ToggleRootPrune()
     {

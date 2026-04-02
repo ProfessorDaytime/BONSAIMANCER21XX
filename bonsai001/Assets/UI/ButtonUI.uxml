@@ -1,6 +1,10 @@
-<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEngine.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
     <ui:Button text="&#10;" display-tooltip-when-elided="true" name="TrimButton" style="top: 0; height: 106px; width: 130px; background-image: url(&apos;project://database/Assets/Textures/Trimmer.png?fileID=1676363445&amp;guid=54510a529bc20624bbbf4a1912fe0e85&amp;type=3#Trimmer_0&apos;); cursor: initial;" />
     <ui:Button text="&#10;" display-tooltip-when-elided="true" name="WaterButton" style="height: 101px; width: 130px; top: -1px; background-image: url(&apos;project://database/Assets/Textures/watering_can.png?fileID=1903538586&amp;guid=70e9feeaae197ff4b9cdaefae05b11ae&amp;type=3#watering_can_0&apos;); cursor: initial;" />
+    <!-- Soil moisture bar — sits flush below the water button -->
+    <ui:VisualElement name="MoistureBarBg" style="width: 122px; height: 5px; margin-left: 4px; margin-top: -6px; background-color: rgba(20,20,20,0.85); border-radius: 3px;">
+        <ui:VisualElement name="MoistureBarFill" style="height: 100%; width: 100%; background-color: rgb(80,160,255); border-radius: 3px;" />
+    </ui:VisualElement>
     <ui:Button text="Wire" display-tooltip-when-elided="true" name="WireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Unwire" display-tooltip-when-elided="true" name="RemoveWireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Paste" display-tooltip-when-elided="true" name="PasteButton" style="position: absolute; right: 0; top: 0; height: 101px; width: 130px; cursor: initial;" />
@@ -8,7 +12,17 @@
     <ui:Button text="Roots" display-tooltip-when-elided="true" name="RootPruneButton" style="position: absolute; right: 0; top: 89px; height: 101px; width: 130px; cursor: initial;" />
     <ui:Button text="Air Layer" display-tooltip-when-elided="true" name="AirLayerButton" style="position: absolute; right: 0; top: 178px; height: 101px; width: 130px; cursor: initial;" />
     <ui:Button text="Place Rock" display-tooltip-when-elided="true" name="PlaceRockButton" style="position: absolute; right: 0; top: 178px; height: 101px; width: 130px; cursor: initial; display: none;" />
-    <ui:Button text="Quick Winter" display-tooltip-when-elided="true" name="QuickWinterButton" style="position: absolute; right: 0; top: 311px; height: 101px; width: 130px; cursor: initial; background-color: rgb(64,64,64); color: rgb(200,200,200);" />
+    <!-- Quick Winter moved to Settings menu (Time tab) -->
+
+    <!-- Undo indicator — appears for 5 s after a trim, hidden otherwise -->
+    <ui:Label name="UndoLabel" text="&lt;&lt; UNDO  Ctrl+Z" display-tooltip-when-elided="true"
+        style="position: absolute; left: 10px; top: 48px; color: rgb(229,179,16); font-size: 13px;
+               -unity-font-style: bold; background-color: rgba(0,0,0,0.6);
+               padding: 4px 8px; border-radius: 4px; display: none;" />
+
+    <!-- Pause button — top right below the date -->
+    <ui:Button text="II" display-tooltip-when-elided="true" name="PauseButton" style="position: absolute; right: 10px; top: 48px; width: 48px; height: 32px; font-size: 14px; -unity-font-style: bold; background-color: rgba(20,20,20,0.85); color: rgb(229,179,16); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
+
     <ui:VisualElement name="SelectionBar" style="position: absolute; bottom: 20px; left: 0; right: 0; align-items: center; flex-direction: row; justify-content: center;">
         <ui:Label text="Selection" name="SelectionLabel" style="color: rgb(200,200,200); font-size: 12px; margin-right: 10px; -unity-text-align: middle-left;" />
         <ui:Slider name="SelectionRadiusSlider" low-value="0" high-value="0.5" value="0" style="width: 300px;" />
@@ -17,5 +31,72 @@
         <ui:Label text="ROOT HEALTH" name="RootHealthHeader" style="color: rgb(160,200,160); font-size: 11px; -unity-font-style: bold; margin-bottom: 2px;" />
         <ui:Label text="—" name="RootHealthScoreLabel" style="color: rgb(255,255,255); font-size: 32px; -unity-font-style: bold; margin-bottom: 4px;" />
         <ui:VisualElement name="RootHealthSectors" style="flex-direction: row; justify-content: space-between;" />
+    </ui:VisualElement>
+
+    <!-- ── Pause / Settings Menu Overlay ───────────────────────────────────── -->
+    <ui:VisualElement name="PauseMenuOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.72); display: none; flex-direction: column; align-items: stretch; padding: 40px 120px;">
+        <ui:VisualElement name="PauseMenuPanel" style="flex-grow: 1; background-color: rgb(16,16,16); border-color: rgb(60,60,60); border-width: 1px; border-radius: 8px; padding: 24px;">
+
+            <!-- Header -->
+            <ui:Label text="SETTINGS" style="color: rgb(229,179,16); font-size: 22px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 18px;" />
+
+            <!-- Tab bar -->
+            <ui:VisualElement name="TabBar" style="flex-direction: row; margin-bottom: 16px; border-bottom-color: rgb(60,60,60); border-bottom-width: 1px; padding-bottom: 0;">
+                <ui:Button text="Time" name="TabBtnTime" style="flex: 1; height: 36px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); border-radius: 4px; border-width: 0; -unity-font-style: bold; cursor: initial;" />
+                <ui:Button text="Growth" name="TabBtnGrowth" style="flex: 1; height: 36px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); border-radius: 4px; border-width: 0; cursor: initial;" />
+                <ui:Button text="Ishitsuki" name="TabBtnIshitsuki" style="flex: 1; height: 36px; background-color: rgb(40,40,40); color: rgb(160,160,160); border-radius: 4px; border-width: 0; cursor: initial;" />
+            </ui:VisualElement>
+
+            <!-- Tab: Time -->
+            <ui:VisualElement name="TabContentTime" style="display: flex;">
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Time Scale" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Slider name="SliderTimescale" low-value="1" high-value="400" value="200" style="flex: 1; margin-right: 10px;" />
+                    <ui:Label name="LabelTimescale" text="200" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Quick Winter" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Toggle name="ToggleQuickWinter" style="flex: 1;" />
+                </ui:VisualElement>
+                <ui:Button text="SAVE GAME" name="SaveButton" style="height: 36px; background-color: rgb(40,80,40); color: rgb(180,230,180); font-size: 13px; -unity-font-style: bold; border-width: 0; border-radius: 4px; cursor: initial; margin-top: 6px;" />
+                <ui:Label name="SaveStatusLabel" text="" style="color: rgb(140,200,140); font-size: 11px; -unity-text-align: upper-center; margin-top: 4px;" />
+            </ui:VisualElement>
+
+            <!-- Tab: Growth -->
+            <ui:VisualElement name="TabContentGrowth" style="display: none;">
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Grow Speed" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Slider name="SliderGrowSpeed" low-value="0.02" high-value="0.8" value="0.2" style="flex: 1; margin-right: 10px;" />
+                    <ui:Label name="LabelGrowSpeed" text="0.20" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Spring Laterals" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Slider name="SliderSpringLaterals" low-value="0" high-value="1" value="0.8" style="flex: 1; margin-right: 10px;" />
+                    <ui:Label name="LabelSpringLaterals" text="0.80" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Depth Decay" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Slider name="SliderDepthDecay" low-value="0.5" high-value="1" value="0.85" style="flex: 1; margin-right: 10px;" />
+                    <ui:Label name="LabelDepthDecay" text="0.85" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <!-- Tab: Ishitsuki -->
+            <ui:VisualElement name="TabContentIshitsuki" style="display: none;">
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Cable Radius" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Slider name="SliderCableRadius" low-value="0.05" high-value="1" value="0.3" style="flex: 1; margin-right: 10px;" />
+                    <ui:Label name="LabelCableRadius" text="0.30" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Min Cable Angle" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Slider name="SliderMinCableAngle" low-value="10" high-value="90" value="65" style="flex: 1; margin-right: 10px;" />
+                    <ui:Label name="LabelMinCableAngle" text="65°" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <!-- Resume button -->
+            <ui:Button text="RESUME  (ESC)" name="ResumeButton" style="margin-top: 20px; height: 44px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 15px; -unity-font-style: bold; border-width: 0; border-radius: 6px; cursor: initial;" />
+        </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

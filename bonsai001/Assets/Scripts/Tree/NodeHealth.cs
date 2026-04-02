@@ -7,7 +7,7 @@ public enum DamageType
 {
     WireBend,       // re-bending already-set wood; one-shot hit
     WireDamage,     // progressive damage while wire is left on too long
-    TrimTrauma,     // small hit on pruning; recovers over a season     [reserved]
+    TrimTrauma,     // small hit on pruning; recovers over a season
     Drought,        // slow drain if soil moisture too low              [reserved]
     NutrientLack,   // reduces recovery rate                           [reserved]
     WoundDrain,     // progressive, from open unprotected wounds

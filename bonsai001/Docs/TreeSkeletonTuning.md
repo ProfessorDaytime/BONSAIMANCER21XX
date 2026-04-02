@@ -139,6 +139,20 @@ The three weights don't need to sum to 1 — the result is always normalized. Yo
 
 ---
 
+## Ishitsuki (Root-over-Rock) Parameters
+
+These only take effect after `ConfirmRockOrient` sets `isIshitsukiMode = true`.
+
+| Parameter | Default | What It Does |
+|-----------|---------|--------------|
+| `ishitsukiCableRadiusMultiplier` | 0.3 | Cable thickness at the trunk base as a fraction of current trunk radius. Cables taper to `rootTerminalRadius` at their tips using a `0.82^depth` factor. Increase for chunkier surface roots; decrease for wiry ones. |
+| `rockInfluenceRadius` | 0.4 | How close a live root node must be to the rock surface before its `ContinuationDirection` deflects to follow the surface. Larger = roots start hugging the rock sooner. |
+| `debugSoilYOverride` | false | When checked, uses `debugSoilY` instead of the Root Area Y for cable draping. Useful to diagnose cable depth without moving scene objects. |
+| `debugSoilY` | -9999 | Sentinel: auto-fills from `plantingSurfacePoint.y` on first use when override is checked. Nudge up/down to test cable endpoint placement. |
+| `rootTerminalRadius` | 0.004 | Terminal thickness of all cable segments (floor). Same field used by regular root growth. |
+
+---
+
 ## Seasonal Growth Rates (SeasonalGrowthRate)
 
 | Month | Rate | Effect |

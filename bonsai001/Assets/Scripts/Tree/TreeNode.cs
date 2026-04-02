@@ -35,6 +35,10 @@ public class TreeNode
     public bool hasLeaves;          // true once leaves have been spawned at this tip
     public bool isRoot;             // part of the surface/sub-surface root system
     public int  subdivisionsLeft;   // subdivision segments remaining before branching is allowed (0 = ready to branch)
+    public int   birthYear;          // GameManager.year when this node was created; used by LeafManager to identify new spring growth
+    public float refinementLevel;   // 0 = raw growth. Increments on trim (+0.5) and back-bud activation (+0.25), caps at 6.
+    public float branchVigor = 1f;  // per-node vigor multiplier (0.2–2.0). Apex/shallow nodes drift up; trimming and depth reduce it.
+                                    // New growth inherits parent's level. Drives segment-length shortening: ×0.82 per level.
 
     // ── Post-trim regrowth cap ────────────────────────────────────────────────
     // When trimming creates a fresh stump, the surviving tip is marked as a

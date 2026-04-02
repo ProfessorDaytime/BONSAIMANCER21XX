@@ -1443,7 +1443,7 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 8e6d037381fcd8b46be990f61d564fa3, type: 2}
+      objectReference: {fileID: 2100000, guid: 2911f87e63ebd9845a9348b1a828dffc, type: 2}
     - target: {fileID: 919132149155446097, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
       propertyPath: m_Name
       value: Rock01
@@ -1843,6 +1843,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ringSegments: 8
+  debugHealthRings: 0
   renderRoots: 0
   rockCollider: {fileID: 0}
   rootVisibilityDepth: -0.5
@@ -1912,16 +1913,24 @@ MonoBehaviour:
   minSegmentLength: 1
   budPrefab: {fileID: 2532749660122533125, guid: 76f3b9b01403af542abbfba68b5755c5, type: 3}
   lateralBudPrefab: {fileID: 767605876488808132, guid: 90aed0c3f93ccde479bdc380704133a3, type: 3}
-  budType: 1
+  budType: 0
   apicalDominance: 0.3
   oldWoodBudChance: 0.01
   backBudBaseChance: 0.15
   backBudActivationBoost: 1
-  showTerminalBuds: 0
-  showLateralBuds: 0
+  showTerminalBuds: 1
+  showLateralBuds: 1
   wireDaysToSet: 196
+  refinementTaper: 0.82
+  refinementCap: 6
+  refinementOnTrim: 0.5
+  refinementOnBackBud: 0.25
+  rootPressureFullRestriction: 8
+  maxEnergyMultiplier: 1.5
   woundDrainRate: 0.05
   seasonsToHealPerUnit: 20
+  trimTraumaDamage: 0.05
+  trimTraumaRecoveryPerSeason: 0.04
   woundMaterialOverride: {fileID: 0}
   maxRootDepth: 8
   rootLateralChance: 8
@@ -1959,8 +1968,12 @@ MonoBehaviour:
   airLayerRootSegments: 3
   airLayerRootTargetLength: 0.33
   airLayerRootRadiusMultiplier: 0.1
+  ishitsukiCableRadiusMultiplier: 0.3
+  minCableAngleDeg: 65
   seedHideLength: 0.25
   meshBuilder: {fileID: 0}
+  treeEnergy: 1
+  undoWindowSeconds: 5
   plantingNormal: {x: 0, y: 1, z: 0}
   plantingSurfacePoint: {x: 0, y: 0, z: 0}
 --- !u!114 &1486295571
@@ -1994,8 +2007,11 @@ MonoBehaviour:
   minLeafDepth: 2
   leavesPerNode: 5
   clusterRadius: 0.18
-  leafScale: 30
+  baseLeafScale: 9.63
+  rootPressureLeafShrink: 1
+  refinementLeafShrink: 1
   baseFallChancePerDay: 0.15
+  defoliationFactor: 0
 --- !u!114 &1486295573
 MonoBehaviour:
   m_ObjectHideFlags: 0

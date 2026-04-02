@@ -27,8 +27,14 @@ public class LeafManager : MonoBehaviour
     [Tooltip("Radius of the random scatter cluster around the node tip.")]
     [SerializeField] float clusterRadius = 0.18f;
 
-    [Tooltip("World-space scale applied to every leaf instance.")]
-    [SerializeField] float leafScale = 0.25f;
+    [Tooltip("Species-default world-space scale for leaves. Season scale is computed from this.")]
+    [SerializeField] float baseLeafScale = 0.25f;
+
+    [Tooltip("How much full pot-bound pressure shrinks leaves. 0 = no effect, 1 = shrinks to 40% of base.")]
+    [SerializeField] [Range(0f, 1f)] float rootPressureLeafShrink = 1f;
+
+    [Tooltip("How much full refinement level shrinks leaves. 0 = no effect, 1 = shrinks to 55% of base.")]
+    [SerializeField] [Range(0f, 1f)] float refinementLeafShrink = 1f;
 
     [Tooltip("Probability per leaf per in-game day of falling during LeafFall state.")]
     [SerializeField] float baseFallChancePerDay = 0.15f;
@@ -45,6 +51,13 @@ public class LeafManager : MonoBehaviour
     // Flat working list rebuilt when the dict changes — avoids dict enumeration in Update
     readonly List<(int nodeId, GameObject go)> allLeaves  = new List<(int, GameObject)>();
     bool listDirty = false;
+
+    // Computed once each spring from root pressure + refinement + defoliation history.
+    // All leaves spawned this season use this value so mid-season size never changes.
+    float seasonLeafScale = 0.25f;
+
+    // 0 → 1: set externally by the defoliation tool (not yet built); decays each season.
+    public float defoliationFactor = 0f;
 
     bool isLeafFall      = false;
     bool isGrowingSeason = false;
@@ -113,6 +126,8 @@ public class LeafManager : MonoBehaviour
         if (state == GameState.BranchGrow && GameManager.year > lastSpringYear)
         {
             lastSpringYear = GameManager.year;
+            defoliationFactor = Mathf.Max(0f, defoliationFactor - 0.2f);  // decays ~1 full defoliation per 5 seasons
+            ComputeSeasonLeafScale();
             CleanupOrphanedLeaves();
             SpawnSpringLeaves();
         }
@@ -169,23 +184,78 @@ public class LeafManager : MonoBehaviour
         }
     }
 
+    // ── Season leaf scale ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Computes this season's leaf size from three independent miniaturization factors.
+    /// Called once at the start of BranchGrow; all leaves spawned this season use the result.
+    ///
+    ///   rootPressureFactor   — averaged boundaryPressure on root terminals, from TreeSkeleton
+    ///   treeRefinementFactor — averaged refinementLevel on branch terminals, normalized to [0,1]
+    ///   defoliationFactor    — set externally by the defoliation tool; decays each spring
+    ///
+    /// Each factor is independent and multiplicative. A fully pot-bound, well-refined,
+    /// recently defoliated tree gets all three discounts simultaneously.
+    /// </summary>
+    void ComputeSeasonLeafScale()
+    {
+        float rootPressure   = skeleton.RootPressureFactor();
+        float refinement     = TreeRefinementFactor();
+
+        float scale = baseLeafScale
+            * Mathf.Lerp(1f, 0.40f, rootPressure   * rootPressureLeafShrink)
+            * Mathf.Lerp(1f, 0.55f, refinement      * refinementLeafShrink)
+            * Mathf.Lerp(1f, 0.60f, defoliationFactor);
+
+        seasonLeafScale = scale;
+        Debug.Log($"[Leaves] seasonLeafScale={scale:F3} (base={baseLeafScale:F3} rootP={rootPressure:F2} refine={refinement:F2} defo={defoliationFactor:F2})");
+    }
+
+    /// <summary>Average refinementLevel across live branch terminals, normalized to [0,1].</summary>
+    float TreeRefinementFactor()
+    {
+        float sum = 0f; int count = 0;
+        foreach (var node in skeleton.allNodes)
+        {
+            if (node.isRoot || node.isTrimmed || !node.isTerminal) continue;
+            sum += node.refinementLevel;
+            count++;
+        }
+        if (count == 0) return 0f;
+        float cap = skeleton.RefinementCap;
+        return Mathf.Clamp01(sum / count / Mathf.Max(1f, cap));
+    }
+
     // ── Spawning ──────────────────────────────────────────────────────────────
 
     void SpawnSpringLeaves()
     {
         if (leafPrefab == null || skeleton.root == null) return;
 
+        int spawned = 0;
         foreach (var node in skeleton.allNodes)
         {
             if (node.isTrimmed)            continue;
             if (!node.isTerminal)          continue;
             if (node.isRoot)               continue;  // roots never get leaves
             if (node.depth < minLeafDepth) continue;
-            if (node.subdivisionsLeft > 0) continue;  // mid-chain sub-segment — will spawn more before branching
+            // subdivisionsLeft is intentionally NOT checked: leaves appear on all growing
+            // tips, not just the end of a chain. Interior clusters are cleaned up at next
+            // spring by CleanupOrphanedLeaves when those nodes gain children.
             if (nodeLeaves.ContainsKey(node.id)) continue;  // already has leaves
 
+            // Bud gate: old-wood nodes only get leaves if they set a bud last autumn.
+            // Nodes born this spring (birthYear == current year) get leaves immediately
+            // since they are actively extending shoots — no bud needed.
+            bool isNewThisSpring = node.birthYear == GameManager.year;
+            if (!isNewThisSpring && !node.hasBud) continue;
+
             SpawnCluster(node);
+            spawned++;
         }
+
+        if (spawned > 0)
+            Debug.Log($"[Leaves] SpawnSpringLeaves spawned={spawned} nodeLeaves={nodeLeaves.Count} year={GameManager.year}");
     }
 
     void SpawnCluster(TreeNode node)
@@ -213,13 +283,73 @@ public class LeafManager : MonoBehaviour
             var leaf          = go.GetComponent<Leaf>() ?? go.AddComponent<Leaf>();
             leaf.ownerNode    = node;
             leaf.tipOffset    = offset;
-            leaf.targetScale  = Vector3.one * leafScale;
+            leaf.targetScale  = Vector3.one * seasonLeafScale;
 
             list.Add(go);
         }
 
         nodeLeaves[node.id] = list;
         listDirty = true;
+    }
+
+    /// <summary>
+    /// Computes the tree's photosynthetic energy from the current canopy.
+    /// Called at bud-set (end of summer) so it reflects the peak-season canopy.
+    /// Returns a value clamped to [0, maxMultiplier]:
+    ///   0   = no leaves at all
+    ///   1.0 = full healthy canopy (all potential terminals have leaves at full health)
+    ///   >1  = extra-lush bonus, capped at maxMultiplier
+    /// </summary>
+    public float ComputeTreeEnergy(List<TreeNode> allNodes, float maxMultiplier)
+    {
+        float potential = 0f;
+        float actual    = 0f;
+
+        foreach (var node in allNodes)
+        {
+            if (node.isRoot || node.isTrimmed || !node.isTerminal) continue;
+            if (node.depth < minLeafDepth)    continue;
+            if (node.subdivisionsLeft > 0)    continue;
+
+            potential += leavesPerNode * baseLeafScale * baseLeafScale;
+
+            if (nodeLeaves.TryGetValue(node.id, out var leaves))
+                actual += leaves.Count * seasonLeafScale * seasonLeafScale * Mathf.Clamp01(node.health);
+        }
+
+        if (potential <= 0f) return 1f;  // seedling with no leaves yet — grow at default rate
+        return Mathf.Clamp(actual / potential, 0f, maxMultiplier);
+    }
+
+    /// <summary>
+    /// Destroys all live leaf GameObjects and clears the tracking dictionaries.
+    /// Called by SaveManager.Load() before re-spawning leaves from saved data.
+    /// </summary>
+    public void ClearAllLeaves()
+    {
+        foreach (var kvp in nodeLeaves)
+            foreach (var go in kvp.Value)
+                if (go != null) Destroy(go);
+        nodeLeaves.Clear();
+        allLeaves.Clear();
+        listDirty = false;
+    }
+
+    /// <summary>
+    /// Spawns leaf clusters on the given nodes unconditionally — no bud check.
+    /// Used by the trim-undo system to restore leaves after a undo without waiting
+    /// for the next growing season.
+    /// </summary>
+    public void ForceSpawnLeaves(List<TreeNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.isTrimmed)                    continue;
+            if (node.isRoot)                       continue;
+            if (node.depth < minLeafDepth)         continue;
+            if (nodeLeaves.ContainsKey(node.id))   continue;
+            SpawnCluster(node);
+        }
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────

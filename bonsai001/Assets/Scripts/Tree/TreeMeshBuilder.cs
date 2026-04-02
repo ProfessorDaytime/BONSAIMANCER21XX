@@ -43,8 +43,12 @@ public class TreeMeshBuilder : MonoBehaviour
     TreeSkeleton  skeleton;
     Mesh          mesh;
     Material      _dbgRainbowMat;
+    Material      _dbgHealthMat;
     MeshCollider  meshCollider;
     bool          isDirty;
+
+    [Tooltip("Draw green→yellow→red rings on each branch node to visualise node health. Toggle at runtime.")]
+    public bool debugHealthRings = false;
 
     /// <summary>
     /// When false (default), only roots above rootVisibilityDepth are rendered.
@@ -660,4 +664,63 @@ public class TreeMeshBuilder : MonoBehaviour
             DrawRootRainbow(child);
     }
     */
+
+    // ── Health ring GL overlay ────────────────────────────────────────────────
+    // Toggle debugHealthRings in the Inspector to show a green→yellow→red ring
+    // at the base of every non-root branch segment, coloured by node.health.
+    // Rings sit just outside the bark so the underlying geometry stays visible.
+
+    void OnRenderObject()
+    {
+        if (!debugHealthRings || skeleton == null || skeleton.root == null) return;
+
+        if (_dbgHealthMat == null)
+        {
+            Shader sh = Shader.Find("Hidden/Internal-Colored");
+            if (sh == null) return;
+            _dbgHealthMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+            _dbgHealthMat.SetInt("_ZWrite", 0);
+            _dbgHealthMat.SetInt("_Cull",   0);
+            _dbgHealthMat.SetInt("_ZTest",  (int)UnityEngine.Rendering.CompareFunction.Always);
+        }
+
+        _dbgHealthMat.SetPass(0);
+        GL.PushMatrix();
+        GL.MultMatrix(transform.localToWorldMatrix);
+        GL.Begin(GL.LINES);
+
+        foreach (var node in skeleton.allNodes)
+        {
+            if (node.isRoot || node.isTrimmed) continue;
+
+            float h   = node.health;
+            Color col = h <= 0.5f
+                ? Color.Lerp(Color.red,    Color.yellow, h * 2f)
+                : Color.Lerp(Color.yellow, Color.green,  (h - 0.5f) * 2f);
+            col.a = 1f;
+            GL.Color(col);
+
+            // Build a basis perpendicular to the growth direction
+            Vector3 fwd  = node.growDirection.sqrMagnitude > 0.001f
+                           ? node.growDirection.normalized
+                           : Vector3.up;
+            Vector3 side = Vector3.Cross(fwd, Vector3.up);
+            if (side.sqrMagnitude < 0.001f) side = Vector3.Cross(fwd, Vector3.right);
+            side.Normalize();
+            Vector3 up2  = Vector3.Cross(fwd, side).normalized;
+
+            float   r    = node.radius * 1.25f;  // ring sits just outside bark
+            const int N  = 16;
+            for (int i = 0; i < N; i++)
+            {
+                float a0 = i       * Mathf.PI * 2f / N;
+                float a1 = (i + 1) * Mathf.PI * 2f / N;
+                GL.Vertex(node.worldPosition + side * (Mathf.Cos(a0) * r) + up2 * (Mathf.Sin(a0) * r));
+                GL.Vertex(node.worldPosition + side * (Mathf.Cos(a1) * r) + up2 * (Mathf.Sin(a1) * r));
+            }
+        }
+
+        GL.End();
+        GL.PopMatrix();
+    }
 }

@@ -1,6 +1,6 @@
 # BONSAIMANCER — Systems Reference
 
-Last updated: 2026-03-22
+Last updated: 2026-04-01
 
 A concise technical reference for every implemented game system. Read this
 before touching a system's code — each entry explains the mental model, the
@@ -20,6 +20,13 @@ key data flow, and the things most likely to go wrong.
 8. [Post-Trim Regrowth Cap](#8-post-trim-regrowth-cap)
 9. [Camera Orbit](#9-camera-orbit)
 10. [Root System](#10-root-system)
+11. [Bud System](#11-bud-system)
+12. [Wound System](#12-wound-system)
+13. [Nebari Scoring](#13-nebari-scoring)
+14. [Air Layer System](#14-air-layer-system)
+15. [Pot-Bound Root Pressure](#15-pot-bound-root-pressure)
+16. [Ishitsuki (Root-over-Rock)](#16-ishitsuki-root-over-rock)
+17. [Pause & Settings Menu](#17-pause--settings-menu)
 
 ---
 
@@ -62,7 +69,18 @@ automatically go dormant in winter without special-casing.
 | `Shaping` | Player wires branches |
 | `Wiring` | Wire aim sub-state (direction preview) |
 | `WireAnimate` | Time frozen; spring-bend animation playing |
+| `RootPrune` | Tree lifted, root mesh visible, root trim/placement active |
+| `RockPlace` | Rock grabbed and being positioned in 3D space |
+| `TreeOrient` | Tree transform being rotated onto the placed rock |
 | `GamePause / Idle` | Reserved |
+
+`canRootWork` is set to `true` for `RootPrune`, `RockPlace`, and `TreeOrient`.
+It gates root interaction in `TreeInteraction` and rock/tree input in `RockPlacer`.
+
+`preRootPruneState` saves whatever state was active before entering root mode
+so `ToggleRootPrune()` and `ConfirmRockOrient()` can restore the calendar.
+If the saved state was not a time-ticking state (e.g. the player entered roots
+from `Idle`), the restore falls back to `LeafFall` to keep the calendar moving.
 
 States are set by UI buttons. `OnGameStateChanged` fires a C# `Action<GameState>`
 event that all interested systems subscribe to on `OnEnable`.
@@ -543,6 +561,9 @@ the player can plant or trim them.
 | Field | Meaning |
 |---|---|
 | `isRoot` | True for all nodes belonging to a root strand |
+| `isAirLayerRoot` | Root spawned from an unwrapped air layer; always renders, scales with trunk |
+| `isTrainingWire` | Pre-grown Ishitsuki cable; always renders, exempt from depth cull |
+| `boundaryPressure` | Seasons spent near a tray wall; drives thickening and growth slowdown |
 
 Root nodes inherit all other `TreeNode` fields (`health`, `isTrimmed`,
 `hasWire`, etc.) and participate in the same wire and trim mechanics as
@@ -647,3 +668,278 @@ noticeably thicken the base of the trunk compared to a bare-rooted tree.
 - Roots are never wirable in the current implementation (no UX surfaces it),
   but the data fields exist on `TreeNode` and the skeleton APIs would accept
   them if needed later.
+
+---
+
+## 11. Bud System
+
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`
+
+**Full doc:** `Docs/BudSystem.md`
+
+### What it does
+Terminal buds are set each August and are visible through winter as bud
+prefab GameObjects. In March they break — growth resumes from those nodes.
+Trimming any branch stimulates back-budding on up to 3 ancestors, giving
+the player a way to push growth lower. Old-wood budding provides a small
+spontaneous lateral chance on all interior nodes each spring.
+
+### Key data
+| Field | Meaning |
+|---|---|
+| `hasBud` | Terminal bud set this August; activates next March |
+| `backBudStimulated` | Nearest 3 ancestors of a trim cut; boosted lateral chance next spring |
+
+### Flow
+```
+August → SetBuds() → hasBud = true, budPrefab spawned
+March  → StartNewGrowingSeason() → bud objects destroyed, growth resumes
+TrimNode() → 3 ancestors get backBudStimulated = true
+StartNewGrowingSeason() → stimulated nodes roll backBudBaseChance × boost
+```
+
+### Gotchas
+- `backBudStimulated` is consumed (reset) after each spring check — one roll per trim.
+- `subdivisionsLeft > 0` blocks bud-set on sub-segment nodes; only true chain tips get buds.
+- `vigorFactor` scales all lateral chances down as the tree fills `maxBranchNodes`.
+
+---
+
+## 12. Wound System
+
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`, `TreeInteraction.cs`
+
+**Full doc:** `Docs/WoundSystem.md`
+
+### What it does
+Trimming creates a wound on the parent node. Each growing season the wound
+drains health (`woundDrainRate` per season) until the player applies cut paste
+or the wound calluses over naturally. Large wounds on heavy branches are a
+real health risk if ignored.
+
+### Key data
+| Field | Meaning |
+|---|---|
+| `hasWound` | Exposed cut face exists on this node |
+| `woundRadius` | Size of cut (drives visual scale and drain) |
+| `woundAge` | Seasons elapsed; heals when `>= woundRadius × seasonsToHealPerUnit` |
+| `pasteApplied` | Stops health drain immediately |
+
+### Flow
+```
+TrimNode(child)
+    → parent.hasWound = true, woundRadius set, woundAge = 0
+    → CreateWoundObject() builds half-torus mesh
+StartNewGrowingSeason()
+    → woundAge++ for all wounds
+    → ApplyDamage(WoundDrain) if !pasteApplied
+    → Destroy wound object if healed
+Player clicks wound in Paste mode
+    → ApplyPaste() → pasteApplied = true, mesh tint changes
+```
+
+### Gotchas
+- Subdivision cuts use `woundRadius × 0.35` (tiny nip, heals in 1 season by default).
+- Full branch cuts use full `node.radius` — a thick branch unprotected for 20 seasons can kill the node.
+- Paste stops drain but does not speed up healing.
+
+---
+
+## 13. Nebari Scoring
+
+**Files:** `TreeSkeleton.cs`
+
+**Full doc:** `Docs/RootHealthSystem.md`
+
+### What it does
+Scores the visible root flare (nebari) 0–100 based on angular coverage (50%),
+girth (30%), and radial balance (20%). Displayed in the Nebari panel whenever
+Root Prune mode is active.
+
+Only surface roots at depth 1–`nebariMaxDepth` and within `nebariSurfaceDepth`
+of Y=0 are counted. See `RootHealthSystem.md` for the full scoring formulas.
+
+---
+
+## 14. Air Layer System
+
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`
+
+**Full doc:** `Docs/AirLayerSystem.md`
+
+### What it does
+Places a propagation wrap on a trunk/branch node. After `airLayerSeasonsToRoot`
+growing seasons, the player unwraps it and `airLayerRootCount` root strands
+are spawned radially on the cylindrical surface of that node. These roots
+(`isAirLayerRoot = true`) always render, scale with the trunk via
+`ScaleAirLayerRootRadii`, and re-anchor each frame in `UpdateAirLayerRootPositions`
+so they stay flush to the bark as the trunk thickens.
+
+### Gotchas
+- Air-layer roots are exempt from `rootVisibilityDepth` cull — always visible.
+- `ScaleAirLayerRootRadii` overrides the pipe model after `RecalculateRadiiInternal`
+  every call; the override is intentional.
+- Root positions are updated every frame regardless of game state.
+
+---
+
+## 15. Pot-Bound Root Pressure
+
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`
+
+### What it does
+Simulates what happens when roots hit the walls of a tray and can't spread further.
+Three mechanical effects activate when a root terminal's `boundaryPressure` exceeds
+the threshold:
+
+| Effect | Trigger | Value |
+|---|---|---|
+| Growth slowdown | `boundaryPressure >= threshold` | Speed × `boundaryGrowthScale` (default 0.35) |
+| Thickening | Same | `node.radius += boundaryThickenRate` per season |
+| Inner fill boost | Same | Low-depth ancestors get `rootFillLateralChance × potBoundInnerBoost` |
+
+### Flow
+```
+Each spring (StartNewGrowingSeason):
+    For each root terminal:
+        distRatio = distance(tip.xz, trunk.xz) / spreadRadius
+        if distRatio >= 0.85 → boundaryPressure++, add radius thickening
+        if distRatio < 0.85  → boundaryPressure-- (clamp 0)
+    For pot-bound terminals (pressure >= threshold):
+        collect low-depth (≤2) ancestors as inner fill candidates
+        each candidate rolls rootFillLateralChance × potBoundInnerBoost
+        spawn lateral up to potBoundMaxFillPerYear budget
+```
+
+### Inspector fields
+| Field | Default | Meaning |
+|---|---|---|
+| `boundaryPressureThreshold` | 3 | Seasons near wall before effects activate |
+| `boundaryGrowthScale` | 0.35 | Speed multiplier for pot-bound terminals |
+| `boundaryThickenRate` | 0.003 | Radius added per season at wall |
+| `potBoundInnerBoost` | 3.0 | Fill-lateral chance multiplier for inner ancestors |
+| `potBoundMaxFillPerYear` | 30 | Budget cap on inner-fill laterals per spring |
+
+### Gotchas
+- `potBoundMaxFillPerYear` is independent of `maxTotalRootNodes` — inner fill
+  can fire even when the outer root cap is full.
+- `spreadRadius` is `rootAreaTransform` box size in Ishitsuki mode, or
+  `cachedTreeHeight × rootSpreadMultiplier` otherwise.
+
+---
+
+## 16. Ishitsuki (Root-over-Rock)
+
+**Files:** `TreeSkeleton.cs`, `TreeMeshBuilder.cs`, `RockPlacer.cs`,
+`IshitsukiWire.cs`, `GameManager.cs`
+
+**Full doc:** `Docs/IshitsukiSystem.md`
+
+### What it does
+The Ishitsuki system drapes root cables over a rock surface from the trunk
+base to the soil. Once the player confirms the tree's orientation on the rock,
+`SpawnTrainingWires()` sets `isIshitsukiMode = true`, assigns the rock
+collider, and calls `PreGrowRootsToSoil()` to build pre-grown cable chains.
+Each spring the cables are extended further until they reach `soilY`.
+
+### Key concepts
+- **`isTrainingWire`** on cable nodes — always renders, exempt from
+  `rootVisibilityDepth` cull, can't be removed until `wireSetProgress >= 1.0`.
+- **`PreGrowRootsToSoil`** — four step modes: `exterior` (on rock face),
+  `toEdge` (under rock → snap to edge), `lowerFace` (lower hemisphere), `freeFall`.
+- **`ScaleIshitsukiCableRadii`** — cables thicken with the trunk each season
+  via `trunkRadius × ishitsukiCableRadiusMultiplier × 0.82^chainDepth`.
+- **Claimed edges** — deduplication prevents multiple cables converging on the
+  same rock surface point.
+- **Grip snap** — `AddRing` in the mesh builder snaps root vertices to the rock
+  surface when within ~0.01 units (convex collider required).
+
+See `IshitsukiSystem.md` for the complete flow and all edge cases.
+
+---
+
+## 17. Pause & Settings Menu
+
+**Files:** `buttonClicker.cs`, `ButtonUI.uxml`, `GameManager.cs`
+
+### What it does
+A full-screen dark overlay menu (ESC or the II button) that pauses all game
+systems and exposes key tuning parameters as live sliders. Changes take effect
+immediately — no apply/cancel step.
+
+### Pause mechanism
+
+`GameManager.TogglePause()`:
+- **Opening:** saves `state` into `prePauseState`, sets `Time.timeScale = 0`,
+  transitions to `GameState.GamePause`. Setting `timeScale` to zero freezes
+  everything driven by `Time.deltaTime` — calendar, tree growth, wire
+  progress, leaf fall, camera animation.
+- **Closing:** restores `Time.timeScale = 1`, calls `UpdateGameState(prePauseState)`.
+
+`ButtonClicker.Update()` checks `Input.GetKeyDown(KeyCode.Escape)` every
+frame and calls `TogglePauseMenu()`. The II button in the HUD does the same.
+
+### UI structure (`ButtonUI.uxml`)
+
+```
+PauseMenuOverlay  (full-screen, display:none when closed)
+└── PauseMenuPanel  (520px centred dark card)
+    ├── Title label  "SETTINGS"
+    ├── TabBar
+    │   ├── TabBtnTime
+    │   ├── TabBtnGrowth
+    │   └── TabBtnIshitsuki
+    ├── TabContentTime      (visible by default)
+    ├── TabContentGrowth    (hidden)
+    ├── TabContentIshitsuki (hidden)
+    └── ResumeButton
+```
+
+### Tabs and sliders
+
+| Tab | Slider / Control | Drives | Range |
+|---|---|---|---|
+| **Time** | Time Scale | `GameManager.TIMESCALE` | 1–400 |
+| **Time** | Quick Winter | `GameManager.quickWinter` | toggle |
+| **Growth** | Grow Speed | `TreeSkeleton.BaseGrowSpeed` | 0.02–0.8 |
+| **Growth** | Spring Laterals | `TreeSkeleton.SpringLateralChance` | 0–1 |
+| **Growth** | Depth Decay | `TreeSkeleton.DepthSpeedDecay` | 0.5–1 |
+| **Ishitsuki** | Cable Radius | `TreeSkeleton.IshitsukiCableRadiusMultiplier` | 0.05–1 |
+| **Ishitsuki** | Min Cable Angle | `TreeSkeleton.MinCableAngleDeg` | 10–90° |
+
+Each slider has a live value label to its right that updates as you drag.
+
+### Tab switching
+
+`SelectTab(int index)` in `ButtonClicker`:
+- Shows the matching `TabContent*` panel, hides the others.
+- Highlights the active tab button gold (`#E5B316` bg, near-black text, bold).
+- Inactive tabs are dark grey with grey text.
+
+### Slider sync
+
+`SyncSlidersFromGame()` is called each time the menu opens. It uses
+`SetValueWithoutNotify()` to push current live values into the sliders
+without triggering their change callbacks, preventing a spurious write-back
+on open. The `skeleton` `[SerializeField]` reference on `ButtonClicker` must
+be assigned in the Inspector for the Growth and Ishitsuki sliders to work.
+
+### Quick Winter sync
+
+Quick Winter is exposed in two places: the HUD button and the menu toggle.
+Both stay in sync:
+- HUD button click → sets `GameManager.quickWinter`, calls
+  `toggleQuickWinter.SetValueWithoutNotify(...)`.
+- Menu toggle change → sets `GameManager.quickWinter`, updates HUD button
+  colours directly.
+
+### Gotchas
+- `Time.timeScale = 0` also freezes Unity's `Animator` components and any
+  code using `Time.deltaTime`. Code using `Time.unscaledDeltaTime` (none
+  currently) would still run through a pause.
+- ESC is checked in `ButtonClicker.Update()` — if that MonoBehaviour is
+  disabled for any reason, ESC won't work. The II button always works.
+- The menu opens on the **Time** tab every time regardless of which tab was
+  last active. This is intentional — keeps the most-used control front and centre.
+- If `skeleton` is null on `ButtonClicker`, Growth and Ishitsuki sliders still
+  render but their callbacks silently no-op. No error is thrown.
