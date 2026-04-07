@@ -98,7 +98,7 @@ public class GameManager : MonoBehaviour
 
     void Awake(){
         Instance = this;
-        UpdateGameState(GameState.TipPause);
+        UpdateGameState(GameState.SpeciesSelect);
     }
 
     void Start(){
@@ -278,6 +278,8 @@ public class GameManager : MonoBehaviour
         switch(newState){
             case GameState.Menu:
                 break;
+            case GameState.SpeciesSelect:
+                break;
             case GameState.TipPause:
                 break;
             case GameState.GamePause:
@@ -310,6 +312,9 @@ public class GameManager : MonoBehaviour
                 break;
             case GameState.TreeOrient:
                 break;
+            case GameState.TreeDead:
+                Time.timeScale = 0f;   // freeze — game over
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
         }
@@ -326,7 +331,8 @@ public class GameManager : MonoBehaviour
 
     void HandleRootPruneState()
     {
-        Debug.Log("[Root] Entering RootPrune mode");
+        Debug.Log("[Root] Entering RootPrune/Repot mode");
+        WeedManager.Instance?.PullAllWeeds();
     }
 
     /// <summary>
@@ -424,6 +430,7 @@ public class GameManager : MonoBehaviour
 
 public enum GameState {
     Menu,
+    SpeciesSelect,  // pre-game species picker
     TipPause,
     GamePause,
     Idle,
@@ -439,4 +446,5 @@ public enum GameState {
     RootPrune,    // tree lifted, root mesh visible, root trim/placement active
     RockPlace,    // rock grabbed and being positioned in 3D space
     TreeOrient,   // tree transform being rotated onto the placed rock
+    TreeDead,     // tree has died; gameplay halted
 }

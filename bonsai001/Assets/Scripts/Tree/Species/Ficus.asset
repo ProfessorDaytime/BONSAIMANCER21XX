@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Ficus
+  m_EditorClassIdentifier:
+  speciesName: Ficus
+  scientificName: Ficus retusa
+  baseGrowSpeed: 0.30
+  depthSpeedDecay: 0.86
+  depthsPerYear: 5
+  baseElongation: 0.06
+  elongationDepthDecay: 0.72
+  branchSegmentLength: 1.0
+  segmentLengthDecay: 0.82
+  rootSegmentLength: 0.75
+  baseBranchChance: 0.80
+  branchChanceDepthDecay: 0.91
+  springLateralChance: 0.85
+  oldWoodBudChance: 0.08
+  backBudBaseChance: 0.20
+  budType: 0
+  apicalDominance: 0.20
+  apicalVigorBonus: 0.17
+  vigorDecayRate: 0.16
+  wireDaysToSet: 130
+  woundDrainRate: 0.04
+  seasonsToHealPerUnit: 14
+  trimTraumaDamage: 0.04
+  trimTraumaRecoveryPerSeason: 0.10
+  drainRatePerDay: 0.12
+  droughtThreshold: 0.30
+  droughtDamagePerDay: 0.008
+  nutrientDrainPerSeason: 0.45
+  fungalSpreadChance: 0.18
+  fungalRecoveryRate: 0.15
+  maxEnergyMultiplier: 1.6
+  preferredWaterRetention: 0.55
+  preferredDrainageRate: 0.55
+  preferredAerationScore: 0.45
+  soilToleranceRange: 0.28
+  soilMismatchPenalty: 0.02
+  repotTolerance: 0.80

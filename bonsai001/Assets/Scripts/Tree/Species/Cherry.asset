@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Cherry
+  m_EditorClassIdentifier:
+  speciesName: Cherry
+  scientificName: Prunus serrulata
+  baseGrowSpeed: 0.20
+  depthSpeedDecay: 0.85
+  depthsPerYear: 3
+  baseElongation: 0.05
+  elongationDepthDecay: 0.70
+  branchSegmentLength: 1.0
+  segmentLengthDecay: 0.80
+  rootSegmentLength: 0.7
+  baseBranchChance: 0.72
+  branchChanceDepthDecay: 0.90
+  springLateralChance: 0.78
+  oldWoodBudChance: 0.04
+  backBudBaseChance: 0.14
+  budType: 0
+  apicalDominance: 0.25
+  apicalVigorBonus: 0.15
+  vigorDecayRate: 0.15
+  wireDaysToSet: 170
+  woundDrainRate: 0.07
+  seasonsToHealPerUnit: 20
+  trimTraumaDamage: 0.06
+  trimTraumaRecoveryPerSeason: 0.04
+  drainRatePerDay: 0.12
+  droughtThreshold: 0.35
+  droughtDamagePerDay: 0.011
+  nutrientDrainPerSeason: 0.45
+  fungalSpreadChance: 0.35
+  fungalRecoveryRate: 0.07
+  maxEnergyMultiplier: 1.5
+  preferredWaterRetention: 0.52
+  preferredDrainageRate: 0.58
+  preferredAerationScore: 0.48
+  soilToleranceRange: 0.20
+  soilMismatchPenalty: 0.04
+  repotTolerance: 0.45

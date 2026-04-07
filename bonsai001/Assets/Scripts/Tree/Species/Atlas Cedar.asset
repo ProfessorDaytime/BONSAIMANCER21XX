@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Atlas Cedar
+  m_EditorClassIdentifier:
+  speciesName: Atlas Cedar
+  scientificName: Cedrus atlantica
+  baseGrowSpeed: 0.15
+  depthSpeedDecay: 0.85
+  depthsPerYear: 2
+  baseElongation: 0.05
+  elongationDepthDecay: 0.7
+  branchSegmentLength: 1
+  segmentLengthDecay: 0.8
+  rootSegmentLength: 0.7
+  baseBranchChance: 0.58
+  branchChanceDepthDecay: 0.9
+  springLateralChance: 0.62
+  oldWoodBudChance: 0.015
+  backBudBaseChance: 0.12
+  budType: 0
+  apicalDominance: 0.50
+  apicalVigorBonus: 0.14
+  vigorDecayRate: 0.14
+  wireDaysToSet: 280
+  woundDrainRate: 0.04
+  seasonsToHealPerUnit: 22
+  trimTraumaDamage: 0.04
+  trimTraumaRecoveryPerSeason: 0.03
+  drainRatePerDay: 0.07
+  droughtThreshold: 0.20
+  droughtDamagePerDay: 0.005
+  nutrientDrainPerSeason: 0.28
+  fungalSpreadChance: 0.16
+  fungalRecoveryRate: 0.12
+  maxEnergyMultiplier: 1.2
+  preferredWaterRetention: 0.35
+  preferredDrainageRate: 0.72
+  preferredAerationScore: 0.62
+  soilToleranceRange: 0.25
+  soilMismatchPenalty: 0.025
+  repotTolerance: 0.40

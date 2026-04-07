@@ -59,6 +59,8 @@ public class CameraOrbit : MonoBehaviour
 
     float activePitchMin;
 
+    Vector3 lastTargetPosition;
+
     // Reused buffer for UI raycasts — avoids per-frame allocation
     static readonly List<RaycastResult> uiHits = new List<RaycastResult>();
 
@@ -81,6 +83,7 @@ public class CameraOrbit : MonoBehaviour
         if (startPanY   != 0f) panY   = startPanY;
         ApplyOrbit();
 
+        lastTargetPosition = target.position;
         activePitchMin = pitchMin;
         Debug.Log($"[CameraOrbit] Initialised — target={target.name} radius={radius:F2} yaw={yaw:F1} pitch={pitch:F1} panY={panY:F2}");
     }
@@ -90,14 +93,30 @@ public class CameraOrbit : MonoBehaviour
 
     void OnGameStateChanged(GameState state)
     {
+        // Cancel any in-progress drag so clicking a UI button to change state
+        // doesn't leave isDragging=true and cause a jump on the next mouse move.
+        isDragging = false;
+        isPanning  = false;
+
         activePitchMin = (state == GameState.RootPrune) ? pitchMinRootPrune : pitchMin;
         pitch = Mathf.Clamp(pitch, activePitchMin, pitchMax);
+
         ApplyOrbit();
     }
 
     void Update()
     {
         if (target == null) return;
+
+        // If the tree transform moved (lift/lower during RootPrune or TreeOrient),
+        // compensate panY so the camera stays visually stationary rather than jumping.
+        Vector3 targetDelta = target.position - lastTargetPosition;
+        if (targetDelta.sqrMagnitude > 0.000001f)
+        {
+            panY -= targetDelta.y;
+            lastTargetPosition = target.position;
+            ApplyOrbit();
+        }
 
         float scroll = Input.GetAxis("Mouse ScrollWheel");
         // Block zoom when rock is grabbed (scroll = Y lift) or when right-click is
@@ -203,6 +222,9 @@ public class CameraOrbit : MonoBehaviour
     {
         if (EventSystem.current == null) return false;
 
+        // UI Toolkit's panel covers the full screen, so IsPointerOverGameObject() always
+        // returns true and cannot be used here. Use RaycastAll + Selectable check instead,
+        // which only hits actual interactive UGUI elements (buttons, toggles, sliders).
         var pointer = new PointerEventData(EventSystem.current) { position = Input.mousePosition };
         uiHits.Clear();
         EventSystem.current.RaycastAll(pointer, uiHits);
@@ -212,6 +234,30 @@ public class CameraOrbit : MonoBehaviour
                 return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Re-derives yaw, pitch, radius, and panY from the camera's current world
+    /// position so the view doesn't jump after the target transform moves.
+    /// Call this immediately after any code that repositions the camera target.
+    /// </summary>
+    public void ReSyncFromCurrentPosition()
+    {
+        if (target == null) return;
+        // Compute the offset from target to camera in world space.
+        Vector3 camPos  = transform.position;
+        Vector3 tgtPos  = target.position;
+        Vector3 offset  = camPos - tgtPos;
+        radius = offset.magnitude;
+        if (radius < 0.001f) return;
+        Vector3 dir = offset / radius;
+        pitch  = Mathf.Asin(Mathf.Clamp(dir.y, -1f, 1f)) * Mathf.Rad2Deg;
+        yaw    = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+        // panY: the pivot is target.position + panY*up. Since we want the camera
+        // to stay exactly where it is, set panY=0 and absorb the vertical offset
+        // into pitch/radius (which we've already computed from the real offset).
+        panY = 0f;
+        ApplyOrbit();
     }
 
     void ApplyOrbit()

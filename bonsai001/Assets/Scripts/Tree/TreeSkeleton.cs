@@ -20,6 +20,86 @@ using Random = UnityEngine.Random;
 /// </summary>
 public class TreeSkeleton : MonoBehaviour
 {
+    // ── Species ───────────────────────────────────────────────────────────────
+
+    [Header("Branch Weight & Sag")]
+    [Tooltip("When false, no sag or junction stress is computed. Off by default.")]
+    [SerializeField] public bool branchWeightEnabled = false;
+
+    [Tooltip("Density of wood in the load formula: load = radius² × length × density. " +
+             "Tune until heavy branches visibly droop over 2–3 seasons.")]
+    [SerializeField] float woodDensity = 12f;
+
+    [Tooltip("Hardness factor for strength: strength = radius³ × woodHardness × maturity. " +
+             "Higher = harder to sag. Junipers ≈ 1.4, maples ≈ 0.9.")]
+    [SerializeField] float woodHardness = 1.0f;
+
+    [Tooltip("load/strength ratio above which sag starts accumulating.")]
+    [SerializeField] float sagThreshold = 1.0f;
+
+    [Tooltip("Scales how fast sag angle accumulates above sagThreshold.")]
+    [SerializeField] float sagSensitivity = 8f;
+
+    [Tooltip("Maximum sag angle in degrees a branch can accumulate over its lifetime.")]
+    [SerializeField] float maxSagAngleDeg = 35f;
+
+    [Tooltip("How strongly accumulated sag blends the growDirection downward per spring. " +
+             "1 = fully sagged at maxSagAngleDeg, 0 = no visual effect.")]
+    [SerializeField] float sagBlend = 0.6f;
+
+    [Tooltip("Seasons for a new branch to reach full wood maturity (maximum strength).")]
+    [SerializeField] int matureAgeSeasons = 8;
+
+    [Tooltip("load/strength ratio above which junction stress damage is applied to the parent node.")]
+    [SerializeField] float junctionStressThreshold = 2.5f;
+
+    [Tooltip("Health damage to parent node per season when a child exceeds junctionStressThreshold.")]
+    [SerializeField] float junctionStressDamage = 0.02f;
+
+    [Header("Branch Dieback")]
+    [Tooltip("When false, branches never die or drop — all dieback checks skipped. Off by default.")]
+    [SerializeField] public bool branchDiebackEnabled = false;
+
+    [Tooltip("Radius at or below this value = small branch; drops off after deadSeasonsToDrop seasons.")]
+    [SerializeField] float diebackThinRadius = 0.06f;
+
+    [Tooltip("Seasons a small dead branch lingers before being removed.")]
+    [SerializeField] int deadSeasonsToDrop = 2;
+
+    [Tooltip("Seasons an interior branch can be fully shaded (no leaf descendants) before it starts dying.")]
+    [SerializeField] int shadingToleranceSeasons = 2;
+
+    [Tooltip("Health damage applied per season to a shaded branch above the shading tolerance.")]
+    [SerializeField] float shadingDamagePerSeason = 0.15f;
+
+    [Header("Tree Death")]
+    [Tooltip("When false, the tree cannot die — all death checks are skipped. Off by default; enable for testing.")]
+    [SerializeField] public bool treeDeathEnabled = false;
+
+    [Tooltip("Seasons where average trunk health < criticalHealthThreshold before death is triggered.")]
+    [SerializeField] int criticalSeasonsTodie = 2;
+
+    [Tooltip("Average trunk health below this value counts as a critical season.")]
+    [SerializeField] float criticalHealthThreshold = 0.10f;
+
+    [Tooltip("Consecutive in-game days at moisture == 0 that trigger immediate death.")]
+    [SerializeField] float droughtDeathDays = 60f;
+
+    [Tooltip("Minimum living root mass (node count) before the tree collapses from root loss.")]
+    [SerializeField] int minimumLivingRootNodes = 2;
+
+    // Runtime death tracking
+    [HideInInspector] public int  consecutiveCriticalSeasons = 0;
+    [HideInInspector] public bool treeInDanger = false;    // warning state — one season left
+
+    [Header("Species")]
+    [Tooltip("Drag a TreeSpecies ScriptableObject here. On Awake the species values are " +
+             "copied into the fields below, overriding any Inspector defaults.")]
+    [SerializeField] public TreeSpecies species;
+
+    /// <summary>Display name of the active species (or 'Unknown' if none assigned).</summary>
+    public string SpeciesName => species != null ? species.speciesName : "Unknown";
+
     // Inspector
 
     [Header("Growth Speed")]
@@ -207,6 +287,66 @@ public class TreeSkeleton : MonoBehaviour
     /// <summary>Current soil moisture 0 (bone dry) → 1 (just watered). Drained each grow tick.</summary>
     public float soilMoisture = 1f;
     public float droughtDaysAccumulated = 0f;
+
+    /// <summary>When true, waters automatically just before drought threshold is reached.</summary>
+    public bool autoWaterEnabled = true;
+
+    /// <summary>Set to true for one frame when auto-water fires. buttonClicker reads and clears this to flash the water button.</summary>
+    [HideInInspector] public bool autoWaterJustFired = false;
+
+    /// <summary>In-game days since last auto-water. Prevents firing more than once per in-game day at high timescale.</summary>
+    float autoWaterCooldownDays = 0f;
+
+    [Header("Weeds")]
+    [Tooltip("Radius (world units) on the soil surface within which weeds can spawn. " +
+             "Should roughly match the pot rim radius.")]
+    [SerializeField] float weedSpawnRadius = 0.8f;
+
+    [Header("Fertilizer")]
+    [Tooltip("Nutrient units drained each spring. At 0.4 the tree runs low after ~2 unfertilized seasons.")]
+    [SerializeField] float nutrientDrainPerSeason = 0.4f;
+
+    [Tooltip("Nutrient units added by one Fertilize() call. Two applications reach the over-fertilize threshold.")]
+    [SerializeField] float fertilizeAmount = 0.5f;
+
+    [Tooltip("nutrientReserve above this value causes FertilizerBurn to root nodes each spring.")]
+    [SerializeField] float fertilizerBurnThreshold = 1.5f;
+
+    [Tooltip("Health damage applied to each root node when nutrientReserve > fertilizerBurnThreshold.")]
+    [SerializeField] float fertilizerBurnDamage = 0.08f;
+
+    /// <summary>Available soil nutrients (0 = depleted, 1 = neutral, 2 = max / over-fertilized).</summary>
+    public float nutrientReserve = 1f;
+
+    /// <summary>When true, auto-fertilizes before the reserve drops to zero.</summary>
+    public bool autoFertilizeEnabled = false;
+
+    /// <summary>Set true for one frame when auto-fertilize fires; buttonClicker reads and clears it.</summary>
+    [HideInInspector] public bool autoFertilizeJustFired = false;
+
+    [Header("Fungal System")]
+    [Tooltip("Chance per season that an infected node spreads fungalLoad to each adjacent node.")]
+    [SerializeField] [Range(0f, 1f)] float fungalSpreadChance = 0.25f;
+
+    [Tooltip("fungalLoad added per season to a node that is currently at risk (open wound, overwatered roots, low health).")]
+    [SerializeField] float fungalLoadIncrease = 0.20f;
+
+    [Tooltip("Health damage per unit of fungalLoad above 0.4, applied each season.")]
+    [SerializeField] float fungalDamagePerLoad = 0.05f;
+
+    [Tooltip("fungalLoad reduced per season when a node is no longer at risk.")]
+    [SerializeField] float fungalRecoveryRate = 0.10f;
+
+    [Tooltip("How much fungicide reduces each node's fungalLoad per application.")]
+    [SerializeField] float fungicideReduceAmount = 0.60f;
+
+    [Tooltip("Fraction of nutrientDrainPerSeason saved when the entire root network is mycorrhizal. " +
+             "Actual saving scales linearly with the fraction of root nodes that are mycorrhizal.")]
+    [SerializeField] [Range(0f, 0.5f)] float mycorrhizalNutrientBonus = 0.20f;
+
+    [Tooltip("Consecutive healthy seasons (health>0.75 and fungalLoad<0.1) a root node needs before " +
+             "it becomes mycorrhizal.")]
+    [SerializeField] int mycorrhizalHealthySeasonsRequired = 3;
 
     [Header("Leaf Energy")]
     [Tooltip("Maximum energy multiplier. A very lush, healthy canopy can exceed 1.0 up to this cap " +
@@ -441,6 +581,55 @@ public class TreeSkeleton : MonoBehaviour
         Debug.Log($"[Water] Watered | moisture restored to 1.0 | year={GameManager.year} month={GameManager.month}");
     }
 
+    /// <summary>
+    /// Add nutrients. Clamped to 2× max to prevent excessive accumulation.
+    /// Blocked in winter (months 11–2) — fertilizing dormant trees causes burn without benefit.
+    /// </summary>
+    public bool Fertilize()
+    {
+        int m = GameManager.month;
+        bool isWinter = m == 11 || m == 12 || m == 1 || m == 2;
+        if (isWinter)
+        {
+            Debug.Log($"[Fert] Fertilize blocked — winter month={m}");
+            return false;
+        }
+        float nutrientCap = GetComponent<PotSoil>()?.nutrientCapacity ?? 2f;
+        nutrientReserve = Mathf.Min(nutrientReserve + fertilizeAmount, nutrientCap);
+        Debug.Log($"[Fert] Fertilized → nutrientReserve={nutrientReserve:F2} | year={GameManager.year} month={m}");
+        return true;
+    }
+
+    /// <summary>
+    /// Reduce fungalLoad on all nodes and destroy existing mycorrhizal networks.
+    /// Called by buttonClicker when the player uses the Fungicide tool.
+    /// </summary>
+    public void ApplyFungicide()
+    {
+        int infected = 0, myco = 0;
+        foreach (var node in allNodes)
+        {
+            if (node.fungalLoad > 0f)
+            {
+                node.fungalLoad = Mathf.Max(0f, node.fungalLoad - fungicideReduceAmount);
+                infected++;
+            }
+            if (node.isMycorrhizal) { node.isMycorrhizal = false; node.healthySeasonsCount = 0; myco++; }
+        }
+        Debug.Log($"[Fungal] Fungicide applied | {infected} node(s) treated, {myco} mycorrhizal network(s) destroyed.");
+    }
+
+    /// <summary>
+    /// Kill all mycorrhizal networks (called when herbicide is used — broad-spectrum soil damage).
+    /// </summary>
+    public void DamageMycorrhizae()
+    {
+        int count = 0;
+        foreach (var node in allNodes)
+            if (node.isMycorrhizal) { node.isMycorrhizal = false; node.healthySeasonsCount = 0; count++; }
+        if (count > 0) Debug.Log($"[Fungal] Herbicide destroyed {count} mycorrhizal network(s).");
+    }
+
     // ── Save / Load ───────────────────────────────────────────────────────────
 
     /// <summary>
@@ -464,6 +653,33 @@ public class TreeSkeleton : MonoBehaviour
         treeEnergy             = data.treeEnergy;
         soilMoisture           = data.soilMoisture;
         droughtDaysAccumulated = data.droughtDaysAccumulated;
+        nutrientReserve        = data.nutrientReserve > 0f ? data.nutrientReserve : 1f;
+
+        // Restore weed state
+        var weedMgr = GetComponent<WeedManager>();
+        if (weedMgr != null)
+        {
+            weedMgr.SetPotBounds(transform.position, weedSpawnRadius);
+            weedMgr.LoadSaveState(data.weeds);
+        }
+
+        // Restore soil state
+        var potSoil = GetComponent<PotSoil>();
+        if (potSoil != null)
+        {
+            potSoil.preset             = (PotSoil.SoilPreset)data.soilPreset;
+            potSoil.akadama            = data.soilAkadama;
+            potSoil.pumice             = data.soilPumice;
+            potSoil.lavaRock           = data.soilLavaRock;
+            potSoil.organic            = data.soilOrganic;
+            potSoil.sand               = data.soilSand;
+            potSoil.kanuma             = data.soilKanuma;
+            potSoil.perlite            = data.soilPerlite;
+            potSoil.soilDegradation    = data.soilDegradation;
+            potSoil.saturationLevel    = data.soilSaturation;
+            potSoil.seasonsSinceRepot  = data.soilSeasonsSinceRepot;
+            potSoil.ComputeDerivedProperties();
+        }
         startYear              = data.startYear;
         startMonth             = data.startMonth;
         lastGrownYear          = data.lastGrownYear;
@@ -497,6 +713,15 @@ public class TreeSkeleton : MonoBehaviour
             node.trimCutDepth       = sn.trimCutDepth;
             node.regrowthSeasonCount= sn.regrowthSeasonCount;
             node.health             = sn.health;
+            node.branchLoad  = sn.branchLoad;
+            node.sagAngleDeg = sn.sagAngleDeg;
+            node.isDead        = sn.isDead;
+            node.isDeadwood    = sn.isDeadwood;
+            node.shadedSeasons = sn.shadedSeasons;
+            node.deadSeasons   = sn.deadSeasons;
+            node.fungalLoad          = sn.fungalLoad;
+            node.isMycorrhizal       = sn.isMycorrhizal;
+            node.healthySeasonsCount = sn.healthySeasonsCount;
             node.hasWire            = sn.hasWire;
             node.wireOriginalDirection = new Vector3(sn.woX, sn.woY, sn.woZ);
             node.wireTargetDirection   = new Vector3(sn.wtX, sn.wtY, sn.wtZ);
@@ -673,7 +898,66 @@ public class TreeSkeleton : MonoBehaviour
         if (meshBuilder == null)
             Debug.LogError("TreeSkeleton: TreeMeshBuilder not found on this GameObject -- both components must be on the same GameObject.", this);
 
+        ApplySpecies();
+
         initY = transform.position.y;
+
+        // Initialise WeedManager pot bounds — updated each spring with the real position.
+        var wm = GetComponent<WeedManager>();
+        if (wm != null)
+            wm.SetPotBounds(transform.position, weedSpawnRadius);
+    }
+
+    /// <summary>
+    /// Copies all parameters from the assigned TreeSpecies ScriptableObject into the
+    /// local SerializeField fields. Safe to call at runtime if you swap species mid-session.
+    /// Does nothing if no species is assigned.
+    /// </summary>
+    public void ApplySpecies()
+    {
+        if (species == null) return;
+
+        baseGrowSpeed                = species.baseGrowSpeed;
+        depthSpeedDecay              = species.depthSpeedDecay;
+        depthsPerYear                = species.depthsPerYear;
+        baseElongation               = species.baseElongation;
+        elongationDepthDecay         = species.elongationDepthDecay;
+
+        branchSegmentLength          = species.branchSegmentLength;
+        segmentLengthDecay           = species.segmentLengthDecay;
+        rootSegmentLength            = species.rootSegmentLength;
+
+        baseBranchChance             = species.baseBranchChance;
+        branchChanceDepthDecay       = species.branchChanceDepthDecay;
+        springLateralChance          = species.springLateralChance;
+        oldWoodBudChance             = species.oldWoodBudChance;
+        backBudBaseChance            = species.backBudBaseChance;
+
+        budType                      = species.budType;
+        apicalDominance              = species.apicalDominance;
+
+        apicalVigorBonus             = species.apicalVigorBonus;
+        vigorDecayRate               = species.vigorDecayRate;
+
+        wireDaysToSet                = species.wireDaysToSet;
+
+        woundDrainRate               = species.woundDrainRate;
+        seasonsToHealPerUnit         = species.seasonsToHealPerUnit;
+        trimTraumaDamage             = species.trimTraumaDamage;
+        trimTraumaRecoveryPerSeason  = species.trimTraumaRecoveryPerSeason;
+
+        drainRatePerDay              = species.drainRatePerDay;
+        droughtThreshold             = species.droughtThreshold;
+        droughtDamagePerDay          = species.droughtDamagePerDay;
+
+        nutrientDrainPerSeason       = species.nutrientDrainPerSeason;
+
+        fungalSpreadChance           = species.fungalSpreadChance;
+        fungalRecoveryRate           = species.fungalRecoveryRate;
+
+        maxEnergyMultiplier          = species.maxEnergyMultiplier;
+
+        Debug.Log($"[Species] Applied '{species.speciesName}' ({species.scientificName})");
     }
 
     void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
@@ -779,10 +1063,41 @@ public class TreeSkeleton : MonoBehaviour
         // TIMESCALE/24f converts real seconds to in-game days
         float inGameDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
 
-        // Soil moisture drain — slower when the season slows down (rate already encodes that)
-        soilMoisture = Mathf.Max(0f, soilMoisture - drainRatePerDay * inGameDays * rate);
+        // Soil moisture drain — modified by PotSoil water retention if present
+        var potSoil = GetComponent<PotSoil>();
+        float soilDrainMult = potSoil != null ? potSoil.DrainRateMultiplier : 1f;
+        soilMoisture = Mathf.Max(0f, soilMoisture - drainRatePerDay * soilDrainMult * inGameDays * rate);
         if (soilMoisture < droughtThreshold)
             droughtDaysAccumulated += inGameDays;
+
+        // Drought death: extended time at zero moisture kills immediately
+        if (treeDeathEnabled && soilMoisture <= 0f)
+        {
+            droughtDaysAccumulated += inGameDays;   // already counted above, but total at zero is what matters
+            if (droughtDaysAccumulated >= droughtDeathDays)
+            {
+                Debug.Log($"[Death] Tree died from drought — {droughtDaysAccumulated:F0} dry days | year={GameManager.year}");
+                KillTree("drought");
+                return;
+            }
+        }
+
+        // Auto-water: refill just before drought threshold is crossed
+        // Cooldown prevents rapid-fire at high TIMESCALE (each flash = one in-game day minimum)
+        autoWaterCooldownDays += inGameDays;
+        if (autoWaterEnabled && soilMoisture < droughtThreshold + 0.05f && autoWaterCooldownDays >= 1.0f)
+        {
+            Water();
+            autoWaterJustFired = true;
+            autoWaterCooldownDays = 0f;
+        }
+
+        // Auto-fertilize: top up before reserve runs dry (fires at most once per in-game day)
+        if (autoFertilizeEnabled && nutrientReserve < 0.2f)
+        {
+            Fertilize();
+            autoFertilizeJustFired = true;
+        }
 
         // Snapshot growing nodes -- we may add new ones during this loop
         var snapshot = new List<TreeNode>(allNodes.Count);
@@ -817,17 +1132,24 @@ public class TreeSkeleton : MonoBehaviour
         growthTimer.Restart();
         foreach (var node in snapshot)
         {
+            // Dead or deadwood nodes never grow
+            if (node.isDead || node.isDeadwood) continue;
+
             // Dormant from poor health -- skip this node entirely
             if (node.health < 0.25f) continue;
 
             // Health below 0.75 proportionally slows growth
             float healthMult = node.health >= 0.75f ? 1f : node.health;
 
+            // nutrientReserve 0→2 maps to 0.6→1.4× growth; 1.0 = neutral (no effect)
+            float nutrientMult = Mathf.Lerp(0.6f, 1.4f, Mathf.Clamp01(nutrientReserve / 2f));
+
             float speed = baseGrowSpeed
                              * rate
                              * Mathf.Pow(depthSpeedDecay, node.depth)
                              * healthMult
-                             * treeEnergy;
+                             * treeEnergy
+                             * nutrientMult;
 
             // Pot-bound roots near the tray wall grow slower
             if (node.isRoot && node.boundaryPressure >= boundaryPressureThreshold)
@@ -842,9 +1164,19 @@ public class TreeSkeleton : MonoBehaviour
                 bool belowCap;
                 if (node.isRoot && isIshitsukiMode)
                 {
-                    // Ishitsuki: roots stop at soil surface, not at depth limit.
                     Vector3 tipW = transform.TransformPoint(node.tipPosition);
-                    belowCap = tipW.y > plantingSurfacePoint.y;
+                    if (node.isTrainingWire)
+                    {
+                        // Training-wire cables stop at soil; PreGrowRootsToSoil manages them.
+                        belowCap = tipW.y > plantingSurfacePoint.y;
+                    }
+                    else
+                    {
+                        // Underground roots (continuation from training wire):
+                        // only grow once the tip is actually below soil.
+                        // This prevents accidentally-planted or stray roots from growing in air.
+                        belowCap = tipW.y <= plantingSurfacePoint.y && node.depth < maxRootDepth;
+                    }
                 }
                 else
                 {
@@ -862,7 +1194,10 @@ public class TreeSkeleton : MonoBehaviour
                     float finalR   = node.isRoot ? rootTerminalRadius : terminalRadius;
                     node.radius    = finalR;
                     node.minRadius = finalR;
-                    SpawnChildren(node);
+                    // Training-wire cables are extended by PreGrowRootsToSoil each spring —
+                    // skip SpawnChildren here so no random children sprout between seasons.
+                    if (!(isIshitsukiMode && node.isTrainingWire))
+                        SpawnChildren(node);
                     structureChanged = true;
                 }
             }
@@ -991,6 +1326,52 @@ public class TreeSkeleton : MonoBehaviour
             droughtDaysAccumulated = 0f;
         }
 
+        // Weeds: drain nutrients/moisture from existing weeds, maybe spawn a new one.
+        // Use transform.position as soil center — always valid. plantingSurfacePoint stays
+        // at Vector3.zero for non-Ishitsuki trees so it can't be used reliably here.
+        var weedMgr = GetComponent<WeedManager>();
+        if (weedMgr != null)
+        {
+            weedMgr.SetPotBounds(transform.position, weedSpawnRadius);
+            weedMgr.SetTrunkRadius(root != null ? root.radius : 0f);
+            weedMgr.ApplySeasonAndSpawn(this);
+        }
+
+        // Soil: degrade, check waterlogging, apply species mismatch penalties
+        var soil = GetComponent<PotSoil>();
+        soil?.SeasonTick(this);
+        if (soil != null)
+            nutrientReserve = Mathf.Min(nutrientReserve, soil.nutrientCapacity);
+
+        // Fertilizer: burn if over-applied, then drain for this season
+        if (nutrientReserve > fertilizerBurnThreshold)
+        {
+            float excess = nutrientReserve - fertilizerBurnThreshold;
+            float burnDmg = fertilizerBurnDamage * excess;
+            foreach (var node in allNodes)
+                if (node.isRoot && !node.isTrimmed)
+                    ApplyDamage(node, DamageType.FertilizerBurn, burnDmg);
+            Debug.Log($"[Fert] Over-fertilize burn={burnDmg:F3} (reserve={nutrientReserve:F2} > threshold={fertilizerBurnThreshold:F2}) | year={GameManager.year}");
+        }
+        // Fungal: update infection and mycorrhizal networks before nutrient drain
+        // (mycorrhizal nodes reduce effective drain)
+        UpdateFungalInfection();
+        UpdateMycorrhizal();
+        GetComponent<LeafManager>()?.RefreshFungalTint(this);
+
+        // Nutrient drain — mycorrhizal root coverage reduces drain proportionally
+        int rootNodeCount = 0, mycoNodeCount = 0;
+        foreach (var n in allNodes)
+        {
+            if (!n.isRoot || n.isTrimmed) continue;
+            rootNodeCount++;
+            if (n.isMycorrhizal) mycoNodeCount++;
+        }
+        float mycoFraction    = rootNodeCount > 0 ? (float)mycoNodeCount / rootNodeCount : 0f;
+        float effectiveDrain  = nutrientDrainPerSeason * (1f - mycoFraction * mycorrhizalNutrientBonus);
+        nutrientReserve = Mathf.Max(0f, nutrientReserve - effectiveDrain);
+        Debug.Log($"[Fert] Season drain={effectiveDrain:F3} (myco={mycoFraction:P0} bonus) → nutrientReserve={nutrientReserve:F2} | year={GameManager.year}");
+
         foreach (var node in allNodes)
         {
             if (!node.isTrimCutPoint) continue;
@@ -1057,7 +1438,7 @@ public class TreeSkeleton : MonoBehaviour
         // air directions off the mid-rock positions.
         Debug.Log($"[PreGrow] year={GameManager.year} StartNewGrowingSeason: isIshitsukiMode={isIshitsukiMode} rockCollider={(rockCollider != null ? rockCollider.name : "NULL")}");
         if (isIshitsukiMode)
-            PreGrowRootsToSoil();
+            PreGrowRootsToSoil(animated: true);
 
         // Elongate existing segments — lower-depth segments grow longer each year
         if (baseElongation > 0f)
@@ -1108,9 +1489,18 @@ public class TreeSkeleton : MonoBehaviour
             bool belowCap;
             if (node.isRoot && isIshitsukiMode)
             {
-                // Ishitsuki: roots stop at soil surface, not at depth limit.
-                Vector3 tipW = transform.TransformPoint(node.tipPosition);
-                belowCap = tipW.y > plantingSurfacePoint.y;
+                if (node.isTrainingWire)
+                {
+                    // Training-wire cables: eligible while tip is at or above soil so they
+                    // can spawn an underground continuation node the season they hit soil.
+                    Vector3 tipW = transform.TransformPoint(node.tipPosition);
+                    belowCap = tipW.y >= plantingSurfacePoint.y - 0.15f;
+                }
+                else
+                {
+                    // Underground roots branching off the training wire: use normal depth cap.
+                    belowCap = node.depth < maxRootDepth;
+                }
             }
             else
             {
@@ -1180,23 +1570,41 @@ public class TreeSkeleton : MonoBehaviour
                 bool isIshitsuki = isIshitsukiMode;
                 float distRatio  = RootDistRatio(terminal);
                 if (!isIshitsuki && distRatio >= 1.3f) continue;  // beyond hard outer boundary — stop
-                // In Ishitsuki mode all root cable growth is handled exclusively by
-                // PreGrowRootsToSoil (called each spring before this loop).  Skip here
-                // to prevent ContinuationDirection from sending cables in wrong directions.
-                if (isIshitsuki) continue;
+                // In Ishitsuki mode, training-wire cable growth is handled exclusively by
+                // PreGrowRootsToSoil.  Air layer roots keep growing downward each season.
+                // Training-wire tips that have reached soil spawn one underground continuation.
+                if (isIshitsuki && !terminal.isAirLayerRoot)
+                {
+                    if (!terminal.isTrainingWire) continue;
+                    // Allow soil-level training wires through; skip mid-rock ones.
+                    Vector3 twTipW = transform.TransformPoint(terminal.tipPosition);
+                    if (twTipW.y > plantingSurfacePoint.y + 0.1f) continue;
+                }
 
                 if (!isIshitsuki && distRatio >= 0.8f) childLength *= wallSegmentScale;
 
+                // Training-wire tips at soil spawn underground continuation (not training wire).
+                bool isTrainingWireTransition = isIshitsuki && terminal.isTrainingWire;
+
                 var cont = CreateNode(terminal.tipPosition, ContinuationDirection(terminal), nodeRadius, childLength, terminal);
-                cont.isRoot = true;
+                cont.isRoot         = true;
+                // Air-layer roots transition to normal underground roots once they reach soil.
+                Vector3 terminalTipW = transform.TransformPoint(terminal.tipPosition);
+                bool stillAboveSoil  = terminal.isAirLayerRoot &&
+                                       terminalTipW.y > plantingSurfacePoint.y + 0.05f;
+                cont.isAirLayerRoot  = stillAboveSoil;
+                // Underground continuation is a normal root, not a training-wire cable.
+                // (isTrainingWire already defaults to false on new nodes.)
                 currentRootCount++;
 
-                float lateralScale  = isIshitsuki ? 0f : Mathf.Clamp01(1f - distRatio);
+                // Training-wire→underground transitions get laterals; mid-rock Ishitsuki cables don't.
+                float lateralScale  = (isIshitsuki && !isTrainingWireTransition) ? 0f : Mathf.Clamp01(1f - distRatio);
                 float lateralChance = rootLateralChance * lateralScale;
                 if (currentRootCount < maxTotalRootNodes && Random.value < lateralChance)
                 {
                     var lat = CreateNode(terminal.tipPosition, LateralDirection(terminal), nodeRadius, childLength * 0.85f, terminal);
-                    lat.isRoot = true;
+                    lat.isRoot         = true;
+                    lat.isAirLayerRoot = stillAboveSoil;
                     currentRootCount++;
                 }
             }
@@ -1484,6 +1892,281 @@ public class TreeSkeleton : MonoBehaviour
 
         UpdateAirLayers();
         RecalculateRootHealthScore();
+
+        // Branch weight: compute loads bottom-up, sag directions, apply junction stress
+        if (branchWeightEnabled)
+            BranchWeightPass();
+
+        // Dieback: mark dead branches, remove dropped ones, apply shading damage
+        if (branchDiebackEnabled)
+            DiebackPass();
+
+        // Death evaluation — runs after all seasonal damage is applied
+        if (treeDeathEnabled)
+            EvaluateTreeDeath();
+    }
+
+    // ── Branch Weight & Sag ───────────────────────────────────────────────────
+
+    void BranchWeightPass()
+    {
+        if (root == null) return;
+
+        // Pass 1: compute branchLoad bottom-up for every branch node
+        ComputeLoad(root);
+
+        // Pass 2: apply sag + junction stress top-down
+        ApplySagAndStress(root);
+
+        meshBuilder.SetDirty();
+    }
+
+    float ComputeLoad(TreeNode node)
+    {
+        if (node.isRoot) { node.branchLoad = 0f; return 0f; }
+
+        float ownMass = node.radius * node.radius * node.length * woodDensity;
+        float childLoad = 0f;
+        foreach (var child in node.children)
+            childLoad += ComputeLoad(child);
+
+        node.branchLoad = ownMass + childLoad;
+        return node.branchLoad;
+    }
+
+    void ApplySagAndStress(TreeNode node)
+    {
+        if (!node.isRoot && !node.isTrimmed && !node.isDead && !node.isDeadwood)
+        {
+            // Strength: radius³ × hardness × maturity (0→1 over matureAgeSeasons)
+            float seasonsAlive = Mathf.Max(1f, GameManager.year - node.birthYear);
+            float maturity = Mathf.Clamp01(seasonsAlive / matureAgeSeasons);
+
+            // Apply species wood hardness if available
+            float hardness = woodHardness;
+            if (species != null) hardness *= species.budType == BudType.Opposite ? 0.85f : 1.0f; // deciduous slightly softer
+
+            float strength = node.radius * node.radius * node.radius * hardness * maturity;
+            strength = Mathf.Max(strength, 0.0001f);   // prevent divide-by-zero on seedlings
+
+            float ratio = node.branchLoad / strength;
+
+            // Accumulate sag angle
+            if (ratio > sagThreshold)
+            {
+                float deltaSag = (ratio - sagThreshold) * sagSensitivity;
+                node.sagAngleDeg = Mathf.Min(node.sagAngleDeg + deltaSag, maxSagAngleDeg);
+            }
+            else
+            {
+                // Gradual recovery when branch is no longer overloaded
+                node.sagAngleDeg = Mathf.Max(0f, node.sagAngleDeg - 0.5f);
+            }
+
+            // Apply sag to growDirection: blend toward -up by sagAngleDeg
+            if (node.sagAngleDeg > 0.01f)
+            {
+                float t = (node.sagAngleDeg / maxSagAngleDeg) * sagBlend;
+                Vector3 sagged = Vector3.Slerp(node.growDirection, Vector3.down, t).normalized;
+                node.growDirection = sagged;
+                // Propagate position change down to all descendants
+                PropagatePositions(node);
+            }
+
+            // Junction stress: damage parent when this child is very heavy relative to it
+            if (node.parent != null && !node.parent.isRoot && ratio > junctionStressThreshold)
+            {
+                ApplyDamage(node.parent, DamageType.JunctionStress, junctionStressDamage);
+                Debug.Log($"[Weight] Junction stress on node {node.parent.id} from child {node.id} ratio={ratio:F2} | year={GameManager.year}");
+            }
+        }
+
+        foreach (var child in node.children)
+            ApplySagAndStress(child);
+    }
+
+    /// <summary>
+    /// After a sag adjustment, walk all descendants and update worldPosition
+    /// to stay connected to their parent's new tipPosition.
+    /// </summary>
+    void PropagatePositions(TreeNode node)
+    {
+        foreach (var child in node.children)
+        {
+            child.worldPosition = node.tipPosition;
+            PropagatePositions(child);
+        }
+    }
+
+    // ── Branch Dieback ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called each spring. Three passes:
+    ///  1. Mark newly dead nodes (health == 0 and not already isDead).
+    ///  2. Apply shading damage to interior branches with no leaf-bearing descendants.
+    ///  3. Remove small dead branches that have lingered past deadSeasonsToDrop.
+    /// Large dead branches become isDeadwood and remain permanently.
+    /// </summary>
+    void DiebackPass()
+    {
+        var toRemove = new List<TreeNode>();
+
+        foreach (var node in allNodes)
+        {
+            if (node.isTrimmed || node.isRoot) continue;
+
+            // Pass 1: mark newly dead
+            if (!node.isDead && node.health <= 0f)
+            {
+                node.isDead = true;
+                node.isGrowing = false;
+                node.hasBud = false;
+
+                if (node.radius >= diebackThinRadius)
+                {
+                    // Large branch — stays as deadwood
+                    node.isDeadwood = true;
+                    Debug.Log($"[Dieback] Node {node.id} depth={node.depth} r={node.radius:F3} → DEADWOOD | year={GameManager.year}");
+                }
+                else
+                {
+                    Debug.Log($"[Dieback] Node {node.id} depth={node.depth} r={node.radius:F3} → dying (drops in {deadSeasonsToDrop} seasons) | year={GameManager.year}");
+                }
+
+                // Drop leaves from dead node immediately
+                GetComponent<LeafManager>()?.DefoliateNode(node);
+            }
+
+            // Pass 2: tick shading counter and apply damage
+            if (!node.isDead && !node.isTerminal)
+            {
+                bool hasLeafDescendant = NodeHasLeafDescendant(node);
+                if (!hasLeafDescendant)
+                {
+                    node.shadedSeasons++;
+                    if (node.shadedSeasons > shadingToleranceSeasons)
+                    {
+                        float shadeDmg = shadingDamagePerSeason * (node.shadedSeasons - shadingToleranceSeasons);
+                        ApplyDamage(node, DamageType.Shading, shadeDmg);
+                        Debug.Log($"[Dieback] Shading dmg={shadeDmg:F3} node={node.id} shadedSeasons={node.shadedSeasons} | year={GameManager.year}");
+                    }
+                }
+                else
+                {
+                    node.shadedSeasons = 0;
+                }
+            }
+
+            // Pass 3: tick dead season counter; schedule small dead branches for removal
+            if (node.isDead && !node.isDeadwood)
+            {
+                node.deadSeasons++;
+                if (node.deadSeasons >= deadSeasonsToDrop)
+                    toRemove.Add(node);
+            }
+        }
+
+        // Remove dropped branches (trim from tips inward to keep parent references valid)
+        foreach (var node in toRemove)
+        {
+            if (!allNodes.Contains(node)) continue;   // already removed as part of a subtree
+            var parent = node.parent;
+            if (parent != null) parent.children.Remove(node);
+            var removed = new List<TreeNode>();
+            RemoveSubtree(node, removed);
+            if (parent != null && parent.isTerminal)
+                parent.isTrimCutPoint = false;   // no cut, just fell off
+            Debug.Log($"[Dieback] Dropped dead branch node={node.id} ({removed.Count} nodes removed) | year={GameManager.year}");
+        }
+
+        if (toRemove.Count > 0)
+        {
+            RecalculateRadii(root);
+            meshBuilder.SetDirty();
+        }
+    }
+
+    /// <summary>Returns true if any descendant of node has leaves.</summary>
+    bool NodeHasLeafDescendant(TreeNode node)
+    {
+        foreach (var child in node.children)
+        {
+            if (child.hasLeaves) return true;
+            if (NodeHasLeafDescendant(child)) return true;
+        }
+        return false;
+    }
+
+    // ── Tree Death ────────────────────────────────────────────────────────────
+
+    void EvaluateTreeDeath()
+    {
+        // Condition 1: average trunk health critically low for N consecutive seasons
+        float trunkHealthSum = 0f;
+        int   trunkCount     = 0;
+        foreach (var node in allNodes)
+        {
+            if (node.isRoot || node.isTrimmed) continue;
+            trunkHealthSum += node.health;
+            trunkCount++;
+        }
+        float avgHealth = trunkCount > 0 ? trunkHealthSum / trunkCount : 1f;
+
+        if (avgHealth < criticalHealthThreshold)
+        {
+            consecutiveCriticalSeasons++;
+            Debug.Log($"[Death] Critical season {consecutiveCriticalSeasons}/{criticalSeasonsTodie} | avgHealth={avgHealth:F3} | year={GameManager.year}");
+        }
+        else
+        {
+            if (consecutiveCriticalSeasons > 0)
+                Debug.Log($"[Death] Tree recovered — resetting critical counter | avgHealth={avgHealth:F3}");
+            consecutiveCriticalSeasons = 0;
+        }
+
+        // Condition 2: living root count too low
+        int livingRoots = 0;
+        foreach (var node in allNodes)
+            if (node.isRoot && !node.isTrimmed && node.health > 0f) livingRoots++;
+
+        bool rootCollapse = trunkCount > 0 && livingRoots < minimumLivingRootNodes;
+
+        // Warning state: one critical season away from death
+        bool wasInDanger = treeInDanger;
+        treeInDanger = consecutiveCriticalSeasons >= criticalSeasonsTodie - 1 || rootCollapse;
+        if (treeInDanger && !wasInDanger)
+            Debug.Log($"[Death] WARNING — tree is in danger! | year={GameManager.year}");
+
+        // Trigger death
+        if (consecutiveCriticalSeasons >= criticalSeasonsTodie)
+        {
+            KillTree("critical health");
+            return;
+        }
+        if (rootCollapse)
+        {
+            KillTree("root loss");
+        }
+    }
+
+    /// <summary>Human-readable cause of death — read by ButtonClicker to populate the death screen.</summary>
+    public static string LastDeathCause { get; private set; } = "";
+
+    public void KillTree(string cause)
+    {
+        if (GameManager.Instance.state == GameState.TreeDead) return;   // already dead
+
+        LastDeathCause = cause;
+        Debug.Log($"[Death] Tree is dead. Cause: {cause} | year={GameManager.year}");
+
+        // Grey out all branch nodes visually via mesh tint
+        var mb = GetComponent<TreeMeshBuilder>();
+        if (mb != null) mb.SetDeadTint(true);
+
+        // Drop all leaves immediately
+        GetComponent<LeafManager>()?.DropAllLeaves();
+
+        GameManager.Instance.UpdateGameState(GameState.TreeDead);
     }
 
     // Year Simulation (debug keys 1-9)
@@ -1905,7 +2588,8 @@ public class TreeSkeleton : MonoBehaviour
             }
 
             var rootCont = CreateNode(node.tipPosition, ContinuationDirection(node), nodeRadius, segLength, node);
-            rootCont.isRoot = true;
+            rootCont.isRoot         = true;
+            rootCont.isAirLayerRoot = node.isAirLayerRoot;
             rootCount++;
 
             float lateralScale  = isIshitsuki ? 0f : Mathf.Clamp01(1f - distRatio);
@@ -1913,7 +2597,8 @@ public class TreeSkeleton : MonoBehaviour
             if (rootCount < maxTotalRootNodes && Random.value < lateralChance)
             {
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), nodeRadius, segLength * 0.85f, node);
-                lat.isRoot = true;
+                lat.isRoot         = true;
+                lat.isAirLayerRoot = node.isAirLayerRoot;
                 Debug.Log($"[GRoot] SpawnChildren lateral | node={node.id} depth={node.depth} distRatio={distRatio:F2} -> lat id={lat.id}");
             }
             return;
@@ -2100,11 +2785,66 @@ public class TreeSkeleton : MonoBehaviour
         Vector3 rand = Random.insideUnitSphere * randomWeight;
 
         // Air-layer roots grow downward (gravitropism / anti-phototropism).
-        // Bypass normal root surface-snap logic — they hang freely from the trunk.
+        // They deflect along rock surfaces and snap onto the soil plane once they arrive.
         if (node.isAirLayerRoot)
         {
             Vector3 airInertia = (node.growDirection * inertiaWeight + rand).normalized;
-            return Vector3.Slerp(airInertia, Vector3.down, 0.7f).normalized;
+            Vector3 dir = Vector3.Slerp(airInertia, Vector3.down, 0.7f).normalized;
+
+            Vector3 worldTip = transform.TransformPoint(node.tipPosition);
+
+            // ── Rock surface deflection ───────────────────────────────────────
+            if (rockCollider != null)
+            {
+                float effectiveRadius = rockInfluenceRadius * 2f;
+                Vector3 rockCenter = rockCollider.bounds.center;
+                Vector3 toCenter   = (rockCenter - worldTip).normalized;
+                Vector3 closestPt  = rockCenter;
+                if (rockCollider.Raycast(new Ray(worldTip, toCenter), out RaycastHit cpHit, effectiveRadius * 3f))
+                    closestPt = cpHit.point;
+                else
+                {
+                    Vector3 outside = worldTip - toCenter * effectiveRadius * 2f;
+                    if (rockCollider.Raycast(new Ray(outside, toCenter), out RaycastHit cpHit2, effectiveRadius * 4f))
+                        closestPt = cpHit2.point;
+                }
+                float distToRock = Vector3.Distance(worldTip, closestPt);
+                if (distToRock < effectiveRadius)
+                {
+                    Vector3 outward = (closestPt - rockCenter).normalized;
+                    if (outward.sqrMagnitude < 0.001f) outward = Vector3.up;
+
+                    Vector3 surfaceNormal = outward;
+                    Ray normalRay = new Ray(closestPt + outward * 0.5f, -outward);
+                    if (rockCollider.Raycast(normalRay, out RaycastHit normalHit, 1f))
+                        surfaceNormal = normalHit.normal;
+
+                    Vector3 worldDir   = transform.TransformDirection(dir);
+                    Vector3 surfaceDir = Vector3.ProjectOnPlane(worldDir, surfaceNormal);
+                    if (surfaceDir.sqrMagnitude < 0.001f)
+                        surfaceDir = Vector3.ProjectOnPlane(Vector3.down, surfaceNormal);
+                    surfaceDir = (surfaceDir.normalized + Vector3.down * rootGravityWeight * 20f).normalized;
+
+                    float blend = Mathf.Lerp(0.6f, 1.0f, 1f - Mathf.Clamp01(distToRock / effectiveRadius));
+                    dir = transform.InverseTransformDirection(
+                        Vector3.Slerp(worldDir, surfaceDir, blend).normalized);
+                }
+            }
+
+            // ── Soil-plane snap ───────────────────────────────────────────────
+            Plane soilPlane = new Plane(plantingNormal, plantingSurfacePoint);
+            float distToSoil = soilPlane.GetDistanceToPoint(worldTip);
+            if (distToSoil >= 0f && distToSoil < rootSurfaceSnapDist)
+            {
+                Vector3 surfaceDir = Vector3.ProjectOnPlane(dir, plantingNormal);
+                if (surfaceDir.sqrMagnitude > 0.001f)
+                {
+                    float blend = 1f - Mathf.Clamp01(distToSoil / rootSurfaceSnapDist);
+                    dir = Vector3.Slerp(dir, surfaceDir.normalized, blend).normalized;
+                }
+            }
+
+            return dir;
         }
 
         if (node.isRoot)
@@ -2903,7 +3643,7 @@ public class TreeSkeleton : MonoBehaviour
             _soilDbgRockBot = rockCollider != null ? rockCollider.bounds.min.y : _soilDbgSoilY;
             _soilDbgCenter  = rockCollider != null ? rockCollider.bounds.center : transform.position;
             _soilDbgR       = rockCollider != null ? rockCollider.bounds.extents.magnitude * 1.1f : 1.5f;
-            _soilDbgActive  = true;
+            // _soilDbgActive  = true;
             _soilDbgEndTime = Time.realtimeSinceStartup + 60f;
         }
         // ─────────────────────────────────────────────────────────────────────
@@ -2911,10 +3651,19 @@ public class TreeSkeleton : MonoBehaviour
         // Clear existing trunk-root chains so PreGrowRootsToSoil builds fresh cables
         // from the correct trunk-tip positions instead of from the draped chain tips
         // (which can end up above the trunk after DrapeRootsOverRock adds an upward bias).
+        // Use RemoveSubtree so orphaned nodes are also purged from allNodes — without
+        // this, the old chain nodes stay in allNodes with isGrowing=true and show up
+        // as ghost roots growing in mid-air above the rock.
         if (root != null)
         {
             foreach (var child in root.children)
-                if (child.isRoot) child.children.Clear();
+            {
+                if (!child.isRoot) continue;
+                var toRemove = new List<TreeNode>(child.children);
+                foreach (var oldChild in toRemove)
+                    RemoveSubtree(oldChild, new List<TreeNode>());
+                child.children.Clear();
+            }
         }
 
         // Pre-grow root cables from the trunk base all the way to the soil.
@@ -3033,7 +3782,7 @@ public class TreeSkeleton : MonoBehaviour
     /// the rock over years before the player places it. Only the new fill-in roots that
     /// grow afterward should take a long time. The initial cables reach soil immediately.
     /// </summary>
-    void PreGrowRootsToSoil()
+    void PreGrowRootsToSoil(bool animated = false)
     {
         if (root == null) return;
         if (rockCollider == null)
@@ -3072,8 +3821,11 @@ public class TreeSkeleton : MonoBehaviour
             int      strandGrown = 0;
 
             // ── Phase 1: fast-forward to the chain tip ────────────────────────────
-            while (current.children.Count > 0)
-                current = current.children[0];
+            { int walkGuard = 0;
+              while (current.children.Count > 0 && ++walkGuard < 5000)
+                  current = current.children[0];
+              if (walkGuard >= 5000) { Debug.LogError($"[PreGrow] Phase1 walk cycle detected on strand={strandIndex} — skipping"); strandIndex++; continue; }
+            }
 
             Vector3 existingTip = transform.TransformPoint(current.tipPosition);
             if (existingTip.y <= soilY + 0.05f)
@@ -3081,6 +3833,22 @@ public class TreeSkeleton : MonoBehaviour
                 Debug.Log($"[PreGrow] year={GameManager.year} strand={strandIndex} tip already at soil tipY={existingTip.y:F3}");
                 strandIndex++;
                 continue;
+            }
+
+            // Remove only non-training-wire (accidentally air-grown) children.
+            // Preserve existing training-wire cable segments so animated growth
+            // continues from the real chain tip rather than restarting each spring.
+            var nonWireChildren = startNode.children.FindAll(c => !c.isTrainingWire);
+            foreach (var c in nonWireChildren)
+                RemoveSubtree(c, new List<TreeNode>());
+            startNode.children.RemoveAll(c => !c.isTrainingWire);
+
+            // Re-walk to the actual chain tip after cleanup.
+            current = startNode;
+            { int walkGuard = 0;
+              while (current.children.Count > 0 && ++walkGuard < 5000)
+                  current = current.children[0];
+              if (walkGuard >= 5000) { Debug.LogError($"[PreGrow] Re-walk cycle detected on strand={strandIndex} — skipping"); strandIndex++; continue; }
             }
 
             // ── Find entry point on rock face this strand is aimed at ─────────────
@@ -3163,10 +3931,15 @@ public class TreeSkeleton : MonoBehaviour
             //         its widest Y cross-section. Used as snap target when under-rock.
             //         baseWorld starts at the trunk-root tip — no entry scan landing, so
             //         there is no mesh gap between the trunk root and the first pre-grown node.
-            Vector3 baseWorld       = startTip;
-            bool    hasHitExterior  = false;
-            // Track the previous segment's direction so we can reject sharp backwards bends.
-            Vector3 prevTangent     = strandDir; // world-space; updated each step
+            // For animated continued growth, start from the actual chain tip so each
+            // spring extends the cable one step further rather than restarting from startNode.
+            Vector3 baseWorld      = transform.TransformPoint(current.tipPosition);
+            bool    hasHitExterior = false;
+            // Seed prevTangent from the last placed segment so the angle guard
+            // produces smooth continuity across season boundaries.
+            Vector3 prevTangent = (current != startNode)
+                ? transform.TransformDirection(current.growDirection).normalized
+                : strandDir;
 
             // ── Phase 2: step down the rock face to soil ──────────────────────────
             // Each step re-queries the rock exterior by shooting a horizontal ray from
@@ -3290,9 +4063,9 @@ public class TreeSkeleton : MonoBehaviour
                 var newNode              = CreateNode(localPos, localDir, rootTerminalRadius, segLen, current);
                 newNode.isRoot           = true;
                 newNode.isTrainingWire   = true;   // exempt from rootVisibilityDepth cull in TreeMeshBuilder
-                newNode.length           = segLen;
-                newNode.isGrowing        = false;
-                newNode.radius           = rootTerminalRadius;
+                newNode.length           = animated ? 0f    : segLen;
+                newNode.isGrowing        = animated;        // true = grows visually; false = frozen at full length
+                newNode.radius           = animated ? 0f    : rootTerminalRadius;
 
                 current = newNode;
                 grown++;
@@ -3300,11 +4073,16 @@ public class TreeSkeleton : MonoBehaviour
 
                 // Advance to the new exterior surface point — NOT tangent * segLen.
                 baseWorld = nodePos;
+
+                // Animated mode: one segment per season. The next spring call picks up from here.
+                if (animated) break;
             }
 
             // Prevent startNode from reaching targetLength in the Update growth loop and
             // firing SpawnChildren — which would append a second air-growing continuation
             // root alongside the pre-grown chain. Mark it fully grown but frozen.
+            // Also mark isTrainingWire so the age loop doesn't skip it (age=0 = stays white forever).
+            startNode.isTrainingWire = true;
             if (startNode.isGrowing)
             {
                 startNode.length    = startNode.targetLength;
@@ -3573,6 +4351,113 @@ public class TreeSkeleton : MonoBehaviour
         node.health = Mathf.Max(0f, node.health - amount);
     }
 
+    // ── Fungal System ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Per-season fungal infection update. Called from StartNewGrowingSeason.
+    ///
+    /// At-risk conditions for a node:
+    ///   - Open wound (hasWound &amp;&amp; !pasteApplied)
+    ///   - Over-watered roots (isRoot &amp;&amp; soilMoisture > 0.9)
+    ///   - Low health (&lt;0.5)
+    ///
+    /// If at-risk: fungalLoad increases by fungalLoadIncrease.
+    /// Spread: each infected node has fungalSpreadChance to nudge fungalLoad on each
+    ///   adjacent (parent / child) node by half the increase.
+    /// Damage: applied if fungalLoad > 0.4, scaled by excess.
+    /// Recovery: fungalLoad drops by fungalRecoveryRate per season when no longer at-risk.
+    /// </summary>
+    void UpdateFungalInfection()
+    {
+        // Collect spread deltas separately so we don't double-count in one pass
+        var spreadDelta = new Dictionary<int, float>(allNodes.Count);
+        foreach (var n in allNodes) spreadDelta[n.id] = 0f;
+
+        int infectedCount = 0;
+        foreach (var node in allNodes)
+        {
+            if (node.isTrimmed) continue;
+
+            bool atRisk = (node.hasWound && !node.pasteApplied)
+                       || (node.isRoot && soilMoisture > 0.9f)
+                       || (node.health < 0.5f);
+
+            if (atRisk)
+            {
+                node.fungalLoad = Mathf.Min(1f, node.fungalLoad + fungalLoadIncrease);
+            }
+            else if (node.fungalLoad > 0f)
+            {
+                node.fungalLoad = Mathf.Max(0f, node.fungalLoad - fungalRecoveryRate);
+            }
+
+            // Spread to neighbours
+            if (node.fungalLoad > 0.05f)
+            {
+                float nudge = node.fungalLoad * 0.5f * fungalLoadIncrease;
+                if (node.parent != null && Random.value < fungalSpreadChance)
+                    spreadDelta[node.parent.id] += nudge;
+                foreach (var child in node.children)
+                    if (Random.value < fungalSpreadChance)
+                        spreadDelta[child.id] += nudge;
+
+                // Damage: excess above 0.4
+                float excess = node.fungalLoad - 0.4f;
+                if (excess > 0f)
+                {
+                    ApplyDamage(node, DamageType.FungalInfection, fungalDamagePerLoad * excess);
+                    infectedCount++;
+                }
+            }
+        }
+
+        // Apply spread
+        foreach (var node in allNodes)
+        {
+            float d = spreadDelta[node.id];
+            if (d > 0f) node.fungalLoad = Mathf.Min(1f, node.fungalLoad + d);
+        }
+
+        if (infectedCount > 0)
+            Debug.Log($"[Fungal] {infectedCount} node(s) took fungal damage | year={GameManager.year}");
+    }
+
+    /// <summary>
+    /// Per-season mycorrhizal network update. Called from StartNewGrowingSeason after
+    /// UpdateFungalInfection so fungalLoad is already updated.
+    ///
+    /// Root nodes that stay healthy (health>0.75, fungalLoad&lt;0.1) for
+    /// mycorrhizalHealthySeasonsRequired seasons gain the isMycorrhizal flag.
+    /// Nodes that go over threshold lose it.
+    /// </summary>
+    void UpdateMycorrhizal()
+    {
+        int gained = 0, lost = 0;
+        foreach (var node in allNodes)
+        {
+            if (!node.isRoot || node.isTrimmed) continue;
+
+            bool healthy = node.health > 0.75f && node.fungalLoad < 0.1f;
+            if (healthy)
+            {
+                node.healthySeasonsCount++;
+                if (!node.isMycorrhizal && node.healthySeasonsCount >= mycorrhizalHealthySeasonsRequired)
+                {
+                    node.isMycorrhizal = true;
+                    gained++;
+                }
+            }
+            else
+            {
+                node.healthySeasonsCount = 0;
+                if (node.isMycorrhizal) { node.isMycorrhizal = false; lost++; }
+            }
+        }
+
+        if (gained > 0 || lost > 0)
+            Debug.Log($"[Fungal] Mycorrhizal: +{gained} gained, -{lost} lost | year={GameManager.year}");
+    }
+
     // Wound System
 
     void CreateWoundObject(TreeNode node)
@@ -3698,10 +4583,4 @@ public class TreeSkeleton : MonoBehaviour
             PropagatePosition(child);
         }
     }
-}
-
-public enum BudType
-{
-    Alternate,  // one continuation + optional lateral (default for most trees)
-    Opposite,   // two symmetric equal forks (Japanese maple, ash, dogwood)
 }

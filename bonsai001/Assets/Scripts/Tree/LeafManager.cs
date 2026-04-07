@@ -385,6 +385,9 @@ public class LeafManager : MonoBehaviour
     /// Destroys all live leaf GameObjects and clears the tracking dictionaries.
     /// Called by SaveManager.Load() before re-spawning leaves from saved data.
     /// </summary>
+    /// <summary>Instantly removes all leaves — called on tree death.</summary>
+    public void DropAllLeaves() => ClearAllLeaves();
+
     public void ClearAllLeaves()
     {
         foreach (var kvp in nodeLeaves)
@@ -393,6 +396,31 @@ public class LeafManager : MonoBehaviour
         nodeLeaves.Clear();
         allLeaves.Clear();
         listDirty = false;
+    }
+
+    /// <summary>
+    /// Updates each live leaf's fungal severity based on its owner node's fungalLoad,
+    /// then forces a colour refresh. Call from buttonClicker or TreeSkeleton each season.
+    /// Leaves in fall season are not affected (fall gradient takes priority).
+    /// </summary>
+    public void RefreshFungalTint(TreeSkeleton skel)
+    {
+        if (skel == null) return;
+        // Build a quick id→node lookup
+        var nodeById = new Dictionary<int, TreeNode>(skel.allNodes.Count);
+        foreach (var n in skel.allNodes) nodeById[n.id] = n;
+
+        foreach (var (nodeId, go) in allLeaves)
+        {
+            if (go == null) continue;
+            var leaf = go.GetComponent<Leaf>();
+            if (leaf == null) continue;
+            if (nodeById.TryGetValue(nodeId, out var node))
+            {
+                leaf.fungalSeverity = node.fungalLoad;
+                leaf.ForceRefreshColor();
+            }
+        }
     }
 
     /// <summary>

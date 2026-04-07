@@ -130,6 +130,18 @@ public class TreeMeshBuilder : MonoBehaviour
 
     public void SetDirty() => isDirty = true;
 
+    bool isDead = false;
+
+    /// <summary>
+    /// When dead=true, overrides all vertex colours to a grey-brown dead-wood tint.
+    /// Call with false to restore normal colouring (e.g. after a load).
+    /// </summary>
+    public void SetDeadTint(bool dead)
+    {
+        isDead = dead;
+        SetDirty();
+    }
+
     void LateUpdate()
     {
         if (!isDirty) return;
@@ -148,6 +160,11 @@ public class TreeMeshBuilder : MonoBehaviour
     long   totalBuildMs    = 0;
     long   totalColliderMs = 0;
     int    buildCount      = 0;
+
+    // Change-detection for [RootVis] log — only log when state differs
+    bool _prevRootVis_renderRoots = false;
+    int  _prevRootVis_included    = -1;
+    int  _prevRootVis_skipped     = -1;
 
     void BuildMesh()
     {
@@ -169,9 +186,19 @@ public class TreeMeshBuilder : MonoBehaviour
                                && !renderRoots && n.worldPosition.y < rootVisibilityDepth;
                 if (skipped) wouldSkip++; else wouldInclude++;
             }
-            Debug.Log($"[RootVis] BuildMesh | renderRoots={renderRoots} threshold={rootVisibilityDepth:F3} " +
-                      $"| rootNodes={rootNodes} terminals={rootTerminals} maxDepth={rootDepthMax} " +
-                      $"| included={wouldInclude} skipped={wouldSkip}");
+            // Only log when renderRoots mode or included/skipped counts change — not every dirty rebuild
+            bool stateChanged = renderRoots   != _prevRootVis_renderRoots
+                             || wouldInclude  != _prevRootVis_included
+                             || wouldSkip     != _prevRootVis_skipped;
+            if (stateChanged)
+            {
+                _prevRootVis_renderRoots = renderRoots;
+                _prevRootVis_included    = wouldInclude;
+                _prevRootVis_skipped     = wouldSkip;
+                Debug.Log($"[RootVis] year={GameManager.year} BuildMesh | renderRoots={renderRoots} threshold={rootVisibilityDepth:F3} " +
+                          $"| rootNodes={rootNodes} terminals={rootTerminals} maxDepth={rootDepthMax} " +
+                          $"| included={wouldInclude} skipped={wouldSkip}");
+            }
         }
 
         buildTimer.Restart();
@@ -190,6 +217,13 @@ public class TreeMeshBuilder : MonoBehaviour
         // In Ishitsuki the rock sits in a pot of soil — the stub provides visual grounding
         // and hides the open bottom regardless of rock orientation.
         AddUndergroundCap(skeleton.root);
+
+        // Override all vertex colours to dead-wood grey when tree has died
+        if (isDead)
+        {
+            var deadCol = new Color(0.35f, 0.30f, 0.25f);   // ashen grey-brown
+            for (int i = 0; i < colors.Count; i++) colors[i] = deadCol;
+        }
 
         mesh.Clear();
         mesh.SetVertices(vertices);
@@ -287,8 +321,26 @@ public class TreeMeshBuilder : MonoBehaviour
         // Still-growing segments are tinted deep blue for debugging.
         // Exposed roots (above soil line) bark faster than buried ones.
         bool isExposed = node.isRoot && node.worldPosition.y > rootVisibilityDepth;
-        Color baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age, node.isRoot, isExposed);
-        Color tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age, node.isRoot, isExposed);
+
+        // Dead / deadwood override: ashen grey-brown tint
+        Color baseColor, tipColor;
+        if (node.isDeadwood)
+        {
+            baseColor = tipColor = new Color(0.38f, 0.32f, 0.26f);   // silver-grey deadwood
+        }
+        else if (node.isDead)
+        {
+            // Fading dead branch: lerp toward grey as deadSeasons ticks up
+            float fade = Mathf.Clamp01(node.deadSeasons / 2f);
+            Color live = GrowthColor(node.radius, node.age, node.isRoot, isExposed);
+            Color dead = new Color(0.35f, 0.30f, 0.25f);
+            baseColor = tipColor = Color.Lerp(live, dead, fade);
+        }
+        else
+        {
+            baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age, node.isRoot, isExposed);
+            tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age, node.isRoot, isExposed);
+        }
 
 
         // Base ring

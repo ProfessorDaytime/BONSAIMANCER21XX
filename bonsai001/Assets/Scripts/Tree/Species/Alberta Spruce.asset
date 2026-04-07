@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Alberta Spruce
+  m_EditorClassIdentifier:
+  speciesName: Alberta Spruce
+  scientificName: Picea glauca 'Conica'
+  baseGrowSpeed: 0.08
+  depthSpeedDecay: 0.82
+  depthsPerYear: 1
+  baseElongation: 0.03
+  elongationDepthDecay: 0.65
+  branchSegmentLength: 0.8
+  segmentLengthDecay: 0.75
+  rootSegmentLength: 0.6
+  baseBranchChance: 0.52
+  branchChanceDepthDecay: 0.88
+  springLateralChance: 0.58
+  oldWoodBudChance: 0.005
+  backBudBaseChance: 0.08
+  budType: 0
+  apicalDominance: 0.60
+  apicalVigorBonus: 0.12
+  vigorDecayRate: 0.12
+  wireDaysToSet: 320
+  woundDrainRate: 0.04
+  seasonsToHealPerUnit: 26
+  trimTraumaDamage: 0.04
+  trimTraumaRecoveryPerSeason: 0.025
+  drainRatePerDay: 0.06
+  droughtThreshold: 0.22
+  droughtDamagePerDay: 0.007
+  nutrientDrainPerSeason: 0.22
+  fungalSpreadChance: 0.22
+  fungalRecoveryRate: 0.10
+  maxEnergyMultiplier: 1.1
+  preferredWaterRetention: 0.42
+  preferredDrainageRate: 0.65
+  preferredAerationScore: 0.55
+  soilToleranceRange: 0.22
+  soilMismatchPenalty: 0.03
+  repotTolerance: 0.40

@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Swamp Cypress
+  m_EditorClassIdentifier:
+  speciesName: Swamp Cypress
+  scientificName: Taxodium distichum
+  baseGrowSpeed: 0.28
+  depthSpeedDecay: 0.85
+  depthsPerYear: 4
+  baseElongation: 0.06
+  elongationDepthDecay: 0.72
+  branchSegmentLength: 1.1
+  segmentLengthDecay: 0.82
+  rootSegmentLength: 0.8
+  baseBranchChance: 0.70
+  branchChanceDepthDecay: 0.9
+  springLateralChance: 0.78
+  oldWoodBudChance: 0.05
+  backBudBaseChance: 0.16
+  budType: 0
+  apicalDominance: 0.30
+  apicalVigorBonus: 0.17
+  vigorDecayRate: 0.15
+  wireDaysToSet: 180
+  woundDrainRate: 0.05
+  seasonsToHealPerUnit: 18
+  trimTraumaDamage: 0.04
+  trimTraumaRecoveryPerSeason: 0.06
+  drainRatePerDay: 0.18
+  droughtThreshold: 0.50
+  droughtDamagePerDay: 0.018
+  nutrientDrainPerSeason: 0.50
+  fungalSpreadChance: 0.25
+  fungalRecoveryRate: 0.10
+  maxEnergyMultiplier: 1.5
+  preferredWaterRetention: 0.72
+  preferredDrainageRate: 0.35
+  preferredAerationScore: 0.28
+  soilToleranceRange: 0.20
+  soilMismatchPenalty: 0.06
+  repotTolerance: 0.55

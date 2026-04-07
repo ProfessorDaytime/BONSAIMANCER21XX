@@ -1,70 +1,73 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-04-02  (items 1–16 complete; item 17 GL debug in place)
+Last updated: 2026-04-06 · Items 1–27 complete
 
 ---
 
-## Current Priority Queue
+## Completed This Phase
 
-Work through these in order. Do not start the next item until the current one is
-shippable (playable without obvious breakage).
-
-Items 1–16 are complete. The queue below is the next phase.
-
-### 17. Root Visibility Bug (Post-Ishitsuki)  ← NEXT
-**Bug:** After root-on-rock (Ishitsuki) is confirmed, non-Ishitsuki roots (pot roots,
-surface roots) are invisible in RootPrune mode. Hover red outline works; mesh does not render.
-
-**GL debug overlay: DONE** — `debugRootVisibility` toggle on `TreeMeshBuilder`:
-- Cyan = isTrainingWire, Yellow = isAirLayerRoot, Green = included, Red = excluded by depth threshold
-- `[RootVis] BuildMesh` log prints `renderRoots`, threshold, included/skipped counts every rebuild
-- Toggle ON before and after Ishitsuki confirm to see which nodes go red
-
-**Next step:** Enable `debugRootVisibility` in Inspector, do an Ishitsuki confirm, enter
-RootPrune, check console for `[RootVis]` line and Game View for red lines. Then fix
-the flagged condition and remove/comment the toggle.
-
-**Scope:** `TreeMeshBuilder.cs` (fix condition), possibly `TreeSkeleton.cs`
+- **22.** Fertilizer System — `nutrientReserve` (0→2) drains 0.4/season; `Fertilize()` blocked in winter; `nutrientMult` Lerp(0.6,1.4) multiplied into per-frame growth speed; FertilizerBurn on roots if reserve >1.5 at spring start; Fertilize button + nutrient bar right-side panel; Auto-fertilize toggle in Debug tab; serialized in SaveData
+- **23.** Weed System — RMB click-hold-drag-up to pull; rip chance leaves stub (harder next pull, stump visual, 60% drain); Herbicide button clears all weeds + sets aeration penalty next season; WeedManager spawns procedural cube weeds (grass/clover/dandelion/thistle) as tree children; seasonal nutrient+moisture drain; weeds serialized in SaveData
+- **24.** Fungus System — `fungalLoad` (0–1) per node; spreads from open wounds / overwatered roots / low-health nodes; seasonal spread to neighbours; FungalInfection DamageType; Fungicide button reduces load 0.6 across all nodes; mycorrhizal network on healthy root nodes (3+ healthy seasons) reduces nutrient drain 20%; herbicide kills mycorrhizae; infected leaves tint toward sickly yellow-green via MaterialPropertyBlock; all fields serialized
+- **25.** Species Skeleton — `TreeSpecies` ScriptableObject; `ApplySpecies()` copies into existing `TreeSkeleton` fields on Awake; `BudType` moved to own file; species name displayed in Settings menu header; Japanese Maple (Opposite buds, fast/thirsty/fragile) and Juniper (slow/drought-tolerant/resilient) as starter species
+- **26.** Species Selection Menu — fullscreen overlay on game start; 16 species with Growth / Water / Care / Soil chip tags; sortable by any tag; confirms into TipPause with species applied; `SpeciesSelect` GameState; ToolTip fixed to only show in TipPause without touching Main Camera
+- **27.** Soil / Substrate System — `PotSoil` component; 7 substrates (akadama, pumice, lava rock, organic, sand, kanuma, perlite); weighted mix → derived properties; seasonal degradation + saturation + root rot; species soil mismatch penalty; `Repot()` with timing and too-soon stress multipliers; 4 presets; soil bars in Repot panel; 16 species .asset files with soil preferences; Roots→Repot rename; weeds auto-cleared on entering Repot mode; weeds excluded from trunk radius and rock surfaces
 
 ---
 
-### 1. Tight-Angle Geometry  ✓ *done*
+## Numbered Items
+
+All items sorted ascending. Click a title to expand the spec.
+
+---
+
+<details>
+<summary><strong>1. Tight-Angle Geometry</strong> ✓ done</summary>
+
 **Goal:** Prevent vertex pinching where branches bend sharply.
-**Scope:** Self-contained change to `TreeMeshBuilder.cs`.
-- Bend rings inserted at child base; parallel-transport fix prevents tip ring twist.
+**Scope:** `TreeMeshBuilder.cs`
+
+- Bend rings inserted at child base
+- Parallel-transport fix prevents tip ring twist
+
+</details>
 
 ---
 
-### 2. Post-Trim Depth Cap  ✓ *done*
+<details>
+<summary><strong>2. Post-Trim Depth Cap</strong> ✓ done</summary>
+
 **Goal:** After trimming back hard, regrowth is limited to early-year depths —
 a branch cut to depth 1 can't grow 6 levels in one season.
-**Scope:** `TreeSkeleton.cs`, `TreeNode.cs`.
-**Approach:**
-- Add `trimCutDepth` and `regrowthSeasonCount` fields to `TreeNode`.
-- When a node is identified as a trim cut point, record its depth.
+**Scope:** `TreeSkeleton.cs`, `TreeNode.cs`
+
+- Add `trimCutDepth` and `regrowthSeasonCount` fields to `TreeNode`
+- When a node is identified as a trim cut point, record its depth
 - Each new growing season, the cut point's subtree gets a depth cap of:
   `trimCutDepth + (regrowthSeasonCount * REGROWTH_DEPTH_PER_SEASON)`
-  where `REGROWTH_DEPTH_PER_SEASON` mirrors the year-1 allowance.
-- `regrowthSeasonCount` increments each spring on affected nodes.
+  where `REGROWTH_DEPTH_PER_SEASON` mirrors the year-1 allowance
+- `regrowthSeasonCount` increments each spring on affected nodes
 - After enough seasons the cap naturally reaches the global `depthCap` and the
-  special treatment ends.
+  special treatment ends
+
+</details>
 
 ---
 
-### 3. Wire Rework + Health System Foundation  ✓ *done*
+<details>
+<summary><strong>3. Wire Rework + Health System Foundation</strong> ✓ done</summary>
+
 **Goal:** Realistic wiring with meaningful consequences; health system that
 future mechanics (watering, nutrients, trimming trauma) can feed into.
 
 #### 3a. Wire Rework
 
 **New wiring flow:**
-1. Player aims and confirms wire direction.
-2. `GameState.WireAnimate` fires — time frozen, camera still moves, all other
-   input blocked.
-3. Branch snaps to `wireTargetDirection` immediately in skeleton data.
-4. A ~0.6 s spring animation plays on the mesh with slight overshoot + settle.
-5. Player can skip animation with **Enter** (full input system refactor later).
-6. On animation end → auto-resume prior game state.
+1. Player aims and confirms wire direction
+2. `GameState.WireAnimate` fires — time frozen, camera still moves
+3. Branch snaps to `wireTargetDirection` immediately in skeleton data
+4. A ~0.6 s spring animation plays on the mesh with slight overshoot + settle
+5. On animation end → auto-resume prior game state
 
 **New data on `TreeNode`:**
 ```
@@ -76,645 +79,782 @@ wireAgeDays             float     total in-game days wire has been on
 ```
 
 **Set/damage accumulation:**
-- Both progress values accumulate only during `BranchGrow` state.
-- Rate uses the same `SeasonalGrowthRate` multiplier (dormant seasons do nothing).
-- `setProgress` fills over ~2 growing seasons at speed 1.
-- `damageProgress` begins filling as soon as `setProgress >= 1.0`.
+- Both progress values accumulate only during `BranchGrow` state
+- Rate uses the same `SeasonalGrowthRate` multiplier
+- `setProgress` fills over ~2 growing seasons at speed 1
+- `damageProgress` begins filling as soon as `setProgress >= 1.0`
 
 **Early removal (setProgress < 1.0):**
 ```
 newDirection = Slerp(wireOriginalDirection, wireTargetDirection, setProgress)
 ```
-Branch snaps immediately to the intermediate direction — no animation, player
-already had their satisfying spring moment when wiring.
 
 **Re-wiring a previously-set branch:**
-- Allowed freely; no cooldown.
-- Re-bending set wood applies a health hit to the node:
-  `damage = Lerp(0.05, 0.25, setProgress)` — the more fully set, the more
-  stress from re-bending.
-- Uses `WireBend` damage type in the health system (see 3b).
+- Allowed freely; no cooldown
+- Re-bending set wood applies a health hit: `damage = Lerp(0.05, 0.25, setProgress)`
 
-**Wire colour progression (on wire mesh material):**
+**Wire colour progression:**
 | Condition | Colour |
 |---|---|
-| `setProgress` 0 → 1 | Silver |
-| `setProgress >= 1.0` | Obvious gold emissive glow (pulsing) |
-| Damage zone begins | Gold → Orange lerp |
+| `setProgress` 0→1 | Silver |
+| `setProgress >= 1.0` | Gold emissive pulse |
+| Damage zone begins | Gold → Orange |
 | `damageProgress >= 0.5` | Orange → Red |
-| `damageProgress >= 1.0` | Deep red, wire embedded |
+| `damageProgress >= 1.0` | Deep red, embedded |
 
 #### 3b. Health System (Foundation)
 
-**`float health = 1f` on `TreeNode`, range 0 → 1.**
+**`float health = 1f` on `TreeNode`, range 0→1.**
 
-Damage sources (now or reserved for later):
-```
-WireBend      — re-bending set wood; immediate hit
-WireDamage    — progressive, from wireDamageProgress
-TrimTrauma    — small hit on trim, recovers over a season      [later]
-Drought       — slow drain if unwatered                        [later]
-NutrientLack  — reduces recovery rate                         [later]
-WoundDrain    — progressive, from open unprotected wounds      [item 6]
-```
-
-Health thresholds and effects:
+Health thresholds:
 | health | Effect |
 |---|---|
 | `< 0.75` | Growth rate multiplied by `health` |
-| `< 0.5` | Leaves drop early; branch mesh tints slightly grey |
-| `< 0.25` | Branch goes dormant (no growth regardless of season) |
-| `<= 0` | Branch dead: mesh turns grey, leaves all fall, no regrowth |
+| `< 0.5` | Leaves drop early; branch tints grey |
+| `< 0.25` | Branch goes dormant |
+| `<= 0` | Branch dead |
 
-Dead branches:
-- Remain in the scene visually until the player trims them away.
-- Can still be trimmed/removed normally.
-- Propagate a reduced health penalty to the parent node (stress from carrying
-  dead wood).
+`DamageType` enum lives in `NodeHealth.cs`.
 
-**`DamageType` enum** lives in a new `NodeHealth.cs` alongside a small helper
-so the system stays clean as more damage types are added later.
+</details>
 
 ---
 
-### 4. Root System  ✓ *done*
+<details>
+<summary><strong>4. Root System</strong> ✓ done</summary>
+
 **Goal:** Visible surface/subsurface roots (nebari), trimmable in RootPrune mode
 and naturally scorable for flared-root development.
-**Scope:** Extended existing `TreeSkeleton`/`TreeNode`/`TreeMeshBuilder`/`TreeInteraction`
-and `CameraOrbit` (Option A — no new classes needed).
+**Scope:** `TreeSkeleton`, `TreeNode`, `TreeMeshBuilder`, `TreeInteraction`, `CameraOrbit`
 
-**What was built:**
-- `isRoot` flag on `TreeNode`; roots are children of `skeleton.root`.
-- Gravity-biased `ContinuationDirection` and `LateralDirection` for root nodes.
-- Separate depth cap: `maxRootDepth` (not `SeasonDepthCap`) for root nodes.
-- Pipe model thickens trunk base from root radii automatically.
-- `renderRoots` flag on `TreeMeshBuilder`; root nodes skipped in mesh unless flag set.
-- `PlantRoot(Vector3 localDir)` on `TreeSkeleton` — player-triggered from soil plane click.
-- `GameState.RootPrune`: tree lifts (`rootLiftHeight`, animated), roots revealed.
-- `HandleRootWorkHover()` in `TreeInteraction`: click root mesh to trim, click soil to plant.
-- `CameraOrbit` pitch relaxed to `pitchMinRootPrune` (−30°) in RootPrune mode.
+- `isRoot` flag on `TreeNode`; roots are children of `skeleton.root`
+- Gravity-biased `ContinuationDirection` and `LateralDirection` for root nodes
+- Separate depth cap: `maxRootDepth` for root nodes
+- `renderRoots` flag on `TreeMeshBuilder`
+- `PlantRoot(Vector3 localDir)` — player-triggered from soil plane click
+- `GameState.RootPrune`: tree lifts, roots revealed
+- `HandleRootWorkHover()` in `TreeInteraction`
+- `CameraOrbit` pitch relaxed to `pitchMinRootPrune` in RootPrune mode
+
+</details>
 
 ---
 
-### 5. Bud System  ✓ *done*
+<details>
+<summary><strong>5. Bud System</strong> ✓ done</summary>
+
 **Goal:** Spring growth emerges from pre-formed buds set the previous late summer.
-Gives the simulation biological accuracy and enables back-budding, apical dominance
-tuning, and the pinching mechanic. Applies to all tree species.
 
 **Phases:**
 
-**Bud Set (August):** When the season winds down, terminal nodes set a bud.
+**Bud Set (August):**
 - `node.hasBud = true`
-- Bud GameObject (player-provided prefab) spawned at `node.tipPosition`
-- Visible through the dormant winter period
+- Bud GameObject spawned at `node.tipPosition`
 
-**Dormant lateral buds:** Set during growth alongside each new node.
-- `node.dormantBudCount` tracks latent axillary buds on each node
-- Normally suppressed (apical dominance); activation chance is low
-- Increased activation chance in spring if `node.backBudStimulated = true`
+**Dormant lateral buds:**
+- `dormantBudCount` tracks latent axillary buds
+- Increased activation chance if `backBudStimulated = true`
 
-**Bud Break (March):** `StartNewGrowingSeason` reads `hasBud` nodes.
-- Bud GameObjects destroyed (or animate away)
-- Growth begins from those nodes as today
+**Bud Break (March):**
+- Bud GameObjects destroyed
+- Growth begins from those nodes
 
-**Back-budding from pruning:** When a tip is trimmed:
-- The nearest 2–3 ancestor nodes get `backBudStimulated = true`
-- Next spring, those nodes roll against an elevated lateral activation chance
-- Simulates the hormonal response to tip removal (apical dominance released)
+**Back-budding from pruning:**
+- Nearest 2–3 ancestor nodes get `backBudStimulated = true`
+- Next spring: elevated lateral activation chance
 
 **New data on `TreeNode`:**
 ```
-hasBud               bool     terminal bud set this late summer
-dormantBudCount      int      latent axillary buds available on this node
-backBudStimulated    bool     tip ancestry was trimmed; boosted lateral chance next spring
+hasBud               bool
+backBudStimulated    bool
 ```
 
-**New on `TreeSkeleton`:**
-```
-[SerializeField] GameObject budPrefab             drag in bud prefab
-[SerializeField] GameObject lateralBudPrefab      optional — visible dormant laterals
-[SerializeField] float      backBudActivationBoost  multiplier on springLateralChance for stimulated nodes
-```
-
-**Scope:** `TreeSkeleton.cs`, `TreeNode.cs`, bud prefab(s)
+</details>
 
 ---
 
-### 6. Wound System  ✓ *done*
+<details>
+<summary><strong>6. Wound System</strong> ✓ done</summary>
+
 **Goal:** Trimming branches leaves wounds that are a real health risk without care.
-Players manage wounds with cut paste. Wounds heal slowly over seasons, visually
-and mechanically. Thin tip cuts barely matter; removing a large branch unprotected
-should have meaningful consequences. Applies to all tree species; vulnerability
-is a per-species parameter.
 
 **Wound lifecycle:**
-1. Branch trimmed → wound created at parent node (cut site)
-2. Wound GameObject spawned, scaled by `woundRadius` (radius of cut branch)
-3. Each growing season: wound drains health from the node
-4. Player can apply cut paste → `pasteApplied = true`, drain drops to ~5%
-5. `woundAge` increments each growing season; wound heals when
-   `woundAge >= woundRadius × seasonsToHealPerUnit`
-6. On heal: health drain stops, wound GameObject destroyed
+1. Branch trimmed → wound created at parent node
+2. Wound GameObject spawned, scaled by `woundRadius`
+3. Each growing season: wound drains health
+4. Player applies cut paste → `pasteApplied = true`, drain drops to ~5%
+5. `woundAge` increments each season; heals when `woundAge >= woundRadius × seasonsToHealPerUnit`
 
-**Health drain (per growing season):**
+**Health drain:**
 ```
 drain = woundRadius × woundDrainRate × (pasteApplied ? 0.05f : 1.0f)
 ```
 
-**Wound healing (visual):**
-- Wound GameObject scale lerps from `woundRadius` to 0 as `woundAge` approaches the heal threshold
-- Represents callus tissue slowly rolling over the cut
-
 **New data on `TreeNode`:**
 ```
-hasWound             bool
-woundRadius          float   radius of cut branch at time of trim
-woundAge             float   growing seasons elapsed since cut
-pasteApplied         bool    player protected this wound
+hasWound       bool
+woundRadius    float
+woundAge       float
+pasteApplied   bool
 ```
 
-**New on `TreeSkeleton` (species-configurable):**
-```
-[SerializeField] GameObject woundPrefab
-[SerializeField] float      woundDrainRate          health lost per season per unit of radius
-[SerializeField] float      seasonsToHealPerUnit    growing seasons to close per unit of radius
-```
-
-**Cut paste action:**
-- New tool/interaction: player clicks a wound in normal mode to apply paste
-- Cheap, unlimited — the cost is attention, not resources (for now)
-- Visual change on wound GameObject when paste applied
-
-**Scope:** `TreeSkeleton.cs`, `TreeNode.cs`, `TreeInteraction.cs` (paste action),
-wound prefab
+</details>
 
 ---
 
-### 14. Save / Load System
+<details>
+<summary><strong>7–16. Early Systems</strong> ✓ done</summary>
 
-**Goal:** Persist the full tree state to disk so the player can close and reopen
-the game without losing years of growth.
+These items were completed in an earlier development phase. Full details in the Completed log at the bottom of this document.
 
-**What needs serializing:**
+- **7.** Bud/Leaf Integration — `birthYear` on `TreeNode`; leaves from buds on old wood
+- **8.** Growth Stability — `maxBranchNodes` hard cap, `vigorFactor` lateral scaling
+- **9.** Leaf Energy System — `treeEnergy` multiplier from canopy photosynthesis
+- **10.** Refinement Level — `refinementLevel` on nodes; segment-length taper per level
+- **11.** Dynamic Leaf Scale — root pressure + refinement drive `seasonLeafScale`
+- **12.** Ishitsuki (Root-over-Rock) — `RockPlace` + `TreeOrient` states, training wires, drape logic
+- **13.** Watering System — `soilMoisture`, `drainRatePerDay`, drought threshold + damage
+- **14.** Save / Load System — full JSON save/load; `SaveData`, `SaveNode`, auto-save on season end
+- **15.** Root Area Box Containment — `rootAreaTransform` replaces radial spread; six-face deflection
+- **16.** Pot-Bound Root System — `boundaryPressure`, `boundaryGrowthScale`, fill-in laterals
 
-| Data | Location |
-|---|---|
-| All `TreeNode` fields (id, depth, position, direction, radius, length, health, refinementLevel, wires, wounds, buds, etc.) | `TreeSkeleton.allNodes` |
-| `GameManager` time state (year, day, current season, timescale) | `GameManager` |
-| `TreeSkeleton` tuning values (can be omitted — re-read from Inspector on load) | optional |
-| Leaf state (which node IDs have leaves) | `LeafManager.nodeLeaves` |
-| Rock position/rotation (Ishitsuki) | Rock transform |
-| Pot / tray position | already in scene; likely skip |
-
-**Approach: JSON via `JsonUtility` or `Newtonsoft.Json`**
-
-- `SaveData` plain C# class mirroring `TreeNode` fields as serializable primitives
-  (no `Vector3` — serialize as float triples, or use `JsonUtility` which handles it)
-- `SaveManager` MonoBehaviour (or static class) with `Save()` / `Load()` methods
-- Save path: `Application.persistentDataPath/save.json`
-- Auto-save at the end of each growing season (BranchGrow → BudSet transition)
-- Manual save: Settings menu button ("Save Game")
-- On load: reconstruct `allNodes` list, re-link parent/child references by id,
-  re-spawn wound/wire/leaf GameObjects, set GameManager state
-
-**Node re-linking after deserialize:**
-```
-1. Deserialize flat list of SaveNode (id, parentId, all data fields)
-2. Instantiate TreeNode objects from SaveNode, assign all primitive fields
-3. Second pass: for each node, node.parent = nodeById[parentId]; parent.children.Add(node)
-4. Identify root node (parentId == -1)
-```
-
-**Leaf restore:** call `LeafManager.ForceSpawnLeaves(nodes)` on all terminal,
-non-trimmed, non-root nodes after load. Leaves always respawn fresh — no need
-to serialize individual leaf positions.
-
-**Wire/wound GameObjects:** call existing `CreateWoundObject` and `WireRenderer`
-spawn paths after populating node data — same as first-time creation.
-
-**Scope:** New `SaveManager.cs`, `TreeSkeleton.cs` (expose save/load hooks),
-`GameManager.cs` (serialize time state), `buttonClicker.cs` (Save button in Settings),
-`ButtonUI.uxml` (Save button in Time tab or new Save tab)
-
-**Implementation order:**
-1. `SaveNode` data class + `SaveData` wrapper
-2. `SaveManager.Save()` — serialize nodes + GameManager state to JSON
-3. `SaveManager.Load()` — deserialize, rebuild tree, re-spawn visuals
-4. Auto-save hook at BranchGrow→BudSet transition
-5. Manual save button in Settings menu (Time tab)
-6. Test: save mid-summer, restart editor, load — verify year/nodes/leaves match
+</details>
 
 ---
 
-## Backlog (not yet scheduled)
+<details>
+<summary><strong>17. Root Visibility Bug (Post-Ishitsuki)</strong> ✓ done</summary>
 
-### Pot-Bound Soil Block
-- When pot-bound roots go unchecked for **2+ years**, they fuse with the soil into
-  a dense impacted mass that must be dealt with before Ishitsuki is available
-- **Hard blocker** — Ishitsuki (`GameState.RockPlace`) is gated until cleared
-  (impacted root ball would be both visually wrong and technically crash-prone in Ishitsuki)
-- **Two removal methods:**
-  - *Wash out* — hold the pot under a running faucet for a timed duration; slower,
-    low trauma (watering can interaction or dedicated faucet prop TBD)
-  - *Cut out* — use existing root-prune scissors in RootPrune mode; faster,
-    meaningful health cost to nearby roots; same tool, different target
-- Visual change: open; ideas include packed/cracked soil surface, roots visibly
-  protruding from drainage holes, a UI indicator ("ROOT BOUND"), tray texture swap
+**What was built:**
+- `debugRootVisibility` toggle on `TreeMeshBuilder` draws GL lines on every root node:
+  Cyan = isTrainingWire, Yellow = isAirLayerRoot, Green = included, Red = excluded
+- `[RootVis] BuildMesh` log fires only on state change, not every dirty rebuild
+- **Ghost root fix:** `SpawnTrainingWires` was calling `child.children.Clear()` on old
+  root chains — removing list references but leaving old nodes in `allNodes` with
+  `isGrowing=true`. Fixed by calling `RemoveSubtree` on each old child before clearing.
+
+**Files changed:** `TreeSkeleton.cs`, `TreeMeshBuilder.cs`
+
+</details>
+
+---
+
+<details>
+<summary><strong>18. Auto-Water</strong> ✓ done</summary>
+
+Waters automatically just before drought threshold is reached. On by default; Debug tab toggle. When auto-water fires, the Water button pulses between light and dark grey (0.15 s). In-game-day cooldown prevents rapid-fire at high timescale.
+
+**Files changed:** `TreeSkeleton.cs`, `buttonClicker.cs`, `ButtonUI.uxml`
+
+</details>
+
+---
+
+<details>
+<summary><strong>19. Ishitsuki White First Segment</strong> ✓ done</summary>
+
+**Bug:** The first segment of each Ishitsuki root chain (`startNode`) stayed permanently
+white — never transitioned to bark colour because the age accumulation loop skipped
+non-training-wire roots.
+
+**Fix:** `startNode` marked `isTrainingWire=true` in `PreGrowRootsToSoil` so age
+accumulates and it transitions to bark colour like the rest of the chain.
+
+**Scope:** `TreeSkeleton.cs`
+
+</details>
+
+---
+
+<details>
+<summary><strong>20. Ishitsuki Roots Continue Underground</strong> ✓ done</summary>
+
+**Bug:** After a training wire chain reached the soil plane, the terminal node was frozen.
+Nothing transitioned it into the normal pot root system.
+
+**Fix:** In `PreGrowRootsToSoil`, after the step loop breaks at soil, create one transition
+node at the soil contact point (`isTrainingWire=false`) that enters the normal root system.
+Underground roots blocked from growing if tip is above soil.
+
+**Scope:** `TreeSkeleton.cs`
+
+</details>
+
+---
+
+<details>
+<summary><strong>21. Ishitsuki Cable Growth Animation</strong> ✓ done</summary>
+
+**Feature:** New training wire chains visibly grow down the rock face each spring rather
+than appearing fully pre-grown instantly.
+
+**Implementation:** `PreGrowRootsToSoil(animated:true)` each spring places one segment
+per strand. Confirm uses `animated:false` (instant full drape). Air-grown chain cleanup
+preserves training-wire progress.
+
+**Scope:** `TreeSkeleton.cs`
+
+</details>
+
+---
+
+<details>
+<summary><strong>22. Fertilizer System</strong> ✓ done</summary>
+
+`nutrientReserve` (0→2) on `TreeSkeleton`. Drains 0.4/season; `Fertilize()` adds 0.5,
+capped at 2, blocked in winter. Growth speed multiplier: `Lerp(0.6, 1.4, reserve/2)`.
+FertilizerBurn applied to root nodes each spring when `reserve > 1.5`. Fertilize button
++ nutrient bar on right-side panel. Auto-fertilize toggle in Debug tab. Serialized.
+
+</details>
+
+---
+
+<details>
+<summary><strong>23. Weed System</strong> ✓ done</summary>
+
+RMB click-hold-drag-up to pull weeds; positive Y delta accumulates pull progress.
+Rip chance (per type) leaves a stub — shorter, brown, harder to pull next time.
+`Physics.RaycastAll` required to click through Bonsai/PlanterTable colliders.
+Weeds parented to tree GO so camera-orbit drag doesn't conflict. WeedManager singleton
+auto-adds WeedPuller. Herbicide button clears all + sets aeration penalty. Four types:
+Grass (40%), Clover (35%), Dandelion (15%), Thistle (10%). Serialized.
+
+</details>
+
+---
+
+<details>
+<summary><strong>24. Fungus System</strong> ✓ done</summary>
+
+`fungalLoad` (0–1) + `isMycorrhizal` + `healthySeasonsCount` on `TreeNode`. Each spring:
+nodes with open wounds, overwatered roots (`soilMoisture > 0.9`), or low health (<0.5)
+accumulate fungalLoad; infected nodes spread to parent/children with 25% chance; nodes
+above 0.4 load take `FungalInfection` damage scaled by excess. Recovery: 0.1/season when
+no longer at-risk.
+
+Mycorrhizal: root nodes healthy 3+ seasons become `isMycorrhizal`; reduces nutrient drain
+by up to 20% based on coverage fraction. Fungicide and herbicide both kill mycorrhizae.
+
+Visual: leaf tint toward sickly yellow-green via `MaterialPropertyBlock` + `fungalSeverity`
+field on `Leaf.cs`.
+
+Fungicide button on right-side panel; dims when no infection present; calls `ApplyFungicide()`
+(reduces all loads by 0.6) + immediate leaf refresh. All fields serialized.
+
+</details>
+
+---
+
+<details>
+<summary><strong>25. Species — Skeleton</strong> ✓ done</summary>
+
+`TreeSpecies` ScriptableObject created with all core species-differentiating parameters.
+`ApplySpecies()` on `TreeSkeleton` copies ScriptableObject values into existing fields on
+Awake — zero changes to downstream code, existing SerializeField values become fallbacks.
+`BudType` enum moved to its own file so `TreeSpecies` can reference it.
+Species name displayed in Settings menu header.
+
+**Starter species shipped:**
+- **Japanese Maple** — Opposite buds, fast growth (0.26), thirsty (drain 0.14/day), fragile wounds (0.08 drain/season), wire sets fast (140 days), high lateral density
+- **Juniper** — Alternate buds, slow growth (0.14), drought-tolerant (drain 0.06/day), resilient wounds (0.03), wire sets slow (280 days), strong apical dominance
+
+**Species Visuals** (bark shaders, leaf shapes, seasonal colour sets) deferred to after Health Consequences phase.
+
+</details>
+
+---
+
+<details>
+<summary><strong>27. Soil / Substrate System</strong> ✓ done</summary>
+
+Full spec in Backlog → Soil / Substrate System.
+
+</details>
+
+---
+
+<details>
+<summary><strong>28. Tree Death</strong> ← next</summary>
+
+Full spec in Backlog → Tree Death. **Toggleable** — `treeDeathEnabled` bool on TreeSkeleton; all death checks skip when false. Off by default; turned on for testing then back off.
+
+</details>
+
+---
+
+<details>
+<summary><strong>29. Branch Death & Dieback</strong></summary>
+
+Full spec in Backlog → Branch Death & Dieback.
+
+</details>
+
+---
+
+<details>
+<summary><strong>30. Branch Weight & Strength</strong></summary>
+
+Full spec in Backlog → Branch Weight & Strength.
+
+</details>
+
+---
+
+<details>
+<summary><strong>26. Multi-Tree / Quick-Start</strong> (moves here after Health phase)</summary>
+
+Multiple trees in one session; save/load per-tree. Auto-generate a tree at a given age
+with randomised style.
+
+</details>
+
+---
+
+<details>
+<summary><strong>31. Air Layer Root Continued Growth ✓</strong></summary>
+
+Full spec in Backlog → Air Layer Root Continued Growth.
+
+**Done:** `ContinuationDirection` now handles rock-surface deflection and soil-plane snap for
+`isAirLayerRoot` nodes instead of early-returning. Continuation nodes transition to
+`isAirLayerRoot = false` once their parent tip is at or below `plantingSurfacePoint.y`,
+allowing underground growth to proceed as normal root segments.
+
+</details>
+
+---
+
+<details>
+<summary><strong>32. Air Layering to New Tree</strong></summary>
+
+Full spec in Backlog → Air Layering & Branch-to-New-Tree.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Species — Visuals</strong> (after Advanced Technique)</summary>
+
+Bark shader progression, unique leaf shapes, seasonal colour sets (red spring flush for
+maple, blue-green juniper foliage). Folds into item 25 ScriptableObject — just adds
+more fields and assets.
+
+</details>
+
+---
+
+## Backlog
+
+Future features not yet scheduled. Expand to read the spec.
+
+---
+
+<details>
+<summary><strong>Pot-Bound Soil Block</strong></summary>
+
+When pot-bound roots go unchecked for **2+ years**, they fuse with the soil into
+a dense impacted mass that must be dealt with before Ishitsuki is available.
+
+**Hard blocker** — `GameState.RockPlace` is gated until cleared.
+
+**Two removal methods:**
+- *Wash out* — hold-input timed action; slower, low trauma
+- *Cut out* — use root-prune scissors on `isSoilBlock` nodes; faster, health cost
 
 **Implementation notes:**
 - Track `potBoundYears` counter on `TreeSkeleton`; increment each spring when
   `boundaryPressure` across all roots exceeds a threshold
 - `soilBlockActive` bool gates `GameState.RockPlace` in `buttonClicker`
-- Wash-out: a hold-input timed action (e.g. 3–5 real seconds), clears `soilBlockActive`
-- Cut-out: clicking root nodes marked as `isSoilBlock` in RootPrune mode shears
-  them, clearing the block at a health cost
+- Cut-out: clicking root nodes marked `isSoilBlock` in RootPrune mode shears them
+
+</details>
 
 ---
 
-### Branch Weight & Strength
+<details>
+<summary><strong>Branch Weight & Strength</strong></summary>
 
-**Goal:** Heavy branches sag over time under their own load. Thin young wood bends;
-thick old wood resists. Wires, careful pruning, and prop supports counteract droop.
-Creates a new axis of craft — managing structure, not just shape.
+Heavy branches sag over time under their own load. Thin young wood bends; thick old
+wood resists. Wires, careful pruning, and prop supports counteract droop.
 
-> **Open design question:** How universal should this be? A large-branched juniper or
-> cascading pine needs this badly. A fine-twigged Japanese maple with tiny branches may
-> not. Likely this is a species flag (`branchWeightEnabled` on the species ScriptableObject)
-> rather than a global system. Decision deferred until species system (backlog) is clearer.
-
----
+> **Open design question:** Universal vs. species-gated? Large-branched juniper / cascading
+> pine needs this badly. Fine-twigged maple probably doesn't. Likely a species flag
+> (`branchWeightEnabled`) rather than a global system.
 
 #### Core Data
 
 Two new floats on `TreeNode`:
-
 ```
-branchLoad     float   accumulated downward force this node carries (own mass + children's load)
-branchStrength float   structural resistance to bending; derived from radius and age
+branchLoad     float   accumulated downward force (own mass + children's load)
+branchStrength float   derived from radius and age; not stored
 ```
 
-`branchLoad` is computed bottom-up each spring (terminals first, propagate to root):
+`branchLoad` computed bottom-up each spring:
 ```
 node.branchLoad = node.radius² × node.length × woodDensity
                 + sum(child.branchLoad for all children)
 ```
 
-`branchStrength` is derived, not stored — recomputed from current state:
+`branchStrength`:
 ```
-strength = radius³ × woodHardnessFactor × Mathf.Clamp01(node.age / matureAgeSeasons)
+strength = radius³ × woodHardnessFactor × Clamp01(node.age / matureAgeSeasons)
 ```
-Young soft wood (low age) has low strength even if thick. Old wood is hard and rigid.
-
----
 
 #### Sag Mechanic
 
 Each spring, if `branchLoad / branchStrength > sagThreshold`:
 ```
-sagAngle = Mathf.Clamp((load/strength - sagThreshold) * sagSensitivity, 0, maxSagAngleDeg)
+sagAngle = Clamp((load/strength - sagThreshold) * sagSensitivity, 0, maxSagAngleDeg)
 node.growDirection = Slerp(node.growDirection, -Vector3.up, sagAngle / maxSagAngleDeg * sagBlend)
 ```
-
-- Sag accumulates slowly — a branch doesn't crash overnight, it drifts over seasons
-- Mesh updates automatically (growDirection change → mesh rebuild)
-- Wire resists sag: a wired node's growDirection is already locked toward `wireTargetDirection`,
-  so the wire's set resistance naturally counteracts the sag drift
-
-**Cascade style:** intentionally heavy branches allowed to sag completely — the player
-wires them down and then removes the wire once set, achieving the cascade silhouette
-without fighting it.
-
----
 
 #### Junction Stress
 
 When a child branch is very heavy relative to its attachment node:
 - `ApplyDamage(parent, DamageType.JunctionStress, stressDamage)` each spring
-- Damage scales with `excess = childLoad - parent.branchStrength` — small excess = minor
-  cosmetic stress, large excess over many seasons = structural failure (node dies)
-- Remedy: remove the heavy sub-branch, or wire-support it to redistribute load
+- New `DamageType.JunctionStress` in `NodeHealth.cs`
 
-New `DamageType.JunctionStress` added to `NodeHealth.cs`.
+#### Prop Supports (optional)
 
----
+Player places a stick prop under a drooping branch → `hasPropSupport = true`;
+sag calculation skips those nodes.
 
-#### Prop Supports (optional complexity)
+**Scope:** `TreeNode.cs`, `TreeSkeleton.cs`, `NodeHealth.cs`, species ScriptableObject
+**Dependencies:** Species system (item 25)
 
-A lightweight companion to wires for heavy branches:
-- Player places a small prop object under a drooping branch
-- Mechanically: marks the supported node as `hasPropSupport = true`; sag calculation
-  skips those nodes
-- Visual: a stick or forked branch prop prefab (no physics needed)
-- Low scope addition once the core sag system is stable
+</details>
 
 ---
 
-#### Species Gate
+<details>
+<summary><strong>Air Layer Root Continued Growth</strong></summary>
 
-Not all trees need this. Suggested species flags:
-| Species type | Needs weight system? |
-|---|---|
-| Juniper, pine (thick secondary branches) | Yes |
-| Cascade style (any species) | Yes — load is the whole point |
-| Literati / windswept (minimal foliage mass) | Mild |
-| Japanese maple (fine, light twigs) | No — twigs are too light to matter |
-| Weeping cherry / willow | Yes — natural sag is the aesthetic |
-
-**Scope:** `TreeNode.cs` (add `branchLoad`), `TreeSkeleton.cs` (bottom-up load calc,
-sag pass in `StartNewGrowingSeason`, junction stress), `NodeHealth.cs` (new damage type),
-species ScriptableObject (enable/disable flag + `woodDensity`, `woodHardnessFactor`,
-`matureAgeSeasons`, `sagThreshold`, `sagSensitivity`)
-
-**Dependencies:** Species system (backlog) — or can be prototyped with global
-SerializeFields first and moved to ScriptableObject later.
-
----
-
-### Watering System
-- Watering can tool, soil moisture level, drain rate
-- Feeds into `NodeHealth` via `Drought` damage type
-- Nutrient concentration affects growth rate and recovery speed
-
-### Pinching Tool
-- Lighter spring action distinct from shears: remove the soft shoot tip between
-  the first leaf pair after it unfolds
-- Keeps internodes short and twigs fine without the trauma of hard pruning
-- Triggers `backBudStimulated` on nearby nodes (same as trim, lower health cost)
-- **Now also increments `refinementLevel`** on pinched node (item 10) — fastest path
-  to fine internode shortening, since pinching can be done every shoot every spring
-- **Does NOT consume the energy from that leaf cluster** — leaves stay, just tip removed
-- Depends on: Bud/Leaf Integration (item 7a), Refinement Level (item 10)
-
-### Defoliation
-- Remove one leaf from each pair (~50% leaf surface) — the safe standard practice
-- Primary effect: shorter internodes and increased back-budding next season
-- Secondary effect: **increments `defoliationFactor`** which drives `leafScale` down
-  next season (item 11 — Dynamic Leaf Scale)
-- **Costs treeEnergy** (item 9) — you're sacrificing this season's photosynthesis
-  for long-term refinement; only viable on a healthy, energetic tree
-- Full defoliation (remove all leaves): higher energy cost, stronger leaf miniaturization
-  effect, meaningful health cost — for advanced trees only
-- Timing matters: early summer only; defoliating a weak tree crashes its energy budget
-- Depends on: Bud/Leaf Integration (item 7a), Leaf Energy System (item 9),
-  Dynamic Leaf Scale (item 11)
-
-### Air Layer Root Continued Growth
-
-**Goal:** Air layer roots (above-ground roots that developed on the trunk) should
-keep growing after confirmation — currently they stop at the rock surface.
+**Goal:** Air layer roots (above-ground roots on the trunk) should keep growing after
+confirmation — currently they stop at the rock surface.
 
 **Behaviour wanted:**
-- Exposed air layer root tips continue extending each spring like any other root terminal
-- Growth direction: gravity-biased downward, same as normal surface roots
-- If a rock or convex collider is nearby, roots deflect toward and along its surface —
-  the same rock-following logic used during Ishitsuki confirmation, but running live
-  each season rather than only at confirm time
-- Once a root tip reaches the soil plane it transitions to normal subsurface root behaviour
-  (joins the pot root system, becomes trimmable in RootPrune mode)
+- Air layer root tips continue extending each spring like any other root terminal
+- Growth direction: gravity-biased downward
+- If a rock or convex collider is nearby, roots deflect toward and along its surface
+  (same rock-following logic as Ishitsuki, but running live each season)
+- Once a root tip reaches the soil plane, it transitions to normal subsurface root behaviour
 
-**Scope:** `TreeSkeleton.cs` (`StartNewGrowingSeason` root growth pass — remove or
-relax the `isAirLayerRoot` exclusion that currently halts their growth),
-`ContinuationDirection` (add rock-proximity deflection for air layer nodes, mirroring
-Ishitsuki drape logic)
+**Scope:** `TreeSkeleton.cs` (`StartNewGrowingSeason` root growth pass — relax the
+`isAirLayerRoot` exclusion that currently halts their growth), `ContinuationDirection`
+(add rock-proximity deflection for air layer nodes)
 
-**Implementation note:** The Ishitsuki `PreGrowRootsToSoil` already has rock-surface
-projection logic. Air layer roots need the same per-step closest-point check, but
-running in the standard seasonal growth loop rather than the one-shot pre-grow pass.
+</details>
 
 ---
 
-### Root Visibility Bug (Post-Ishitsuki)
+<details>
+<summary><strong>Soil / Substrate System</strong> → scheduled as item 27</summary>
 
-**Bug:** After root-on-rock (Ishitsuki) is confirmed, non-Ishitsuki roots (pot roots,
-surface roots) are invisible in RootPrune mode. They can be hovered (red outline
-appears) and trimmed, but the mesh is never rendered — before or after the trim.
-
-**Likely cause:** The Ishitsuki confirm step modifies `renderRoots`, a material flag,
-or a layer/render flag on `TreeMeshBuilder` that the non-Ishitsuki root mesh depends
-on. Or: the confirm step sets a condition that causes `TreeMeshBuilder` to skip
-non-training-wire root nodes in the mesh rebuild.
-
-**Scope:** `TreeMeshBuilder.cs` (check root-node mesh inclusion condition),
-`TreeSkeleton.cs` (check if Ishitsuki confirm changes any flag that gates root rendering),
-`buttonClicker.cs` (check RootPrune enter/exit toggles `renderRoots` correctly)
-
-**Fix approach:**
-1. Add GL debug lines in `OnRenderObject()` on `TreeMeshBuilder` — draw a colored line
-   or ring for every root node regardless of render flags, so invisible roots become
-   immediately visible as geometry even when the mesh isn't built for them
-2. Color-code by state: green = included in mesh, red = excluded, yellow = isAirLayerRoot,
-   cyan = isTrainingWire — makes the flag divergence obvious at a glance
-3. Compare GL overlay before and after Ishitsuki confirm to identify which nodes drop out
-4. Once the flag is identified, fix and remove the GL overlay
-
----
-
-### Soil System
-
-**Goal:** The substrate the tree grows in has meaningful mechanical consequences.
-Mixing ratios, repotting, and substrate choice are part of bonsai practice — not
-just decoration.
-
----
+**Goal:** Different soil mixes with distinct properties that interact differently with
+each tree species.
 
 #### Substrate Components
 
-Each pot holds a **soil mix** defined as a blend of up to four substrate types.
-The mix is expressed as proportions (must sum to 1.0).
-
-| Substrate | Water Retention | Drainage | Nutrients | Notes |
+| Component | Moisture Retention | Drainage | Nutrients | Notes |
 |---|---|---|---|---|
-| **Akadama** | Medium | Medium | Low | Classic bonsai clay — retains shape, breaks down over years |
-| **Pumice** | Low | High | None | Pure drainage and aeration; root anchor |
-| **Lava rock** | Very low | Very high | None | Maximum aeration; no breakdown |
-| **Organic compost** | High | Low | High | Feeds the tree; compacts over time, reduces drainage |
-| **Sand** | Very low | High | None | Cheap drainage filler; no structure |
-| **Kanuma** | High | Medium | Low | Acidic; ideal for azalea and acid-loving species |
-
-**SerializeField mix** on `TreeSkeleton` (or a new `PotSoil` component):
-```csharp
-[SerializeField] float akadama   = 0.5f;
-[SerializeField] float pumice    = 0.3f;
-[SerializeField] float lavaRock  = 0.2f;
-[SerializeField] float organic   = 0.0f;
-```
-
----
+| Akadama | High | Medium | Medium | Breaks down over time |
+| Pumice | Low | Very High | Low | Structural; doesn't compact |
+| Lava rock | Low | High | Low | Maximum aeration |
+| Organic compost | Very High | Low | High | Risk of waterlog + root rot |
+| Sand | Very Low | High | None | Fast drainage |
+| Kanuma | High | Medium | Acidic | For azaleas |
 
 #### Derived Properties
-
-Computed from the mix at repot time (or when mix changes):
 
 ```
 waterRetention  = weighted average of component retention values
 drainageRate    = weighted average of component drainage values
-nutrientLevel   = weighted average × organic fraction (bonus for compost)
-aerationScore   = inverse of water retention (pumice/lava push this up)
+nutrientLevel   = weighted average × organic fraction
+aerationScore   = inverse of water retention
 ```
-
-These drive four gameplay values:
-
-| Property | Effect |
-|---|---|
-| `waterRetention` | How long soil stays moist after watering; slower drain = less frequent watering needed but higher rot risk |
-| `drainageRate` | How fast excess water exits; poor drainage → waterlogged → root rot damage |
-| `nutrientLevel` | Boosts `treeEnergy` multiplier each season; decays over time as roots consume it |
-| `aerationScore` | Oxygen availability at roots; low aeration → slowed root growth, higher `Drought` damage floor |
-
----
 
 #### Soil Degradation
 
-Substrates break down at different rates over years. Akadama and organic compost
-compact the most; pumice and lava rock are nearly inert.
-
 - Each growing season: `degradation += component.degradeRate`
 - At high degradation: `drainageRate` drops, `waterRetention` rises
-- Visual/UI cue: soil surface texture or an inspector-visible degradation score
-- **Repotting resets degradation** — the primary mechanical reason to repot
-
----
+- **Repotting resets degradation**
 
 #### Repotting
 
-A periodic action (typically every 2–5 years on a healthy bonsai):
-
 1. Player enters `RootPrune` mode
-2. New **Repot** button becomes available (replaces or joins Air Layer)
-3. Opens a substrate mixing UI (four sliders, sum locked to 100%)
-4. On confirm: new mix applied, degradation reset, root trim recommended
-   (repotting without any root reduction gives a mild stress penalty)
-5. Root stress: `ApplyDamage(DamageType.RepotStress, repotStressDamage)` on all
-   root terminals — recovers over one season
-
-**Repot timing penalty:** Repotting in the wrong season (outside early spring)
-applies a larger stress hit. A frost-health debuff if repotted in winter.
-
----
-
-#### Nutrient Depletion & Fertilizing
-
-`nutrientLevel` depletes each season as the tree grows:
-```
-nutrientLevel -= treeEnergy × nutrientConsumptionRate
-```
-
-When nutrient level is low:
-- `treeEnergy` cap reduced (tree can't push full growth without food)
-- Recovery rate from wounds/trauma reduced
-- Leaf colour subtly fades (feeds into `LeafManager` colour lerp)
-
-**Fertilizing** (new tool/action):
-- Adds `nutrientBoost` to `nutrientLevel`, capped at `maxNutrientLevel`
-- Over-fertilizing (repeated applications) pushes `nutrientLevel` above the cap →
-  salt burn → `ApplyDamage(DamageType.FertilizerBurn, burnDamage)` on root nodes
-- Types (optional complexity): balanced NPK vs. high-N (pushes growth, thin wood)
-  vs. high-P (root strength, less top growth)
-
----
+2. New **Repot** button opens a substrate mixing UI (sliders, sum locked to 100%)
+3. On confirm: new mix applied, degradation reset
+4. `ApplyDamage(DamageType.RepotStress)` on all root terminals — recovers over one season
+5. Repotting outside early spring → larger stress hit
 
 #### Waterlogging & Root Rot
 
-If `drainageRate` is too low and watering is too frequent:
-- Soil stays saturated: `saturationLevel` accumulates
+If `drainageRate` is too low and watering too frequent:
+- `saturationLevel` accumulates
 - Above threshold: `ApplyDamage(DamageType.RootRot, rotRate)` on root nodes per season
-- Root rot spreads upward — affected roots transmit reduced health to parent nodes
-- **No cure** except repotting into better-draining substrate + removing rotted roots
+- No cure except repotting + removing rotted roots
 
----
-
-#### Data Model
-
-New component or fields on `TreeSkeleton`:
-
-```csharp
-// Mix (set at repot; serialized for save/load)
-float akadama, pumice, lavaRock, organic, sand, kanuma;
-
-// Derived (recomputed from mix)
-float waterRetention, drainageRate, nutrientLevel, aerationScore;
-
-// Live state
-float soilDegradation;      // 0 = fresh, 1 = fully compacted
-float saturationLevel;      // 0 = dry, 1 = waterlogged
-float nutrientReserve;      // current nutrition; starts at mix's baseNutrientLevel
-int   seasonsSinceRepot;    // increments each spring
-```
-
----
-
-#### Dependencies & Interactions
-
-- **Watering System (item 13):** `drainageRate` and `waterRetention` directly control
-  how fast moisture drains after a water event — soil system extends watering, not replaces it
-- **Leaf Energy System (item 9):** `nutrientReserve` feeds into `treeEnergy` computation
-  as an additive bonus: `treeEnergy *= Mathf.Lerp(nutrientMultiplierLow, 1f, nutrientReserve)`
-- **Root System:** root growth speed scales with `aerationScore`; root rot damage
-  uses existing `DamageType` and health system
-- **Save/Load (item 14):** soil state fields (`degradation`, `saturationLevel`,
-  `nutrientReserve`, current mix) must be serialized
-
-**Scope:** New `PotSoil.cs` component (or fields on `TreeSkeleton`), `GameManager.cs`
-(seasonal nutrient drain + degradation tick), `TreeInteraction.cs` (repot action),
-`buttonClicker.cs` + `ButtonUI.uxml` (Repot button, substrate mixing UI),
+**Scope:** New `PotSoil.cs`, `GameManager.cs` (seasonal drain + degradation), `TreeInteraction.cs`
+(repot action), `buttonClicker.cs` + `ButtonUI.uxml` (Repot button, substrate mixing UI),
 `LeafManager.cs` (nutrient-driven colour influence)
 
+</details>
+
 ---
 
-### Tree Species
-- Growth parameters, wound vulnerability, seasonal colours, leaf shapes
-- All species-configurable values already in place as `[SerializeField]` on
-  `TreeSkeleton` — species = a ScriptableObject that drives those values
-- Japanese maple specifics (opposite bud pairs, bark evolution stages,
-  red spring flush) added here once generic systems are solid
+<details>
+<summary><strong>Tree Death</strong></summary>
 
-### Camera & Input
+**Goal:** Trees can die permanently if neglected or abused.
+
+**Death conditions:**
+- Average health across all trunk nodes < 0.05 for 2+ consecutive seasons
+- Total living root mass drops below critical minimum
+- Prolonged drought at moisture 0
+- Multiple simultaneous stressors
+
+**Death sequence:**
+1. Warning signs over 1–2 seasons: leaves brown, growth stops, bark greys
+2. Point of no return: UI warning ("This tree is dying — act now or lose it")
+3. If uncorrected: all leaves drop, mesh goes grey/brown
+4. Dead tree remains as memorial
+5. Player can start new tree or load save
+
+**Recovery window:** Between warning and death, aggressive intervention can save
+the tree — success depends on how far gone it is.
+
+**Scope:** `TreeSkeleton.cs`, `GameManager.cs`, UI (warning overlays, death screen),
+`NodeHealth.cs`
+
+</details>
+
+---
+
+<details>
+<summary><strong>Branch Death & Dieback</strong></summary>
+
+**Goal:** Individual branches can die and either fall off or remain as deadwood.
+Deadwood management (jin, shari) is a real bonsai technique.
+
+**Branch death causes:**
+- Health reaches 0 on a node
+- Shading: interior branches receiving no light for 2+ seasons die back
+- Overextension: branch too long without ramification weakens at the base
+
+**What happens when a branch dies:**
+- **Light branches (small radius):** Fall off after 1–2 seasons. Parent gets a small wound.
+- **Heavy branches (large radius):** Remain as deadwood. Can be trimmed away or preserved as jin.
+  If left too long, may harbour disease (fungus system interaction).
+- **Species variation:** Junipers/pines retain deadwood; deciduous species drop faster.
+
+**Jin / Shari hook:**
+- Deliberately kill a branch tip and strip bark → jin (deadwood point)
+- Shari: strip bark along trunk → deadwood stripe
+- Aesthetic/competition scoring only
+
+**Scope:** `TreeNode.cs`, `TreeSkeleton.cs`, `TreeMeshBuilder.cs`, species ScriptableObject
+
+</details>
+
+---
+
+<details>
+<summary><strong>Gamification & Tutorial Progression</strong></summary>
+
+**Goal:** Stagger tools and mechanics so the player learns one system at a time.
+
+**Progression tiers (draft):**
+
+| Tier | Unlocks | Trigger |
+|---|---|---|
+| 1 — Seedling | Watering, time controls, camera | Game start |
+| 2 — First Cut | Trim tool, wound basics | Tree reaches depth 4 |
+| 3 — Shaping | Wire tool, wire removal | First successful trim |
+| 4 — Roots | Root prune mode, root planting | First wire set + removed cleanly |
+| 5 — Refinement | Pinching, defoliation, leaf management | Tree survives 3 years |
+| 6 — Soil Science | Repotting, soil mix, fertilizer | First repot prompt |
+| 7 — Advanced | Air layering, Ishitsuki, multi-tree | Species mastery milestone |
+| 8 — Master | All tools, competition mode | Complete a styled tree |
+
+**Tutorial delivery:**
+- Contextual prompts when a new situation arises
+- Optional practice challenges
+- No forced tutorials — tools unlock regardless
+- In-game Journal/Encyclopedia
+
+**Scoring / achievements:**
+- Tree health score (rolling average)
+- Style points (taper, ramification, proportion — algorithmic)
+- Survival milestones (5, 10, 25 years)
+- Technique badges
+
+**Scope:** `ProgressionManager.cs`, `TutorialSystem.cs`, UI overlays, `GameManager.cs`,
+save/load integration
+
+</details>
+
+---
+
+<details>
+<summary><strong>Decoration System</strong></summary>
+
+**Goal:** Cosmetic elements placed on soil surface, pot rim, rock, or around tree base.
+
+**Decoration types:**
+
+| Type | Placement | Behaviour |
+|---|---|---|
+| Moss | Soil surface, rock surface | Grows/spreads slowly; needs moisture |
+| Grass tufts | Soil surface, rock crevices | Seasonal; green spring/summer, brown autumn |
+| Accent rocks | Soil surface | Static |
+| Figurines | Anywhere on soil/rock | Static (traditional accent pieces) |
+| Fallen leaves | Soil surface | Seasonal scatter in autumn; auto-cleared in spring |
+| Deadwood pieces | Soil surface | Decorative driftwood |
+
+**Placement system:**
+- Player enters decoration mode (new game state)
+- Click to place on valid surfaces; drag to reposition; right-click to remove
+- Snapping to surface normals
+
+**Moss (living decoration):**
+- Spreads slowly each season if moisture adequate; dies if soil dries out frequently
+- Player can trim/remove
+- Moss coverage contributes to moisture retention
+
+**Scope:** `DecorationManager.cs`, `Decoration.cs`, `MossDecoration.cs`, `GameState.Decorate`,
+prefabs, UI palette, save/load integration
+
+</details>
+
+---
+
+<details>
+<summary><strong>Air Layering & Branch-to-New-Tree</strong></summary>
+
+**Goal:** Player can air layer a branch, then sever it and start a brand new tree.
+
+**Air layering process:**
+1. **Select branch point:** Click a healthy node with adequate radius
+2. **Apply wrap:** Visual wrap appears; air layer timer begins
+3. **Root development (1–2 seasons):** Small roots appear; grow stronger each season
+4. **Separation:** When roots sufficient, UI prompt: "Air layer roots strong enough. Cut now?"
+5. **Sever:** Current state auto-saved; branch becomes new independent tree in fresh pot;
+   original tree continues with wound at cut site
+
+**New tree from air layer:**
+- Inherits branch structure, wire state, health, refinement of source branch
+- Starts with air layer roots as its initial root system
+
+**Scope:** `TreeSkeleton.cs` (air layer state, root development, separation logic),
+`TreeNode.cs` (air layer fields), `TreeInteraction.cs`, `SaveManager.cs` (clone subtree),
+`GameManager.cs` (new tree session), `AirLayerTool` game state, separation prompt UI
+
+</details>
+
+---
+
+<details>
+<summary><strong>Camera & Input</strong></summary>
+
 - Full Unity Input System migration (currently legacy `Input.*`)
 - Wire animation skip key revisited as part of this
 
-### Multi-Tree Planting
+</details>
+
+---
+
+<details>
+<summary><strong>Multi-Tree Planting</strong></summary>
+
 - Plant two trees in the same pot
 - Root/branch collision and fusion mechanics
 - Shared health/soil system
 
-### Quick-Start / Auto-Generate
-- Auto-simulate ~1 year of growth in background
-- Present 10 variation options; player picks one (or multiples) to start with
-- Foundation for the above: needs stable multi-year simulation first
+</details>
 
 ---
 
-## Completed
+<details>
+<summary><strong>Quick-Start / Auto-Generate</strong></summary>
+
+- Auto-simulate ~1 year of growth in background
+- Present 10 variation options; player picks one (or multiples) to start with
+- Foundation: needs stable multi-year simulation first
+
+</details>
+
+---
+
+## Reference
+
+<details>
+<summary><strong>Ishitsuki Root Selection — How It Works</strong></summary>
+
+> This section explains what happens to existing roots when Ishitsuki is confirmed,
+> for reference when designing future Ishitsuki features.
+
+**What the code does at confirm time (`SpawnTrainingWires`):**
+
+1. Every direct child of `root` that is `isRoot=true` is a **trunk-root startNode** —
+   the first segment of each root cable. These are the only root nodes that survive confirm.
+
+2. Every node below those startNodes is **deleted** via `RemoveSubtree`.
+
+3. `PreGrowRootsToSoil` then drapes a fresh `isTrainingWire=true` chain from each
+   startNode's tip, down the rock face, to the soil.
+
+**Implication for the player:**
+
+- The **number of Ishitsuki strands = the number of trunk-root startNodes at confirm time**.
+  If the tree auto-planted 6 trunk roots before confirm, there will be 6 strands.
+- The **direction** each cable drapes is determined by the startNode's `growDirection`.
+- All the deeper, branching organic root growth before confirm is discarded.
+
+**Future design note:**
+If we want pre-confirm root work to matter more:
+- Let startNode direction be influenced by where the organic root was growing
+- Preserve the top N segments of each organic root chain as the cable's initial part
+
+</details>
+
+---
+
+## Completed Items Log
+
+All systems built across all phases:
 
 - Procedural branch skeleton + mesh builder (`TreeSkeleton`, `TreeMeshBuilder`)
 - Wire placement + bend (`TreeInteraction`, `WireRenderer`)
 - Trim subtree + highlight mesh
-- Leaf lifecycle: spring spawn, autumn colour gradient, stochastic fall,
-  fall animation (`LeafManager`, `Leaf`)
+- Leaf lifecycle: spring spawn, autumn colour gradient, stochastic fall, fall animation (`LeafManager`, `Leaf`)
 - Seasonal time system + game state machine (`GameManager`)
 - Camera orbit, zoom, Y-pan (`CameraOrbit`)
 - Tight-angle geometry: bend rings + parallel-transport frame fix (`TreeMeshBuilder`)
 - Post-trim depth cap: cut point tracking + per-season regrowth limit (`TreeSkeleton`, `TreeNode`)
-- Wire rework: instant snap + spring animation, Enter to skip, WireAnimate state (`TreeInteraction`, `GameManager`)
+- Wire rework: instant snap + spring animation, `WireAnimate` state (`TreeInteraction`, `GameManager`)
 - Health system foundation: `health` on `TreeNode`, `DamageType` enum, `ApplyDamage`, health-gated growth (`TreeSkeleton`, `NodeHealth.cs`)
 - Wire colour progression: silver → gold pulse → orange → red (`WireRenderer`)
-- Root system: `isRoot` flag, gravity-biased growth, `PlantRoot`, `RootPrune` state, lift animation, soil-plane interaction, pitch relaxation (`TreeSkeleton`, `TreeMeshBuilder`, `TreeInteraction`, `CameraOrbit`)
-- Bud system: terminal buds set in August, bud GameObjects spawned/destroyed, back-budding on trim (up to 3 ancestors stimulated), `backBudActivationBoost`, old-wood bud chance, show/hide toggles for terminal and lateral bud prefabs (`TreeSkeleton`, `TreeNode`)
-- Wound system: half-torus wound visualization on trim, `woundRadius`/`woundFaceNormal`/`woundAge`, health drain per season, cut paste tool + Paste button UI, `pasteApplied` tints wound, subdivision-cut detection (smaller ring), wound cleanup on subtree removal (`TreeSkeleton`, `TreeNode`, `TreeInteraction`, `ToolManager`, `buttonClicker`, `ButtonUI.uxml`)
-- Growth stability: `maxBranchNodes` hard cap, `vigorFactor` scaling lateral/back-bud chances as tree fills up; fixed `InvalidOperationException` in back-budding loop (snapshot `allNodes` before iteration) that was silently aborting spring music (`TreeSkeleton`)
-- Root Area box containment: `rootAreaTransform` reference replaces radial spread; `RootDistRatio` checks XZ walls + Y floor + Y ceiling in Root Area local space; `DeflectFromRootAreaWalls` deflects all six faces (`TreeSkeleton`)
-- Pot-bound root system: `boundaryPressure` counter per root node, thickening over seasons, `boundaryGrowthScale` slows terminal growth near walls, `wallSegmentScale` shortens segments near walls for smoother curves, `potBoundInnerBoost` stimulates low-depth fill-in laterals, `potBoundMaxFillPerYear` budget independent of outer cap (capped at 1.5× `maxTotalRootNodes`) (`TreeSkeleton`, `TreeNode`)
-- Ishitsuki (root-over-rock): `RockPlace` + `TreeOrient` game states, rock grab/rotate/confirm, tree orientation confirm, auto-generated training wires, root drape over rock surface via `PreGrowRootsToSoil`, `IshitsukiWire.cs`, Ishitsuki tab in Settings (`TreeSkeleton`, `TreeInteraction`, `RockPlacer`, `IshitsukiWire`, `buttonClicker`, `ButtonUI.uxml`)
-- Trim trauma: `DamageType.TrimTrauma` applied on cut, seasonal recovery scaled by `treeEnergy` (`TreeSkeleton`, `NodeHealth.cs`)
-- Trim undo: 5-second real-time window after each trim; `TrimUndoState` captures full subtree + ancestor flags; `Ctrl+Z` restores tree and re-spawns leaves; countdown label in UI (`TreeSkeleton`, `buttonClicker`, `ButtonUI.uxml`)
-- Health ring GL debug: `OnRenderObject()` draws green→yellow→red rings at each node scaled by `node.radius`, toggled by `debugHealthRings` on `TreeMeshBuilder` (`TreeMeshBuilder`)
-- Bud/leaf integration: `birthYear` on `TreeNode`; leaves only from buds on old wood; new spring growth (same year) bypasses bud gate; `subdivisionsLeft` guard removed so all growing tips get leaves (`LeafManager`, `TreeNode`)
-- Ishitsuki root aging fix: training wire nodes (`isTrainingWire`) excluded from root-only skip in age loop so they brown correctly over ~2 seasons (`TreeSkeleton`)
-- Leaf energy system: `ComputeTreeEnergy` in `LeafManager` computes `actual/potential` leaf area × health at bud-set; stored as `treeEnergy` on `TreeSkeleton`; drives growth speed, lateral chance, and trauma recovery (`LeafManager`, `TreeSkeleton`)
-- Refinement level: `float refinementLevel` on `TreeNode`; +`refinementOnTrim/vigor` on cut, +`refinementOnBackBud` on back-bud activation; inherited by new growth; drives `chordLength × Pow(0.82, level)` shortening at all three segment-spawn sites (`TreeNode`, `TreeSkeleton`)
-- Dynamic leaf scale: `seasonLeafScale` computed each spring from root pressure × refinement × defoliation factor; `baseLeafScale` is the species default; `defoliationFactor` stubbed at 0, decays 0.2/season; `RootPressureFactor()` and `RefinementCap` exposed on `TreeSkeleton` (`LeafManager`, `TreeSkeleton`)
-- Per-branch vigor: `float branchVigor` on `TreeNode`; apical nudge each spring (`apicalVigorBonus / depth`), decay toward 1.0, clamp [0.2, 2.0]; multiplies `chordLength` and lateral chance; trim reduces vigor × 0.7 and scales refinement gain inversely (`TreeNode`, `TreeSkeleton`)
-- Watering system: `soilMoisture` drained per in-game day; drought accumulator applies `DamageType.Drought` each season; `public void Water()` refills to 1.0; moisture bar in HUD (blue→amber→red) below watering can button; watering button works during BranchGrow/TimeGo/Idle post-plant (`TreeSkeleton`, `buttonClicker`, `ButtonUI.uxml`)
-- Defoliation: `ToolType.Defoliate` + `canDefoliate`; `DefoliateNode()` strips a single cluster with fall animation, bumps `defoliationFactor` proportionally, stimulates 2 ancestors; `DefoliateAll()` strips all clusters, sets factor to 1.0, stimulates all nodes; amber highlight in `TreeInteraction`; "Defoliate" (per-node tool) + "Defo All" (one-shot) buttons; both greyed outside June–July via `SetButtonEnabled` (`LeafManager`, `ToolManager`, `TreeInteraction`, `buttonClicker`, `ButtonUI.uxml`, `GameManager`)
-- Pinching tool: `ToolType.Pinch`; `PinchNode()` on `TreeSkeleton` stops terminal growth, gains refinement, stimulates 2 ancestors, applies 25% trim trauma — no wound, leaves stay; lime-green highlight in `TreeInteraction`; Pinch button in HUD (`ToolManager`, `TreeSkeleton`, `TreeInteraction`, `buttonClicker`, `ButtonUI.uxml`, `GameManager`)
-- Save / Load system: `SaveManager` static class with `Save()`/`Load()` writing JSON to `Application.persistentDataPath/bonsai_save.json`; `SaveData` + `SaveNode` serializable classes capture all `TreeNode` fields + GameManager time + skeleton live state; `LoadFromSaveData()` on `TreeSkeleton` clears and rebuilds tree, re-spawns wounds, rebuilds mesh, restores leaves via `LeafManager.ForceSpawnLeaves`; auto-save fires each September (BranchGrow→TimeGo); manual Save button in Settings → Time tab with timestamp feedback (`SaveManager.cs`, `TreeSkeleton`, `LeafManager`, `buttonClicker`, `ButtonUI.uxml`)
+- Root system: `isRoot` flag, gravity-biased growth, `PlantRoot`, `RootPrune` state, lift animation, soil-plane interaction, pitch relaxation
+- Bud system: terminal buds set in August, bud GOs spawned/destroyed, back-budding on trim, `backBudActivationBoost`, old-wood bud chance
+- Wound system: half-torus wound visualization, health drain per season, cut paste tool, `pasteApplied` tint, subdivision-cut detection, cleanup on subtree removal
+- Growth stability: `maxBranchNodes` hard cap, `vigorFactor` scaling lateral/back-bud chances; fixed `InvalidOperationException` in back-budding loop
+- Root Area box containment: `rootAreaTransform` reference; `RootDistRatio` checks XZ walls + Y floor/ceiling; `DeflectFromRootAreaWalls` handles all six faces
+- Pot-bound root system: `boundaryPressure` counter, thickening over seasons, `boundaryGrowthScale`, `wallSegmentScale`, `potBoundInnerBoost`, fill-in lateral budget
+- Ishitsuki (root-over-rock): `RockPlace` + `TreeOrient` states, rock grab/rotate/confirm, training wires, drape over rock via `PreGrowRootsToSoil`, `IshitsukiWire.cs`
+- Trim trauma: `DamageType.TrimTrauma`, seasonal recovery scaled by `treeEnergy`
+- Trim undo: 5-second real-time window; `TrimUndoState` captures full subtree; `Ctrl+Z` restores tree; countdown label in UI
+- Health ring GL debug: `OnRenderObject()` draws green→yellow→red rings at each node
+- Bud/leaf integration: `birthYear` on `TreeNode`; leaves only from buds on old wood
+- Save / Load System: full JSON via `JsonUtility`; `SaveData`, `SaveNode`; auto-save on season end; manual save in Settings
+- Root Area box containment + pot-bound pressure system
+- Auto-water: fires before drought threshold; Debug tab toggle; Water button flash; in-game-day cooldown
+- Ishitsuki white first segment fix: `startNode` marked `isTrainingWire=true`
+- Ishitsuki roots continue underground: soil-entry node spawned at soil contact point
+- Ishitsuki cable growth animation: `PreGrowRootsToSoil(animated:true)` places one segment per spring
+- Ghost root fix: `RemoveSubtree` called on old chains before re-draping at confirm
+- Camera jump fix: `OnGameStateChanged` clears `isDragging`/`isPanning`; `lastTargetPosition` delta compensation
+- Fertilizer System: `nutrientReserve` drain/boost, winter block, growth multiplier, FertilizerBurn, auto-fertilize
+- Weed System: RMB pull mechanic, rip chance, 4 weed types, WeedManager + WeedPuller, Herbicide button
+- Fungus System: `fungalLoad`, seasonal spread + damage, mycorrhizal network, Fungicide button, leaf tint

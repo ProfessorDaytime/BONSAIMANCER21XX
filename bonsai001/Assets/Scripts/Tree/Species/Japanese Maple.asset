@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Japanese Maple
+  m_EditorClassIdentifier:
+  speciesName: Japanese Maple
+  scientificName: Acer palmatum
+  baseGrowSpeed: 0.26
+  depthSpeedDecay: 0.85
+  depthsPerYear: 4
+  baseElongation: 0.05
+  elongationDepthDecay: 0.7
+  branchSegmentLength: 1
+  segmentLengthDecay: 0.8
+  rootSegmentLength: 0.7
+  baseBranchChance: 0.8
+  branchChanceDepthDecay: 0.9
+  springLateralChance: 0.9
+  oldWoodBudChance: 0.08
+  backBudBaseChance: 0.15
+  budType: 1
+  apicalDominance: 0.15
+  apicalVigorBonus: 0.15
+  vigorDecayRate: 0.15
+  wireDaysToSet: 140
+  woundDrainRate: 0.08
+  seasonsToHealPerUnit: 20
+  trimTraumaDamage: 0.07
+  trimTraumaRecoveryPerSeason: 0.06
+  drainRatePerDay: 0.14
+  droughtThreshold: 0.4
+  droughtDamagePerDay: 0.012
+  nutrientDrainPerSeason: 0.5
+  fungalSpreadChance: 0.3
+  fungalRecoveryRate: 0.08
+  maxEnergyMultiplier: 1.6
+  preferredWaterRetention: 0.55
+  preferredDrainageRate: 0.55
+  preferredAerationScore: 0.45
+  soilToleranceRange: 0.2
+  soilMismatchPenalty: 0.04
+  repotTolerance: 0.5

@@ -135,6 +135,22 @@ public class TreeNode
     /// These cannot be removed until wireSetProgress >= 1.0 (~2 growing seasons).</summary>
     public bool isTrainingWire;
 
+    // ── Branch Weight & Sag ───────────────────────────────────────────────────
+    public float branchLoad;       // accumulated downward force (own mass + children); computed each spring
+    public float sagAngleDeg;      // current accumulated sag in degrees; bleeds into growDirection each spring
+
+    // ── Dieback ───────────────────────────────────────────────────────────────
+    public bool isDead;            // health hit 0 — no growth, no leaves; may become deadwood or fall
+    public bool isDeadwood;        // large dead branch kept as structural deadwood (jin candidate)
+    public int  shadedSeasons;     // consecutive seasons with no leaf-bearing descendants
+    public int  deadSeasons;       // seasons elapsed since death (drives drop-off for small branches)
+
+    // ── Fungal ────────────────────────────────────────────────────────────────
+
+    public float fungalLoad;          // 0–1 infection severity; drains health above ~0.4
+    public bool  isMycorrhizal;       // beneficial fungi network on this root node
+    public int   healthySeasonsCount; // seasons at health>0.75 and fungalLoad<0.1 (mycorrhizal unlock)
+
     // ── Wound ─────────────────────────────────────────────────────────────────
     public bool    hasWound;
     public float   woundRadius;      // radius of the removed branch at the cut point

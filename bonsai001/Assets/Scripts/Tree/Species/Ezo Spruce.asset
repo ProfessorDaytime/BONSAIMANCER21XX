@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Ezo Spruce
+  m_EditorClassIdentifier:
+  speciesName: Ezo Spruce
+  scientificName: Picea jezoensis
+  baseGrowSpeed: 0.12
+  depthSpeedDecay: 0.83
+  depthsPerYear: 2
+  baseElongation: 0.04
+  elongationDepthDecay: 0.68
+  branchSegmentLength: 0.9
+  segmentLengthDecay: 0.78
+  rootSegmentLength: 0.65
+  baseBranchChance: 0.60
+  branchChanceDepthDecay: 0.88
+  springLateralChance: 0.65
+  oldWoodBudChance: 0.008
+  backBudBaseChance: 0.10
+  budType: 0
+  apicalDominance: 0.55
+  apicalVigorBonus: 0.13
+  vigorDecayRate: 0.13
+  wireDaysToSet: 300
+  woundDrainRate: 0.04
+  seasonsToHealPerUnit: 24
+  trimTraumaDamage: 0.04
+  trimTraumaRecoveryPerSeason: 0.03
+  drainRatePerDay: 0.07
+  droughtThreshold: 0.22
+  droughtDamagePerDay: 0.006
+  nutrientDrainPerSeason: 0.28
+  fungalSpreadChance: 0.20
+  fungalRecoveryRate: 0.11
+  maxEnergyMultiplier: 1.2
+  preferredWaterRetention: 0.38
+  preferredDrainageRate: 0.68
+  preferredAerationScore: 0.60
+  soilToleranceRange: 0.22
+  soilMismatchPenalty: 0.03
+  repotTolerance: 0.35

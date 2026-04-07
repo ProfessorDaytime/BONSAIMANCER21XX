@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Wisteria
+  m_EditorClassIdentifier:
+  speciesName: Wisteria
+  scientificName: Wisteria sinensis
+  baseGrowSpeed: 0.35
+  depthSpeedDecay: 0.87
+  depthsPerYear: 5
+  baseElongation: 0.07
+  elongationDepthDecay: 0.73
+  branchSegmentLength: 1.1
+  segmentLengthDecay: 0.83
+  rootSegmentLength: 0.8
+  baseBranchChance: 0.78
+  branchChanceDepthDecay: 0.91
+  springLateralChance: 0.88
+  oldWoodBudChance: 0.09
+  backBudBaseChance: 0.20
+  budType: 0
+  apicalDominance: 0.12
+  apicalVigorBonus: 0.19
+  vigorDecayRate: 0.16
+  wireDaysToSet: 120
+  woundDrainRate: 0.06
+  seasonsToHealPerUnit: 14
+  trimTraumaDamage: 0.05
+  trimTraumaRecoveryPerSeason: 0.08
+  drainRatePerDay: 0.16
+  droughtThreshold: 0.38
+  droughtDamagePerDay: 0.012
+  nutrientDrainPerSeason: 0.58
+  fungalSpreadChance: 0.28
+  fungalRecoveryRate: 0.09
+  maxEnergyMultiplier: 1.7
+  preferredWaterRetention: 0.58
+  preferredDrainageRate: 0.52
+  preferredAerationScore: 0.42
+  soilToleranceRange: 0.22
+  soilMismatchPenalty: 0.04
+  repotTolerance: 0.55

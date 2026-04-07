@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Japanese White Pine
+  m_EditorClassIdentifier:
+  speciesName: Japanese White Pine
+  scientificName: Pinus parviflora
+  baseGrowSpeed: 0.12
+  depthSpeedDecay: 0.85
+  depthsPerYear: 2
+  baseElongation: 0.04
+  elongationDepthDecay: 0.65
+  branchSegmentLength: 0.9
+  segmentLengthDecay: 0.75
+  rootSegmentLength: 0.6
+  baseBranchChance: 0.50
+  branchChanceDepthDecay: 0.88
+  springLateralChance: 0.55
+  oldWoodBudChance: 0.004
+  backBudBaseChance: 0.08
+  budType: 0
+  apicalDominance: 0.65
+  apicalVigorBonus: 0.12
+  vigorDecayRate: 0.12
+  wireDaysToSet: 380
+  woundDrainRate: 0.035
+  seasonsToHealPerUnit: 28
+  trimTraumaDamage: 0.035
+  trimTraumaRecoveryPerSeason: 0.018
+  drainRatePerDay: 0.07
+  droughtThreshold: 0.18
+  droughtDamagePerDay: 0.004
+  nutrientDrainPerSeason: 0.25
+  fungalSpreadChance: 0.16
+  fungalRecoveryRate: 0.13
+  maxEnergyMultiplier: 1.15
+  preferredWaterRetention: 0.28
+  preferredDrainageRate: 0.78
+  preferredAerationScore: 0.70
+  soilToleranceRange: 0.22
+  soilMismatchPenalty: 0.035
+  repotTolerance: 0.25

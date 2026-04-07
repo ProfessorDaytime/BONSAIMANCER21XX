@@ -5,6 +5,16 @@ using UnityEngine;
 // ── Data classes ──────────────────────────────────────────────────────────────
 
 [System.Serializable]
+public class SaveWeed
+{
+    public float px, py, pz;       // restPosition
+    public int   weedType;         // WeedType enum cast to int
+    public bool  isRipped;
+    public float forceRequired;
+    public float ripChance;
+}
+
+[System.Serializable]
 public class SaveNode
 {
     // Identity
@@ -44,6 +54,21 @@ public class SaveNode
 
     // Health
     public float health;
+
+    // Branch weight
+    public float branchLoad;
+    public float sagAngleDeg;
+
+    // Dieback
+    public bool isDead;
+    public bool isDeadwood;
+    public int  shadedSeasons;
+    public int  deadSeasons;
+
+    // Fungal
+    public float fungalLoad;
+    public bool  isMycorrhizal;
+    public int   healthySeasonsCount;
 
     // Wire
     public bool  hasWire;
@@ -85,6 +110,24 @@ public class SaveData
     public float treeEnergy;
     public float soilMoisture;
     public float droughtDaysAccumulated;
+    public float nutrientReserve;
+
+    // Weed state
+    public List<SaveWeed> weeds = new List<SaveWeed>();
+
+    // Soil state
+    public float soilAkadama;
+    public float soilPumice;
+    public float soilLavaRock;
+    public float soilOrganic;
+    public float soilSand;
+    public float soilKanuma;
+    public float soilPerlite;
+    public float soilDegradation;
+    public float soilSaturation;
+    public int   soilSeasonsSinceRepot;
+    public int   soilPreset;   // PotSoil.SoilPreset cast to int
+
     public int   startYear;
     public int   startMonth;
     public int   lastGrownYear;
@@ -124,6 +167,23 @@ public static class SaveManager
             treeEnergy              = skeleton.treeEnergy,
             soilMoisture            = skeleton.soilMoisture,
             droughtDaysAccumulated  = skeleton.droughtDaysAccumulated,
+            nutrientReserve         = skeleton.nutrientReserve,
+
+            // Weeds
+            weeds = skeleton.GetComponent<WeedManager>()?.GetSaveState() ?? new List<SaveWeed>(),
+
+            // Soil
+            soilAkadama            = skeleton.GetComponent<PotSoil>()?.akadama            ?? 0.5f,
+            soilPumice             = skeleton.GetComponent<PotSoil>()?.pumice             ?? 0.3f,
+            soilLavaRock           = skeleton.GetComponent<PotSoil>()?.lavaRock           ?? 0.2f,
+            soilOrganic            = skeleton.GetComponent<PotSoil>()?.organic            ?? 0f,
+            soilSand               = skeleton.GetComponent<PotSoil>()?.sand               ?? 0f,
+            soilKanuma             = skeleton.GetComponent<PotSoil>()?.kanuma             ?? 0f,
+            soilPerlite            = skeleton.GetComponent<PotSoil>()?.perlite            ?? 0f,
+            soilDegradation        = skeleton.GetComponent<PotSoil>()?.soilDegradation    ?? 0f,
+            soilSaturation         = skeleton.GetComponent<PotSoil>()?.saturationLevel    ?? 0f,
+            soilSeasonsSinceRepot  = skeleton.GetComponent<PotSoil>()?.seasonsSinceRepot  ?? 0,
+            soilPreset             = (int)(skeleton.GetComponent<PotSoil>()?.preset ?? PotSoil.SoilPreset.ClassicBonsai),
             startYear               = skeleton.SaveStartYear,
             startMonth              = skeleton.SaveStartMonth,
             lastGrownYear           = skeleton.SaveLastGrownYear,
@@ -170,6 +230,18 @@ public static class SaveManager
                 regrowthSeasonCount= node.regrowthSeasonCount,
 
                 health = node.health,
+
+                branchLoad  = node.branchLoad,
+                sagAngleDeg = node.sagAngleDeg,
+
+                isDead        = node.isDead,
+                isDeadwood    = node.isDeadwood,
+                shadedSeasons = node.shadedSeasons,
+                deadSeasons   = node.deadSeasons,
+
+                fungalLoad          = node.fungalLoad,
+                isMycorrhizal       = node.isMycorrhizal,
+                healthySeasonsCount = node.healthySeasonsCount,
 
                 hasWire          = node.hasWire,
                 woX = node.wireOriginalDirection.x, woY = node.wireOriginalDirection.y, woZ = node.wireOriginalDirection.z,

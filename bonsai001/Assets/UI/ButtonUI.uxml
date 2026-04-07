@@ -12,9 +12,38 @@
     <ui:Button text="Unwire" display-tooltip-when-elided="true" name="RemoveWireButton" style="height: 101px; width: 130px; top: -1px; cursor: initial;" />
     <ui:Button text="Paste" display-tooltip-when-elided="true" name="PasteButton" style="position: absolute; right: 0; top: 0; height: 101px; width: 130px; cursor: initial;" />
     <ui:Button text="Confirm" display-tooltip-when-elided="true" name="ConfirmOrientButton" style="position: absolute; right: 0; top: 0; height: 101px; width: 130px; cursor: initial; display: none;" />
-    <ui:Button text="Roots" display-tooltip-when-elided="true" name="RootPruneButton" style="position: absolute; right: 0; top: 89px; height: 101px; width: 130px; cursor: initial;" />
+    <ui:Button text="Repot" display-tooltip-when-elided="true" name="RootPruneButton" style="position: absolute; right: 0; top: 89px; height: 101px; width: 130px; cursor: initial;" />
     <ui:Button text="Air Layer" display-tooltip-when-elided="true" name="AirLayerButton" style="position: absolute; right: 0; top: 178px; height: 101px; width: 130px; cursor: initial;" />
     <ui:Button text="Place Rock" display-tooltip-when-elided="true" name="PlaceRockButton" style="position: absolute; right: 0; top: 178px; height: 101px; width: 130px; cursor: initial; display: none;" />
+    <!-- Repot panel — visible only in RootPrune mode; hidden otherwise -->
+    <ui:VisualElement name="RepotPanel" style="position: absolute; left: 0; bottom: 60px; width: 160px; padding: 8px; background-color: rgba(16,24,16,0.88); border-radius: 6px; display: none; flex-direction: column;">
+        <ui:Label text="SOIL" style="color: rgb(160,200,160); font-size: 11px; -unity-font-style: bold; margin-bottom: 4px;" />
+        <!-- Degradation bar -->
+        <ui:Label name="SoilDegradationLabel" text="Compaction: 0%" style="color: rgb(180,180,180); font-size: 10px; margin-bottom: 2px;" />
+        <ui:VisualElement name="DegradationBarBg" style="width: 144px; height: 5px; background-color: rgba(20,20,20,0.85); border-radius: 3px; margin-bottom: 4px;">
+            <ui:VisualElement name="DegradationBarFill" style="height: 100%; width: 0%; background-color: rgb(180,120,40); border-radius: 3px;" />
+        </ui:VisualElement>
+        <!-- Saturation bar -->
+        <ui:Label name="SoilSaturationLabel" text="Saturation: 0%" style="color: rgb(180,180,180); font-size: 10px; margin-bottom: 2px;" />
+        <ui:VisualElement name="SaturationBarBg" style="width: 144px; height: 5px; background-color: rgba(20,20,20,0.85); border-radius: 3px; margin-bottom: 6px;">
+            <ui:VisualElement name="SaturationBarFill" style="height: 100%; width: 0%; background-color: rgb(60,120,220); border-radius: 3px;" />
+        </ui:VisualElement>
+        <!-- Preset buttons -->
+        <ui:Label text="Repot as:" style="color: rgb(160,200,160); font-size: 10px; -unity-font-style: bold; margin-bottom: 3px;" />
+        <ui:Button text="Classic Bonsai" name="RepotClassicButton" style="height: 28px; font-size: 11px; cursor: initial; margin-bottom: 2px;" />
+        <ui:Button text="Free-Draining" name="RepotFreeDrainButton" style="height: 28px; font-size: 11px; cursor: initial; margin-bottom: 2px;" />
+        <ui:Button text="Moisture-Retaining" name="RepotMoistButton" style="height: 28px; font-size: 11px; cursor: initial; margin-bottom: 2px;" />
+        <ui:Button text="Acidic (Kanuma)" name="RepotAcidicButton" style="height: 28px; font-size: 11px; cursor: initial;" />
+    </ui:VisualElement>
+    <!-- Fertilize + Herbicide — right column, below Air Layer -->
+    <ui:VisualElement style="position: absolute; right: 0; top: 279px; flex-direction: column;">
+        <ui:Button text="Fertilize" display-tooltip-when-elided="true" name="FertilizeButton" style="height: 50px; width: 130px; cursor: initial;" />
+        <ui:VisualElement name="NutrientBarBg" style="width: 122px; height: 5px; margin-left: 4px; margin-top: -6px; background-color: rgba(20,20,20,0.85); border-radius: 3px;">
+            <ui:VisualElement name="NutrientBarFill" style="height: 100%; width: 50%; background-color: rgb(80,200,80); border-radius: 3px;" />
+        </ui:VisualElement>
+        <ui:Button text="Herbicide" display-tooltip-when-elided="true" name="HerbicideButton" style="height: 50px; width: 130px; cursor: initial;" />
+        <ui:Button text="Fungicide" display-tooltip-when-elided="true" name="FungicideButton" style="height: 50px; width: 130px; cursor: initial;" />
+    </ui:VisualElement>
     <!-- Quick Winter moved to Settings menu (Time tab) -->
 
     <!-- Undo indicator — appears for 5 s after a trim, hidden otherwise -->
@@ -41,13 +70,15 @@
         <ui:VisualElement name="PauseMenuPanel" style="flex-grow: 1; background-color: rgb(16,16,16); border-color: rgb(60,60,60); border-width: 1px; border-radius: 8px; padding: 24px;">
 
             <!-- Header -->
-            <ui:Label text="SETTINGS" style="color: rgb(229,179,16); font-size: 22px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 18px;" />
+            <ui:Label text="SETTINGS" style="color: rgb(229,179,16); font-size: 22px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 4px;" />
+            <ui:Label name="SpeciesLabel" text="" style="color: rgb(160,160,160); font-size: 12px; -unity-font-style: italic; -unity-text-align: upper-center; margin-bottom: 14px;" />
 
             <!-- Tab bar -->
             <ui:VisualElement name="TabBar" style="flex-direction: row; margin-bottom: 16px; border-bottom-color: rgb(60,60,60); border-bottom-width: 1px; padding-bottom: 0;">
                 <ui:Button text="Time" name="TabBtnTime" style="flex: 1; height: 36px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); border-radius: 4px; border-width: 0; -unity-font-style: bold; cursor: initial;" />
                 <ui:Button text="Growth" name="TabBtnGrowth" style="flex: 1; height: 36px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); border-radius: 4px; border-width: 0; cursor: initial;" />
-                <ui:Button text="Ishitsuki" name="TabBtnIshitsuki" style="flex: 1; height: 36px; background-color: rgb(40,40,40); color: rgb(160,160,160); border-radius: 4px; border-width: 0; cursor: initial;" />
+                <ui:Button text="Ishitsuki" name="TabBtnIshitsuki" style="flex: 1; height: 36px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); border-radius: 4px; border-width: 0; cursor: initial;" />
+                <ui:Button text="Debug" name="TabBtnDebug" style="flex: 1; height: 36px; background-color: rgb(40,40,40); color: rgb(160,160,160); border-radius: 4px; border-width: 0; cursor: initial;" />
             </ui:VisualElement>
 
             <!-- Tab: Time -->
@@ -62,6 +93,7 @@
                     <ui:Toggle name="ToggleQuickWinter" style="flex: 1;" />
                 </ui:VisualElement>
                 <ui:Button text="SAVE GAME" name="SaveButton" style="height: 36px; background-color: rgb(40,80,40); color: rgb(180,230,180); font-size: 13px; -unity-font-style: bold; border-width: 0; border-radius: 4px; cursor: initial; margin-top: 6px;" />
+                <ui:Button text="LOAD GAME" name="LoadButton" style="height: 36px; background-color: rgb(40,50,80); color: rgb(180,200,230); font-size: 13px; -unity-font-style: bold; border-width: 0; border-radius: 4px; cursor: initial; margin-top: 4px;" />
                 <ui:Label name="SaveStatusLabel" text="" style="color: rgb(140,200,140); font-size: 11px; -unity-text-align: upper-center; margin-top: 4px;" />
             </ui:VisualElement>
 
@@ -98,8 +130,42 @@
                 </ui:VisualElement>
             </ui:VisualElement>
 
+            <!-- Tab: Debug -->
+            <ui:VisualElement name="TabContentDebug" style="display: none;">
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Auto Water" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Toggle name="ToggleAutoWater" value="true" style="flex: 1;" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Auto Fertilize" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Toggle name="ToggleAutoFertilize" value="false" style="flex: 1;" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
             <!-- Resume button -->
             <ui:Button text="RESUME  (ESC)" name="ResumeButton" style="margin-top: 20px; height: 44px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 15px; -unity-font-style: bold; border-width: 0; border-radius: 6px; cursor: initial;" />
         </ui:VisualElement>
+    </ui:VisualElement>
+    <!-- ── Tree Death Overlay ─────────────────────────────────────────────── -->
+    <ui:VisualElement name="TreeDeadOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(6,2,2,0.90); flex-direction: column; align-items: center; justify-content: center; display: none;">
+        <ui:Label text="YOUR TREE HAS DIED" style="color: rgb(180,60,40); font-size: 32px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 10px;" />
+        <ui:Label name="TreeDeadCauseLabel" text="" style="color: rgb(150,120,100); font-size: 14px; -unity-text-align: upper-center; margin-bottom: 32px; -unity-font-style: italic;" />
+        <ui:Button text="LOAD LAST SAVE" name="DeadLoadButton" style="height: 48px; width: 260px; background-color: rgb(40,50,80); color: rgb(180,200,230); font-size: 15px; -unity-font-style: bold; border-width: 0; border-radius: 8px; cursor: initial; margin-bottom: 12px;" />
+        <ui:Button text="START OVER" name="DeadRestartButton" style="height: 48px; width: 260px; background-color: rgb(50,20,20); color: rgb(200,140,120); font-size: 15px; -unity-font-style: bold; border-width: 0; border-radius: 8px; cursor: initial;" />
+    </ui:VisualElement>
+
+    <!-- ── Tree Warning Banner — danger state, not yet dead ──────────────── -->
+    <ui:Label name="TreeDangerBanner" text="⚠ YOUR TREE IS IN DANGER" style="position: absolute; top: 80px; left: 0; right: 0; -unity-text-align: upper-center; color: rgb(220,80,40); font-size: 14px; -unity-font-style: bold; display: none;" />
+
+    <!-- ── Species Selection Overlay — LAST so it renders above everything ─── -->
+    <ui:VisualElement name="SpeciesSelectOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(4,8,4,0.98); flex-direction: column; align-items: center; padding: 32px 100px 28px 100px; display: none;">
+        <ui:Label text="CHOOSE YOUR TREE" style="color: rgb(229,179,16); font-size: 26px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 4px;" />
+        <ui:Label text="Each species has unique growth habits, soil preferences, and training requirements." style="color: rgb(130,155,130); font-size: 12px; -unity-text-align: upper-center; margin-bottom: 12px;" />
+        <!-- Sort bar — populated in code -->
+        <ui:VisualElement name="SpeciesSortBar" style="flex-direction: row; margin-bottom: 12px; align-self: flex-start;" />
+        <ui:ScrollView name="SpeciesScrollView" style="flex-grow: 1; width: 100%;">
+            <ui:VisualElement name="SpeciesListContainer" style="flex-direction: column; width: 100%;" />
+        </ui:ScrollView>
+        <ui:Button text="PLANT SEED" name="SpeciesConfirmButton" style="margin-top: 18px; height: 48px; width: 280px; background-color: rgba(60,45,15,0.9); color: rgb(100,82,38); font-size: 16px; -unity-font-style: bold; border-width: 0; border-radius: 8px; cursor: initial;" />
     </ui:VisualElement>
 </ui:UXML>

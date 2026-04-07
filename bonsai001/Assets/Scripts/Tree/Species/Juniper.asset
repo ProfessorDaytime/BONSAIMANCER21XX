@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Juniper
+  m_EditorClassIdentifier:
+  speciesName: Juniper
+  scientificName: Juniperus spp.
+  baseGrowSpeed: 0.14
+  depthSpeedDecay: 0.85
+  depthsPerYear: 2
+  baseElongation: 0.05
+  elongationDepthDecay: 0.7
+  branchSegmentLength: 1
+  segmentLengthDecay: 0.8
+  rootSegmentLength: 0.7
+  baseBranchChance: 0.6
+  branchChanceDepthDecay: 0.9
+  springLateralChance: 0.65
+  oldWoodBudChance: 0.02
+  backBudBaseChance: 0.15
+  budType: 0
+  apicalDominance: 0.55
+  apicalVigorBonus: 0.15
+  vigorDecayRate: 0.15
+  wireDaysToSet: 280
+  woundDrainRate: 0.03
+  seasonsToHealPerUnit: 20
+  trimTraumaDamage: 0.03
+  trimTraumaRecoveryPerSeason: 0.03
+  drainRatePerDay: 0.06
+  droughtThreshold: 0.18
+  droughtDamagePerDay: 0.004
+  nutrientDrainPerSeason: 0.28
+  fungalSpreadChance: 0.18
+  fungalRecoveryRate: 0.14
+  maxEnergyMultiplier: 1.3
+  preferredWaterRetention: 0.28
+  preferredDrainageRate: 0.78
+  preferredAerationScore: 0.70
+  soilToleranceRange: 0.25
+  soilMismatchPenalty: 0.02
+  repotTolerance: 0.75

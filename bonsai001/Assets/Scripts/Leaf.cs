@@ -26,6 +26,10 @@ public class Leaf : MonoBehaviour
     // others at orange/red, and the last stragglers at brown.
     [HideInInspector] public float fallColorSpeed = 1f;
 
+    // ── Fungal tint (set by LeafManager.RefreshFungalTint) ───────────────────
+    // 0 = healthy green. 1 = fully sickly. Ignored during fall season.
+    [HideInInspector] public float fungalSeverity = 0f;
+
     // 0 = green, 1 = fully brown.  Public read so LeafManager can weight the fall roll.
     public float FallColorProgress => fallColorProgress;
     public bool  IsInFallSeason    => isInFallSeason;
@@ -122,18 +126,31 @@ public class Leaf : MonoBehaviour
 
     // ── Colour ────────────────────────────────────────────────────────────────
 
+    static readonly Color FungalSicklyColor = new Color(0.68f, 0.72f, 0.18f); // sickly yellow-green
+
     void UpdateLeafColor()
     {
         if (leafRenderer == null) return;
 
-        float t     = fallColorProgress * (FallGradient.Length - 1);
-        int   i     = Mathf.Clamp((int)t, 0, FallGradient.Length - 2);
-        Color color = Color.Lerp(FallGradient[i], FallGradient[i + 1], t - i);
+        Color color;
+        if (isInFallSeason)
+        {
+            float t = fallColorProgress * (FallGradient.Length - 1);
+            int   i = Mathf.Clamp((int)t, 0, FallGradient.Length - 2);
+            color = Color.Lerp(FallGradient[i], FallGradient[i + 1], t - i);
+        }
+        else
+        {
+            color = Color.Lerp(FallGradient[0], FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
+        }
 
         leafRenderer.GetPropertyBlock(propBlock);
         propBlock.SetColor("_Color", color);      // Standard / Unlit shaders
         leafRenderer.SetPropertyBlock(propBlock);
     }
+
+    /// <summary>Force a colour refresh — called by LeafManager after updating fungalSeverity.</summary>
+    public void ForceRefreshColor() => UpdateLeafColor();
 
     // ── Public API ────────────────────────────────────────────────────────────
 

@@ -190,6 +190,23 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   skeleton: {fileID: 1486295570}
+  availableSpecies:
+  - {fileID: 11400000, guid: 3e304e541bf13264ca8328f047ad0146, type: 2}
+  - {fileID: 11400000, guid: 0aeadd4194e1e0345acedd96fbf780f4, type: 2}
+  - {fileID: 11400000, guid: 57e1ff372ba496e4eaef7a316589f7ea, type: 2}
+  - {fileID: 11400000, guid: f1f4b3065c5b9a541ab20f86fce319e9, type: 2}
+  - {fileID: 11400000, guid: 5888cced6017c334a9976c85107cd542, type: 2}
+  - {fileID: 11400000, guid: 4e244e134b23c734a944bb5e158f8f28, type: 2}
+  - {fileID: 11400000, guid: 0017a85f7d355b94aba9304026bfe1eb, type: 2}
+  - {fileID: 11400000, guid: 50af3332b30c54b46a55f38d000e85b5, type: 2}
+  - {fileID: 11400000, guid: 149cc68095556c748b0c7f945d4c8e40, type: 2}
+  - {fileID: 11400000, guid: 32dc561108ebb36449584e69a416f46b, type: 2}
+  - {fileID: 11400000, guid: a18a5485431682849a3be928d83cfe93, type: 2}
+  - {fileID: 11400000, guid: 5d4209b74b1654444991cba6fc4a5dae, type: 2}
+  - {fileID: 11400000, guid: e9484e160c9badb468b0f64ef08097df, type: 2}
+  - {fileID: 11400000, guid: 8681584e0947cd04b8f769610d55d063, type: 2}
+  - {fileID: 11400000, guid: 4ce3cd75e9336d64993714afc3025b7d, type: 2}
+  - {fileID: 11400000, guid: b7bcf17ebbff5fa4998ee69a28642756, type: 2}
 --- !u!1 &295539243
 GameObject:
   m_ObjectHideFlags: 0
@@ -1001,6 +1018,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 940a9a19168bff3428ef1850ef93deda, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  tipPanel: {fileID: 1638968565}
+  tipCanvas: {fileID: 1499744398}
 --- !u!114 &963194231
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1448,6 +1467,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Rock01
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
+      propertyPath: m_TagString
+      value: Rock
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -1824,6 +1847,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1486295573}
+    - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1486295582}
+    - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1486295586}
   m_SourcePrefab: {fileID: 100100000, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
 --- !u!1 &1486295552 stripped
 GameObject:
@@ -1844,7 +1873,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ringSegments: 8
   debugHealthRings: 0
-  debugRootVisibility: 1
+  debugRootVisibility: 0
   renderRoots: 0
   rockCollider: {fileID: 0}
   rootVisibilityDepth: -0.5
@@ -1887,6 +1916,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be6fcd7f97665bb42a8361888ac4570a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  species: {fileID: 0}
   baseGrowSpeed: 0.07
   depthSpeedDecay: 0.85
   branchSegmentLength: 1
@@ -1914,13 +1944,13 @@ MonoBehaviour:
   minSegmentLength: 1
   budPrefab: {fileID: 2532749660122533125, guid: 76f3b9b01403af542abbfba68b5755c5, type: 3}
   lateralBudPrefab: {fileID: 767605876488808132, guid: 90aed0c3f93ccde479bdc380704133a3, type: 3}
-  budType: 0
+  budType: 1
   apicalDominance: 0.3
   oldWoodBudChance: 0.01
   backBudBaseChance: 0.15
   backBudActivationBoost: 1
-  showTerminalBuds: 1
-  showLateralBuds: 1
+  showTerminalBuds: 0
+  showLateralBuds: 0
   wireDaysToSet: 196
   refinementTaper: 0.82
   refinementCap: 6
@@ -1937,6 +1967,23 @@ MonoBehaviour:
   droughtDamagePerDay: 0.008
   soilMoisture: 1
   droughtDaysAccumulated: 0
+  autoWaterEnabled: 1
+  autoWaterJustFired: 0
+  weedSpawnRadius: 0.8
+  nutrientDrainPerSeason: 0.4
+  fertilizeAmount: 0.5
+  fertilizerBurnThreshold: 1.5
+  fertilizerBurnDamage: 0.08
+  nutrientReserve: 1
+  autoFertilizeEnabled: 0
+  autoFertilizeJustFired: 0
+  fungalSpreadChance: 0.25
+  fungalLoadIncrease: 0.2
+  fungalDamagePerLoad: 0.05
+  fungalRecoveryRate: 0.1
+  fungicideReduceAmount: 0.6
+  mycorrhizalNutrientBonus: 0.2
+  mycorrhizalHealthySeasonsRequired: 3
   maxEnergyMultiplier: 1.5
   woundDrainRate: 0.05
   seasonsToHealPerUnit: 20
@@ -2044,6 +2091,65 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 8046696593132258112, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
   m_PrefabInstance: {fileID: 1486295551}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1486295582
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1486295552}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: de5b9ae830d6a1e40a9bbb1a9aae13eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  spawnChancePerSeason: 1
+  maxWeeds: 6
+  grassNutrientDrain: 0.04
+  grassMoistureDrain: 0.03
+  cloverNutrientDrain: 0.03
+  cloverMoistureDrain: 0.02
+  dandelionNutrientDrain: 0.1
+  dandelionMoistureDrain: 0.06
+  thistleNutrientDrain: 0.14
+  thistleMoistureDrain: 0.08
+  herbicideAerationDrain: 0.15
+  grassWeight: 0.4
+  cloverWeight: 0.35
+  dandelionWeight: 0.15
+  trunkExclusionMultiplier: 4
+  rockCheckRadius: 0.15
+--- !u!114 &1486295586
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1486295552}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 41d3502dabf85a3459b99aa595d22a20, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  akadama: 0.5
+  pumice: 0.3
+  lavaRock: 0.2
+  organic: 0
+  sand: 0
+  kanuma: 0
+  perlite: 0
+  waterRetention: 0
+  drainageRate: 0
+  aerationScore: 0
+  nutrientCapacity: 0
+  baseDegradeRate: 0
+  soilDegradation: 0
+  saturationLevel: 0
+  seasonsSinceRepot: 0
+  preset: 1
+  rootRotDamagePerSeason: 0.04
+  repotBaseDamage: 0.1
+  degradationSlowdownSeasons: 4
 --- !u!1 &1499744398
 GameObject:
   m_ObjectHideFlags: 0

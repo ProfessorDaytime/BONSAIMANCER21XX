@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Silver Birch
+  m_EditorClassIdentifier:
+  speciesName: Silver Birch
+  scientificName: Betula pendula
+  baseGrowSpeed: 0.28
+  depthSpeedDecay: 0.85
+  depthsPerYear: 4
+  baseElongation: 0.06
+  elongationDepthDecay: 0.72
+  branchSegmentLength: 1.0
+  segmentLengthDecay: 0.82
+  rootSegmentLength: 0.7
+  baseBranchChance: 0.75
+  branchChanceDepthDecay: 0.90
+  springLateralChance: 0.82
+  oldWoodBudChance: 0.05
+  backBudBaseChance: 0.15
+  budType: 0
+  apicalDominance: 0.22
+  apicalVigorBonus: 0.16
+  vigorDecayRate: 0.15
+  wireDaysToSet: 130
+  woundDrainRate: 0.09
+  seasonsToHealPerUnit: 15
+  trimTraumaDamage: 0.08
+  trimTraumaRecoveryPerSeason: 0.05
+  drainRatePerDay: 0.15
+  droughtThreshold: 0.38
+  droughtDamagePerDay: 0.013
+  nutrientDrainPerSeason: 0.50
+  fungalSpreadChance: 0.35
+  fungalRecoveryRate: 0.07
+  maxEnergyMultiplier: 1.6
+  preferredWaterRetention: 0.52
+  preferredDrainageRate: 0.58
+  preferredAerationScore: 0.48
+  soilToleranceRange: 0.20
+  soilMismatchPenalty: 0.05
+  repotTolerance: 0.45

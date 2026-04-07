@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Dawn Redwood
+  m_EditorClassIdentifier:
+  speciesName: Dawn Redwood
+  scientificName: Metasequoia glyptostroboides
+  baseGrowSpeed: 0.32
+  depthSpeedDecay: 0.85
+  depthsPerYear: 4
+  baseElongation: 0.06
+  elongationDepthDecay: 0.7
+  branchSegmentLength: 1.1
+  segmentLengthDecay: 0.82
+  rootSegmentLength: 0.8
+  baseBranchChance: 0.72
+  branchChanceDepthDecay: 0.9
+  springLateralChance: 0.80
+  oldWoodBudChance: 0.06
+  backBudBaseChance: 0.18
+  budType: 1
+  apicalDominance: 0.35
+  apicalVigorBonus: 0.18
+  vigorDecayRate: 0.15
+  wireDaysToSet: 160
+  woundDrainRate: 0.06
+  seasonsToHealPerUnit: 16
+  trimTraumaDamage: 0.05
+  trimTraumaRecoveryPerSeason: 0.07
+  drainRatePerDay: 0.16
+  droughtThreshold: 0.45
+  droughtDamagePerDay: 0.015
+  nutrientDrainPerSeason: 0.55
+  fungalSpreadChance: 0.28
+  fungalRecoveryRate: 0.09
+  maxEnergyMultiplier: 1.7
+  preferredWaterRetention: 0.62
+  preferredDrainageRate: 0.48
+  preferredAerationScore: 0.38
+  soilToleranceRange: 0.20
+  soilMismatchPenalty: 0.05
+  repotTolerance: 0.60

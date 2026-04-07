@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
+  m_Name: Scots Pine
+  m_EditorClassIdentifier:
+  speciesName: Scots Pine
+  scientificName: Pinus sylvestris
+  baseGrowSpeed: 0.16
+  depthSpeedDecay: 0.85
+  depthsPerYear: 2
+  baseElongation: 0.05
+  elongationDepthDecay: 0.7
+  branchSegmentLength: 1
+  segmentLengthDecay: 0.8
+  rootSegmentLength: 0.7
+  baseBranchChance: 0.55
+  branchChanceDepthDecay: 0.9
+  springLateralChance: 0.60
+  oldWoodBudChance: 0.006
+  backBudBaseChance: 0.10
+  budType: 0
+  apicalDominance: 0.58
+  apicalVigorBonus: 0.14
+  vigorDecayRate: 0.14
+  wireDaysToSet: 320
+  woundDrainRate: 0.035
+  seasonsToHealPerUnit: 24
+  trimTraumaDamage: 0.035
+  trimTraumaRecoveryPerSeason: 0.025
+  drainRatePerDay: 0.07
+  droughtThreshold: 0.18
+  droughtDamagePerDay: 0.004
+  nutrientDrainPerSeason: 0.25
+  fungalSpreadChance: 0.18
+  fungalRecoveryRate: 0.13
+  maxEnergyMultiplier: 1.15
+  preferredWaterRetention: 0.28
+  preferredDrainageRate: 0.78
+  preferredAerationScore: 0.70
+  soilToleranceRange: 0.28
+  soilMismatchPenalty: 0.025
+  repotTolerance: 0.30
