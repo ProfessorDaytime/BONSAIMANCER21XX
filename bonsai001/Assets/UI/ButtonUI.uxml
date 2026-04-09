@@ -52,13 +52,8 @@
                -unity-font-style: bold; background-color: rgba(0,0,0,0.6);
                padding: 4px 8px; border-radius: 4px; display: none;" />
 
-    <!-- Pause button — top right below the date -->
-    <ui:Button text="II" display-tooltip-when-elided="true" name="PauseButton" style="position: absolute; right: 10px; top: 48px; width: 48px; height: 32px; font-size: 14px; -unity-font-style: bold; background-color: rgba(20,20,20,0.85); color: rgb(229,179,16); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
-
-    <ui:VisualElement name="SelectionBar" style="position: absolute; bottom: 20px; left: 0; right: 0; align-items: center; flex-direction: row; justify-content: center;">
-        <ui:Label text="Selection" name="SelectionLabel" style="color: rgb(200,200,200); font-size: 12px; margin-right: 10px; -unity-text-align: middle-left;" />
-        <ui:Slider name="SelectionRadiusSlider" low-value="0" high-value="0.5" value="0" style="width: 300px;" />
-    </ui:VisualElement>
+    <!-- Pause button — bottom right; placed after SelectionBar so it renders on top -->
+    <ui:Button text="II" display-tooltip-when-elided="true" name="PauseButton" style="position: absolute; right: 10px; bottom: 10px; width: 48px; height: 32px; font-size: 14px; -unity-font-style: bold; background-color: rgba(20,20,20,0.85); color: rgb(229,179,16); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
     <ui:VisualElement name="RootHealthPanel" style="position: absolute; left: 10px; bottom: 10px; width: 160px; padding: 10px; background-color: rgb(18,28,18); border-radius: 6px; display: none;">
         <ui:Label text="ROOT HEALTH" name="RootHealthHeader" style="color: rgb(160,200,160); font-size: 11px; -unity-font-style: bold; margin-bottom: 2px;" />
         <ui:Label text="—" name="RootHealthScoreLabel" style="color: rgb(255,255,255); font-size: 32px; -unity-font-style: bold; margin-bottom: 4px;" />
@@ -90,10 +85,17 @@
                 </ui:VisualElement>
                 <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
                     <ui:Label text="Quick Winter" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
-                    <ui:Toggle name="ToggleQuickWinter" style="flex: 1;" />
+                    <ui:Toggle name="ToggleQuickWinter" value="true" style="flex: 1;" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Selection Radius" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Slider name="SelectionRadiusSlider" low-value="0" high-value="0.5" value="0.5" style="flex: 1; margin-right: 10px;" />
+                    <ui:Label name="LabelSelectionRadius" text="0.50" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
                 </ui:VisualElement>
                 <ui:Button text="SAVE GAME" name="SaveButton" style="height: 36px; background-color: rgb(40,80,40); color: rgb(180,230,180); font-size: 13px; -unity-font-style: bold; border-width: 0; border-radius: 4px; cursor: initial; margin-top: 6px;" />
                 <ui:Button text="LOAD GAME" name="LoadButton" style="height: 36px; background-color: rgb(40,50,80); color: rgb(180,200,230); font-size: 13px; -unity-font-style: bold; border-width: 0; border-radius: 4px; cursor: initial; margin-top: 4px;" />
+                <ui:Button text="BROWSE SAVES" name="BrowseSavesButton" style="height: 36px; background-color: rgb(20,40,30); color: rgb(120,180,140); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial; margin-top: 4px;" />
+                <ui:Button text="LOAD ORIGINAL TREE" name="LoadOriginalButton" style="height: 36px; background-color: rgb(35,50,45); color: rgb(140,200,170); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial; margin-top: 4px; display: none;" />
                 <ui:Label name="SaveStatusLabel" text="" style="color: rgb(140,200,140); font-size: 11px; -unity-text-align: upper-center; margin-top: 4px;" />
             </ui:VisualElement>
 
@@ -146,6 +148,18 @@
             <ui:Button text="RESUME  (ESC)" name="ResumeButton" style="margin-top: 20px; height: 44px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 15px; -unity-font-style: bold; border-width: 0; border-radius: 6px; cursor: initial;" />
         </ui:VisualElement>
     </ui:VisualElement>
+    <!-- ── Air Layer Sever Ready Banner ──────────────────────────────────── -->
+    <ui:Label name="AirLayerSeverBanner" text="✂ AIR LAYER READY TO SEVER" style="position: absolute; top: 80px; left: 0; right: 0; -unity-text-align: upper-center; color: rgb(80,200,160); font-size: 14px; -unity-font-style: bold; display: none; cursor: initial;" />
+
+    <!-- ── Air Layer Sever Overlay ────────────────────────────────────────── -->
+    <ui:VisualElement name="AirLayerSeverOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(2,8,6,0.92); flex-direction: column; align-items: center; justify-content: center; display: none;">
+        <ui:Label text="AIR LAYER READY" style="color: rgb(80,200,160); font-size: 28px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 8px;" />
+        <ui:Label text="The roots are strong enough. Sever this branch to start a new tree." style="color: rgb(130,155,140); font-size: 13px; -unity-text-align: upper-center; margin-bottom: 6px; white-space: normal;" />
+        <ui:Label text="The original tree will be saved so you can return to it later." style="color: rgb(100,120,110); font-size: 11px; -unity-text-align: upper-center; margin-bottom: 32px; -unity-font-style: italic; white-space: normal;" />
+        <ui:Button text="SEVER — START NEW TREE" name="SeverConfirmButton" style="height: 52px; width: 300px; background-color: rgb(40,100,80); color: rgb(140,230,200); font-size: 15px; -unity-font-style: bold; border-width: 0; border-radius: 8px; cursor: initial; margin-bottom: 14px;" />
+        <ui:Button text="NOT YET" name="SeverCancelButton" style="height: 40px; width: 200px; background-color: rgb(30,40,35); color: rgb(100,140,120); font-size: 13px; border-width: 0; border-radius: 6px; cursor: initial;" />
+    </ui:VisualElement>
+
     <!-- ── Tree Death Overlay ─────────────────────────────────────────────── -->
     <ui:VisualElement name="TreeDeadOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(6,2,2,0.90); flex-direction: column; align-items: center; justify-content: center; display: none;">
         <ui:Label text="YOUR TREE HAS DIED" style="color: rgb(180,60,40); font-size: 32px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 10px;" />
@@ -156,6 +170,27 @@
 
     <!-- ── Tree Warning Banner — danger state, not yet dead ──────────────── -->
     <ui:Label name="TreeDangerBanner" text="⚠ YOUR TREE IS IN DANGER" style="position: absolute; top: 80px; left: 0; right: 0; -unity-text-align: upper-center; color: rgb(220,80,40); font-size: 14px; -unity-font-style: bold; display: none;" />
+
+    <!-- ── Load Menu Overlay ──────────────────────────────────────────────── -->
+    <ui:VisualElement name="LoadMenuOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(4,8,4,0.98); flex-direction: column; align-items: center; padding: 32px 80px 24px 80px; display: none;">
+        <ui:Label text="BONSAIMANCER" style="color: rgb(229,179,16); font-size: 28px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 4px;" />
+        <ui:Label text="SELECT A SAVE" style="color: rgb(130,155,130); font-size: 13px; -unity-text-align: upper-center; margin-bottom: 20px;" />
+        <ui:ScrollView name="LoadMenuScrollView" style="flex-grow: 1; width: 100%;">
+            <ui:VisualElement name="LoadMenuCardContainer" style="flex-direction: column; width: 100%;" />
+        </ui:ScrollView>
+        <ui:VisualElement style="flex-direction: row; justify-content: center; margin-top: 18px; width: 100%;">
+            <ui:Button text="← BACK" name="LoadMenuBackButton" style="height: 44px; width: 140px; background-color: rgba(30,30,30,0.9); color: rgb(160,160,160); font-size: 14px; -unity-font-style: bold; border-width: 1px; border-color: rgb(70,70,70); border-radius: 6px; cursor: initial; margin-right: 16px; display: none;" />
+            <ui:Button text="NEW GAME" name="LoadMenuNewGameButton" style="height: 44px; width: 200px; background-color: rgba(20,40,20,0.9); color: rgb(120,180,120); font-size: 14px; -unity-font-style: bold; border-width: 1px; border-color: rgb(60,100,60); border-radius: 6px; cursor: initial;" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+
+    <!-- ── Save Name Prompt ────────────────────────────────────────────────── -->
+    <ui:VisualElement name="SaveNamePromptOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(4,8,4,0.88); flex-direction: column; align-items: center; justify-content: center; display: none;">
+        <ui:Label text="NAME YOUR SAVE" style="color: rgb(229,179,16); font-size: 22px; -unity-font-style: bold; -unity-text-align: upper-center; margin-bottom: 18px;" />
+        <ui:TextField name="SaveNameField" max-length="32" style="width: 320px; height: 40px; font-size: 15px; color: rgb(0,0,0); background-color: rgba(30,40,30,0.95); border-color: rgb(80,110,80); border-width: 1px; border-radius: 4px; padding: 4px 8px; margin-bottom: 18px;" />
+        <ui:Button text="SAVE" name="SaveNameConfirmButton" style="height: 44px; width: 200px; background-color: rgb(40,80,40); color: rgb(180,230,180); font-size: 14px; -unity-font-style: bold; border-width: 0; border-radius: 6px; cursor: initial; margin-bottom: 10px;" />
+        <ui:Button text="CANCEL" name="SaveNameCancelButton" style="height: 36px; width: 140px; background-color: rgba(30,30,30,0.8); color: rgb(120,120,120); font-size: 12px; border-width: 0; border-radius: 6px; cursor: initial;" />
+    </ui:VisualElement>
 
     <!-- ── Species Selection Overlay — LAST so it renders above everything ─── -->
     <ui:VisualElement name="SpeciesSelectOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(4,8,4,0.98); flex-direction: column; align-items: center; padding: 32px 100px 28px 100px; display: none;">

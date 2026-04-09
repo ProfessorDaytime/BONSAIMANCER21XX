@@ -16,7 +16,7 @@ public class GameManager : MonoBehaviour
 
     public static int branches = 0;
     public static int newLeaves = 0;
-    public static bool quickWinter   = false;
+    public static bool quickWinter   = true;
 
     public static bool canLeaf       = false;
     public static bool canTrim       = false;
@@ -27,7 +27,7 @@ public class GameManager : MonoBehaviour
     public static bool canAirLayer      = false;
     public static bool canPinch         = false;
     public static bool canDefoliate     = false;
-    public static float selectionRadius = 0f;
+    public static float selectionRadius = 0.5f;
 
     // Saved state to restore when exiting RootPrune mode.
     static GameState preRootPruneState = GameState.Idle;
@@ -98,7 +98,8 @@ public class GameManager : MonoBehaviour
 
     void Awake(){
         Instance = this;
-        UpdateGameState(GameState.SpeciesSelect);
+        // If any named saves exist, show the load menu; otherwise go straight to species pick.
+        UpdateGameState(SaveManager.HasAnySave() ? GameState.LoadMenu : GameState.SpeciesSelect);
     }
 
     void Start(){
@@ -285,6 +286,7 @@ public class GameManager : MonoBehaviour
             case GameState.GamePause:
                 break;
             case GameState.Idle:
+                Time.timeScale = 1f;
                 break;
             case GameState.Water:
                 HandleWaterState();
@@ -314,6 +316,12 @@ public class GameManager : MonoBehaviour
                 break;
             case GameState.TreeDead:
                 Time.timeScale = 0f;   // freeze — game over
+                break;
+            case GameState.AirLayerSever:
+                Time.timeScale = 0f;   // freeze while player decides
+                break;
+            case GameState.LoadMenu:
+                Time.timeScale = 0f;
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
@@ -399,6 +407,17 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Returns the correct time-ticking GameState for the given calendar month.
+    /// Call this after loading a save to restore the right state instead of Idle.
+    /// </summary>
+    public GameState StateForMonth(int m)
+    {
+        if (m >= 3 && m <= 8) return GameState.BranchGrow;
+        if (m == 10)          return GameState.LeafFall;
+        return GameState.TimeGo;   // Sep, Nov, Dec, Jan, Feb
+    }
+
     public void ToggleRootPrune()
     {
         if (IsRootLiftActive(state))
@@ -446,5 +465,7 @@ public enum GameState {
     RootPrune,    // tree lifted, root mesh visible, root trim/placement active
     RockPlace,    // rock grabbed and being positioned in 3D space
     TreeOrient,   // tree transform being rotated onto the placed rock
-    TreeDead,     // tree has died; gameplay halted
+    TreeDead,      // tree has died; gameplay halted
+    AirLayerSever, // player is confirming an air-layer severance
+    LoadMenu,      // browsing saved games at launch or from pause menu
 }

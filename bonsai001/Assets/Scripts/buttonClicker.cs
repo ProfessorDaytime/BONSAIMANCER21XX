@@ -7,6 +7,27 @@ public class ButtonClicker : MonoBehaviour
 {
     [SerializeField] TreeSkeleton skeleton;
 
+    // ── Load Menu ─────────────────────────────────────────────────────────────
+    VisualElement loadMenuOverlay;
+    VisualElement loadMenuCardContainer;
+    Button        loadMenuNewGameButton;
+    Button        loadMenuBackButton;
+    bool          loadMenuHasBack;   // true when opened from pause menu (back returns to pause)
+    string        pendingDeleteSlotId;   // set on first DELETE click; cleared on confirm/cancel
+
+    // ── Save Name Prompt ──────────────────────────────────────────────────────
+    VisualElement           saveNamePromptOverlay;
+    UnityEngine.UIElements.TextField saveNameField;
+    Button                  saveNameConfirmButton;
+    Button                  saveNameCancelButton;
+
+    // ── Air Layer Sever ───────────────────────────────────────────────────────
+    VisualElement  airLayerSeverOverlay;
+    Label          airLayerSeverBanner;
+    Button         severConfirmButton;
+    Button         severCancelButton;
+    GameState      preSeverState;
+
     // ── Tree Death ────────────────────────────────────────────────────────────
     VisualElement treeDeadOverlay;
     Label         treeDeadCauseLabel;
@@ -99,8 +120,10 @@ public class ButtonClicker : MonoBehaviour
     // Sliders + value labels
     Slider sliderTimescale;      Label labelTimescale;
     Toggle toggleQuickWinter;
+    Label  labelSelectionRadius;
     Button saveButton;
     Button loadButton;
+    Button loadOriginalButton;
     Label  saveStatusLabel;
     float  saveStatusClearTime = 0f;
     Slider sliderGrowSpeed;      Label labelGrowSpeed;
@@ -132,7 +155,8 @@ public class ButtonClicker : MonoBehaviour
         airLayerButton      = root.Q("AirLayerButton")      as Button;
         placeRockButton     = root.Q("PlaceRockButton")     as Button;
         confirmOrientButton = root.Q("ConfirmOrientButton") as Button;
-        selectionRadiusSlider = root.Q("SelectionRadiusSlider") as Slider;
+        selectionRadiusSlider  = root.Q("SelectionRadiusSlider")  as Slider;
+        labelSelectionRadius   = root.Q("LabelSelectionRadius")  as Label;
 
         undoLabel            = root.Q("UndoLabel")          as Label;
         moistureBarFill      = root.Q("MoistureBarFill");
@@ -154,6 +178,37 @@ public class ButtonClicker : MonoBehaviour
         rootHealthPanel      = root.Q("RootHealthPanel");
         rootHealthScoreLabel = root.Q("RootHealthScoreLabel") as Label;
         rootHealthSectors    = root.Q("RootHealthSectors");
+
+        // ── Scroll sensitivity ────────────────────────────────────────────────
+        const float scrollSpeed = 400f;
+        var speciesScroll = root.Q<UnityEngine.UIElements.ScrollView>("SpeciesScrollView");
+        if (speciesScroll != null) speciesScroll.mouseWheelScrollSize = scrollSpeed;
+        var loadScroll = root.Q<UnityEngine.UIElements.ScrollView>("LoadMenuScrollView");
+        if (loadScroll != null) loadScroll.mouseWheelScrollSize = scrollSpeed;
+
+        // ── Load menu ────────────────────────────────────────────────────────
+        loadMenuOverlay       = root.Q("LoadMenuOverlay");
+        loadMenuCardContainer = root.Q("LoadMenuCardContainer");
+        loadMenuNewGameButton = root.Q("LoadMenuNewGameButton") as Button;
+        loadMenuBackButton    = root.Q("LoadMenuBackButton")    as Button;
+        loadMenuNewGameButton?.RegisterCallback<ClickEvent>(_ => OnLoadMenuNewGame());
+        loadMenuBackButton?.RegisterCallback<ClickEvent>(_ => OnLoadMenuBack());
+
+        // ── Save name prompt ─────────────────────────────────────────────────
+        saveNamePromptOverlay  = root.Q("SaveNamePromptOverlay");
+        saveNameField          = root.Q("SaveNameField") as UnityEngine.UIElements.TextField;
+        saveNameConfirmButton  = root.Q("SaveNameConfirmButton") as Button;
+        saveNameCancelButton   = root.Q("SaveNameCancelButton")  as Button;
+        saveNameConfirmButton?.RegisterCallback<ClickEvent>(_ => OnSaveNameConfirm());
+        saveNameCancelButton?.RegisterCallback<ClickEvent>(_ => OnSaveNameCancel());
+
+        // ── Air layer sever ──────────────────────────────────────────────────
+        airLayerSeverOverlay = root.Q("AirLayerSeverOverlay");
+        airLayerSeverBanner  = root.Q("AirLayerSeverBanner") as Label;
+        severConfirmButton   = root.Q("SeverConfirmButton")  as Button;
+        severCancelButton    = root.Q("SeverCancelButton")   as Button;
+        severConfirmButton?.RegisterCallback<ClickEvent>(_ => OnSeverConfirmClick());
+        severCancelButton?.RegisterCallback<ClickEvent>(_ => OnSeverCancelClick());
 
         // ── Tree death ───────────────────────────────────────────────────────
         treeDeadOverlay    = root.Q("TreeDeadOverlay");
@@ -211,6 +266,13 @@ public class ButtonClicker : MonoBehaviour
 
         saveButton           = root.Q("SaveButton")           as Button;
         loadButton           = root.Q("LoadButton")           as Button;
+        loadOriginalButton   = root.Q("LoadOriginalButton")   as Button;
+        var browseSavesButton = root.Q("BrowseSavesButton")  as Button;
+        browseSavesButton?.RegisterCallback<ClickEvent>(_ => {
+            TogglePauseMenu(); // close pause menu first
+            loadMenuHasBack = true;
+            GameManager.Instance.UpdateGameState(GameState.LoadMenu);
+        });
         saveStatusLabel      = root.Q("SaveStatusLabel")      as Label;
 
         sliderTimescale      = root.Q("SliderTimescale")      as Slider;
@@ -244,10 +306,18 @@ public class ButtonClicker : MonoBehaviour
         airLayerButton?.RegisterCallback<ClickEvent>(OnAirLayerButtonClick);
         placeRockButton?.RegisterCallback<ClickEvent>(OnPlaceRockButtonClick);
         confirmOrientButton?.RegisterCallback<ClickEvent>(OnConfirmOrientButtonClick);
-        selectionRadiusSlider?.RegisterValueChangedCallback(evt => GameManager.selectionRadius = evt.newValue);
+        selectionRadiusSlider?.RegisterValueChangedCallback(evt => {
+            GameManager.selectionRadius = evt.newValue;
+            if (labelSelectionRadius != null) labelSelectionRadius.text = evt.newValue.ToString("F2");
+        });
 
         saveButton?.RegisterCallback<ClickEvent>(_ => OnSaveButtonClick());
         loadButton?.RegisterCallback<ClickEvent>(_ => OnLoadButtonClick());
+        loadOriginalButton?.RegisterCallback<ClickEvent>(_ => OnLoadOriginalButtonClick());
+        // Show the load-original button only when a backup exists.
+        if (loadOriginalButton != null)
+            loadOriginalButton.style.display = SaveManager.OriginalExists()
+                ? DisplayStyle.Flex : DisplayStyle.None;
 
         // Wire up pause menu
         pauseButton?.RegisterCallback<ClickEvent>(_ => TogglePauseMenu());
@@ -315,10 +385,22 @@ public class ButtonClicker : MonoBehaviour
         GameManager.OnGameStateChanged += OnGameStateChanged;
 
         // Sync overlay visibility to whatever state was set before OnEnable ran
+        var initState = GameManager.Instance?.state ?? GameState.SpeciesSelect;
         if (speciesSelectOverlay != null)
             speciesSelectOverlay.style.display =
-                GameManager.Instance != null && GameManager.Instance.state == GameState.SpeciesSelect
-                    ? DisplayStyle.Flex : DisplayStyle.None;
+                initState == GameState.SpeciesSelect ? DisplayStyle.Flex : DisplayStyle.None;
+        if (loadMenuOverlay != null)
+        {
+            bool showLoad = initState == GameState.LoadMenu;
+            loadMenuOverlay.style.display = showLoad ? DisplayStyle.Flex : DisplayStyle.None;
+            if (showLoad)
+            {
+                BuildLoadMenuCards();
+                // At startup, loadMenuHasBack is false — back button stays hidden.
+                if (loadMenuBackButton != null)
+                    loadMenuBackButton.style.display = DisplayStyle.None;
+            }
+        }
     }
 
     void OnDisable()
@@ -329,7 +411,14 @@ public class ButtonClicker : MonoBehaviour
     void Update()
     {
         if (Input.GetKeyDown(KeyCode.Escape))
-            TogglePauseMenu();
+        {
+            var s = GameManager.Instance?.state ?? GameState.Idle;
+            if (s == GameState.LoadMenu && loadMenuHasBack)
+                OnLoadMenuBack();
+            else if (s != GameState.LoadMenu && s != GameState.SpeciesSelect &&
+                     s != GameState.TipPause && s != GameState.TreeDead && s != GameState.AirLayerSever)
+                TogglePauseMenu();
+        }
 
         // Trim undo
         // Clear save status label after a few seconds
@@ -439,6 +528,11 @@ public class ButtonClicker : MonoBehaviour
             treeDangerBanner.style.display = skeleton.treeInDanger && skeleton.treeDeathEnabled
                 ? DisplayStyle.Flex : DisplayStyle.None;
 
+        // Air layer sever banner: show when any layer is ready to sever
+        if (airLayerSeverBanner != null && skeleton != null)
+            airLayerSeverBanner.style.display = skeleton.HasSeverableLayer
+                ? DisplayStyle.Flex : DisplayStyle.None;
+
         // Auto-water flash: pulse water button background when auto-water fires
         if (skeleton != null && skeleton.autoWaterJustFired)
         {
@@ -475,6 +569,14 @@ public class ButtonClicker : MonoBehaviour
     {
         if (pauseMenuOverlay == null) return;
         bool opening = pauseMenuOverlay.style.display == DisplayStyle.None;
+        // Don't open the pause menu from non-gameplay states.
+        if (opening)
+        {
+            var s = GameManager.Instance?.state ?? GameState.Idle;
+            if (s == GameState.LoadMenu   || s == GameState.SpeciesSelect ||
+                s == GameState.TipPause   || s == GameState.TreeDead      ||
+                s == GameState.AirLayerSever) return;
+        }
         pauseMenuOverlay.style.display = opening ? DisplayStyle.Flex : DisplayStyle.None;
 
         if (opening)
@@ -535,6 +637,13 @@ public class ButtonClicker : MonoBehaviour
         if (toggleQuickWinter != null)
             toggleQuickWinter.SetValueWithoutNotify(GameManager.quickWinter);
 
+        if (selectionRadiusSlider != null)
+        {
+            selectionRadiusSlider.SetValueWithoutNotify(GameManager.selectionRadius);
+            if (labelSelectionRadius != null)
+                labelSelectionRadius.text = GameManager.selectionRadius.ToString("F2");
+        }
+
         if (skeleton == null) return;
 
         if (sliderGrowSpeed != null)
@@ -573,6 +682,33 @@ public class ButtonClicker : MonoBehaviour
             speciesSelectOverlay.style.display = state == GameState.SpeciesSelect
                 ? DisplayStyle.Flex : DisplayStyle.None;
 
+        // Load menu overlay
+        if (loadMenuOverlay != null)
+        {
+            bool show = state == GameState.LoadMenu;
+            loadMenuOverlay.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            if (show)
+            {
+                BuildLoadMenuCards();
+                if (loadMenuBackButton != null)
+                    loadMenuBackButton.style.display = loadMenuHasBack
+                        ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            else
+            {
+                loadMenuHasBack = false;  // reset for next open
+            }
+        }
+
+        // Save name prompt overlay — shown/hidden by explicit calls, not state
+        if (saveNamePromptOverlay != null && state != GameState.LoadMenu)
+            saveNamePromptOverlay.style.display = DisplayStyle.None;
+
+        // Air layer sever overlay
+        if (airLayerSeverOverlay != null)
+            airLayerSeverOverlay.style.display = state == GameState.AirLayerSever
+                ? DisplayStyle.Flex : DisplayStyle.None;
+
         // Tree dead overlay
         if (treeDeadOverlay != null)
         {
@@ -607,13 +743,21 @@ public class ButtonClicker : MonoBehaviour
 
     void OnSaveButtonClick()
     {
-        var leafMgr = skeleton != null ? skeleton.GetComponent<LeafManager>() : null;
-        SaveManager.Save(skeleton, leafMgr);
+        if (skeleton == null || skeleton.root == null) return;
+        if (string.IsNullOrEmpty(SaveManager.ActiveSlotId))
+        {
+            // No slot yet — show the name prompt.
+            ShowSaveNamePrompt();
+            return;
+        }
+        var leafMgr = skeleton.GetComponent<LeafManager>();
+        bool ok = SaveManager.Save(skeleton, leafMgr);
         if (saveStatusLabel != null)
         {
-            saveStatusLabel.text = $"Saved  ({System.DateTime.Now:HH:mm:ss})";
+            saveStatusLabel.text = ok ? $"Saved  ({System.DateTime.Now:HH:mm:ss})" : "Save failed.";
             saveStatusClearTime  = Time.realtimeSinceStartup + 4f;
         }
+        if (ok) StartCoroutine(TakeScreenshotForSlot(SaveManager.ActiveSlotId));
     }
 
     void OnLoadButtonClick()
@@ -625,7 +769,360 @@ public class ButtonClicker : MonoBehaviour
             saveStatusLabel.text = ok ? $"Loaded  ({System.DateTime.Now:HH:mm:ss})" : "No save file found.";
             saveStatusClearTime  = Time.realtimeSinceStartup + 4f;
         }
-        if (ok) TogglePauseMenu(); // close menu so the player sees the loaded tree
+        if (ok)
+        {
+            TogglePauseMenu();
+            Time.timeScale = 1f;
+            GameManager.Instance.UpdateGameState(GameManager.Instance.StateForMonth(GameManager.month));
+        }
+    }
+
+    // ── Load Menu ─────────────────────────────────────────────────────────────
+
+    void OnLoadMenuNewGame()
+    {
+        SaveManager.ActiveSlotId = null;
+        GameManager.Instance.UpdateGameState(GameState.SpeciesSelect);
+    }
+
+    void OnLoadMenuBack()
+    {
+        if (!loadMenuHasBack) return;
+        // Re-open the pause menu: show the overlay, set state to GamePause.
+        // prePauseState in GameManager is still set from when the menu was open,
+        // so Resume will correctly restore the game state.
+        if (pauseMenuOverlay != null) pauseMenuOverlay.style.display = DisplayStyle.Flex;
+        SyncSlidersFromGame();
+        SelectTab(0);
+        GameManager.Instance.UpdateGameState(GameState.GamePause);
+    }
+
+    void BuildLoadMenuCards()
+    {
+        if (loadMenuCardContainer == null) return;
+        loadMenuCardContainer.Clear();
+        pendingDeleteSlotId = null;
+
+        var saves = SaveManager.ListAllSaves();
+        if (saves.Count == 0)
+        {
+            var empty = new UnityEngine.UIElements.Label { text = "No saved games found." };
+            empty.style.color    = new StyleColor(new Color(0.5f, 0.5f, 0.5f));
+            empty.style.fontSize = 13;
+            empty.style.unityTextAlign = TextAnchor.MiddleCenter;
+            empty.style.marginTop = 40;
+            loadMenuCardContainer.Add(empty);
+            return;
+        }
+
+        foreach (var meta in saves)
+            loadMenuCardContainer.Add(MakeSaveCard(meta));
+    }
+
+    VisualElement MakeSaveCard(SaveMeta meta)
+    {
+        // Card container
+        var card = new VisualElement();
+        card.style.flexDirection        = FlexDirection.Row;
+        card.style.alignItems           = Align.Center;
+        card.style.backgroundColor      = new StyleColor(new Color(0.08f, 0.12f, 0.08f));
+        card.style.borderTopLeftRadius  = card.style.borderTopRightRadius  = 6;
+        card.style.borderBottomLeftRadius = card.style.borderBottomRightRadius = 6;
+        card.style.marginBottom         = 8;
+        card.style.paddingTop = card.style.paddingBottom = 10;
+        card.style.paddingLeft = card.style.paddingRight = 14;
+
+        // Thumbnail (if available)
+        string thumbPath = ThumbPath(meta.slotId);
+        if (!string.IsNullOrEmpty(meta.slotId) && System.IO.File.Exists(thumbPath))
+        {
+            try
+            {
+                var thumbData = System.IO.File.ReadAllBytes(thumbPath);
+                var thumbTex  = new Texture2D(2, 2);
+                if (thumbTex.LoadImage(thumbData))
+                {
+                    var thumbEl = new VisualElement();
+                    thumbEl.style.width           = 80;
+                    thumbEl.style.minWidth        = 80;
+                    thumbEl.style.height          = 45;
+                    thumbEl.style.minHeight       = 45;
+                    thumbEl.style.marginRight     = 12;
+                    thumbEl.style.borderTopLeftRadius    = thumbEl.style.borderBottomLeftRadius = 4;
+                    thumbEl.style.borderTopRightRadius   = thumbEl.style.borderBottomRightRadius = 4;
+                    thumbEl.style.backgroundImage = new StyleBackground(thumbTex);
+                    card.Add(thumbEl);
+                }
+                else
+                    Destroy(thumbTex);
+            }
+            catch { /* skip broken thumb */ }
+        }
+
+        // Left info column
+        var info = new VisualElement();
+        info.style.flexGrow    = 1;
+        info.style.flexShrink  = 1;
+        info.style.marginRight = 12;
+
+        // Save name
+        var nameLabel = new UnityEngine.UIElements.Label { text = meta.saveName ?? "Unnamed" };
+        nameLabel.style.fontSize     = 16;
+        nameLabel.style.color        = new StyleColor(new Color(0.9f, 0.88f, 0.78f));
+        nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+        nameLabel.style.marginBottom = 4;
+        info.Add(nameLabel);
+
+        // Row 2: origin badge + species
+        var row2 = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 3 } };
+        var origin = (TreeOrigin)meta.treeOrigin;
+        var (badgeText, badgeCol) = origin switch
+        {
+            TreeOrigin.AirLayer => ("✦ Air Layer", new Color(0.3f, 0.85f, 0.65f)),
+            TreeOrigin.Cutting  => ("✂ Cutting",   new Color(0.85f, 0.75f, 0.3f)),
+            _                   => ("● Seedling",  new Color(0.5f,  0.85f, 0.4f)),
+        };
+        var badge = new UnityEngine.UIElements.Label { text = badgeText };
+        badge.style.fontSize         = 10;
+        badge.style.color            = new StyleColor(badgeCol);
+        badge.style.backgroundColor  = new StyleColor(new Color(badgeCol.r * 0.15f, badgeCol.g * 0.15f, badgeCol.b * 0.15f, 0.8f));
+        badge.style.paddingLeft = badge.style.paddingRight = 5;
+        badge.style.paddingTop  = badge.style.paddingBottom = 2;
+        badge.style.borderTopLeftRadius = badge.style.borderTopRightRadius = 3;
+        badge.style.borderBottomLeftRadius = badge.style.borderBottomRightRadius = 3;
+        badge.style.marginRight = 7;
+        row2.Add(badge);
+
+        var specLabel = new UnityEngine.UIElements.Label { text = meta.speciesName ?? "" };
+        specLabel.style.fontSize = 12;
+        specLabel.style.color    = new StyleColor(new Color(0.65f, 0.78f, 0.65f));
+        row2.Add(specLabel);
+        info.Add(row2);
+
+        // Row 3: date + tree age
+        string monthName = meta.month switch
+        {
+            3 => "Mar", 4 => "Apr", 5 => "May", 6 => "Jun",
+            7 => "Jul", 8 => "Aug", 9 => "Sep", 10 => "Oct",
+            11 => "Nov", 12 => "Dec", 1 => "Jan", 2 => "Feb", _ => "???"
+        };
+        string ageTxt = meta.treeAge <= 0 ? "seedling" : meta.treeAge == 1 ? "1 yr" : $"{meta.treeAge} yrs";
+        var row3 = new UnityEngine.UIElements.Label { text = $"{monthName} {meta.year}  ·  {ageTxt}" };
+        row3.style.fontSize = 11;
+        row3.style.color    = new StyleColor(new Color(0.45f, 0.55f, 0.45f));
+        info.Add(row3);
+
+        // Row 4: health bar
+        var row4 = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginTop = 4 } };
+        var healthLbl = new UnityEngine.UIElements.Label { text = "Health " };
+        healthLbl.style.fontSize = 10;
+        healthLbl.style.color    = new StyleColor(new Color(0.45f, 0.55f, 0.45f));
+        row4.Add(healthLbl);
+        var healthBg = new VisualElement();
+        healthBg.style.width  = 80; healthBg.style.height = 5;
+        healthBg.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.1f));
+        healthBg.style.borderTopLeftRadius = healthBg.style.borderTopRightRadius =
+            healthBg.style.borderBottomLeftRadius = healthBg.style.borderBottomRightRadius = 2;
+        float h = Mathf.Clamp01(meta.avgHealth);
+        var healthFill = new VisualElement();
+        healthFill.style.height = new StyleLength(new Length(100f, LengthUnit.Percent));
+        healthFill.style.width  = new StyleLength(new Length(h * 100f, LengthUnit.Percent));
+        Color hCol = h > 0.6f ? new Color(0.25f, 0.75f, 0.25f)
+                   : h > 0.3f ? new Color(0.85f, 0.65f, 0.1f)
+                               : new Color(0.75f, 0.1f,  0.1f);
+        healthFill.style.backgroundColor = new StyleColor(hCol);
+        healthFill.style.borderTopLeftRadius = healthFill.style.borderTopRightRadius =
+            healthFill.style.borderBottomLeftRadius = healthFill.style.borderBottomRightRadius = 2;
+        healthBg.Add(healthFill);
+        row4.Add(healthBg);
+        var healthPctLbl = new UnityEngine.UIElements.Label { text = $"  {h * 100f:F0}%" };
+        healthPctLbl.style.fontSize = 10;
+        healthPctLbl.style.color    = new StyleColor(hCol);
+        row4.Add(healthPctLbl);
+        info.Add(row4);
+
+        card.Add(info);
+
+        // Right button column
+        var btns = new VisualElement();
+        btns.style.flexDirection = FlexDirection.Column;
+        btns.style.alignItems    = Align.FlexEnd;
+
+        var slotId = meta.slotId;
+
+        var loadBtn = new Button { text = "LOAD" };
+        StyleButton(loadBtn, new Color(0.15f, 0.35f, 0.55f), new Color(0.7f, 0.85f, 1f));
+        loadBtn.style.marginBottom = 5;
+        loadBtn.RegisterCallback<ClickEvent>(_ => OnLoadMenuCardLoad(slotId));
+        btns.Add(loadBtn);
+
+        var delBtn = new Button { text = "DELETE" };
+        StyleButton(delBtn, new Color(0.35f, 0.1f, 0.1f), new Color(0.9f, 0.55f, 0.55f));
+        delBtn.style.fontSize = 11;
+        delBtn.RegisterCallback<ClickEvent>(_ => OnLoadMenuCardDelete(slotId, delBtn, card));
+        btns.Add(delBtn);
+
+        card.Add(btns);
+        return card;
+    }
+
+    static void StyleButton(Button btn, Color bg, Color fg)
+    {
+        btn.style.backgroundColor = new StyleColor(bg);
+        btn.style.color           = new StyleColor(fg);
+        btn.style.borderTopWidth = btn.style.borderBottomWidth =
+        btn.style.borderLeftWidth = btn.style.borderRightWidth = 0;
+        btn.style.borderTopLeftRadius = btn.style.borderTopRightRadius =
+        btn.style.borderBottomLeftRadius = btn.style.borderBottomRightRadius = 5;
+        btn.style.paddingLeft = btn.style.paddingRight = 10;
+        btn.style.paddingTop  = btn.style.paddingBottom = 5;
+    }
+
+    // ── Screenshot thumbnail ─────────────────────────────────────────────────
+
+    static string ThumbPath(string slotId) =>
+        System.IO.Path.Combine(SaveManager.SavesRoot, slotId, "thumb.png");
+
+    IEnumerator TakeScreenshotForSlot(string slotId)
+    {
+        if (string.IsNullOrEmpty(slotId)) yield break;
+        // Hide UI for a clean screenshot, wait for the frame to render, capture.
+        var uiRoot = buttonDocument?.rootVisualElement;
+        if (uiRoot != null) uiRoot.style.display = DisplayStyle.None;
+        yield return new WaitForEndOfFrame();
+        var tex = ScreenCapture.CaptureScreenshotAsTexture();
+        if (uiRoot != null) uiRoot.style.display = DisplayStyle.Flex;
+
+        var thumb = ScaleTexture(tex, 256, 144);
+        Destroy(tex);
+
+        byte[] bytes = thumb.EncodeToPNG();
+        Destroy(thumb);
+
+        try { System.IO.File.WriteAllBytes(ThumbPath(slotId), bytes); }
+        catch (System.Exception e) { Debug.LogWarning($"[Screenshot] Failed to write thumb: {e.Message}"); }
+    }
+
+    static Texture2D ScaleTexture(Texture2D src, int w, int h)
+    {
+        var rt   = RenderTexture.GetTemporary(w, h, 0);
+        Graphics.Blit(src, rt);
+        var prev = RenderTexture.active;
+        RenderTexture.active = rt;
+        var result = new Texture2D(w, h, TextureFormat.RGB24, false);
+        result.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+        result.Apply();
+        RenderTexture.active = prev;
+        RenderTexture.ReleaseTemporary(rt);
+        return result;
+    }
+
+    void OnLoadMenuCardLoad(string slotId)
+    {
+        var leafMgr = skeleton?.GetComponent<LeafManager>();
+        bool ok = SaveManager.LoadSlot(slotId, skeleton, leafMgr);
+        if (ok)
+        {
+            skeleton?.GetComponent<TreeMeshBuilder>()?.SetDeadTint(false);
+            if (skeleton != null) { skeleton.treeInDanger = false; skeleton.consecutiveCriticalSeasons = 0; }
+            Time.timeScale = 1f;
+            GameManager.Instance.UpdateGameState(GameManager.Instance.StateForMonth(GameManager.month));
+        }
+    }
+
+    void OnLoadMenuCardDelete(string slotId, Button delBtn, VisualElement card)
+    {
+        if (pendingDeleteSlotId == slotId)
+        {
+            // Second click — confirmed.
+            SaveManager.DeleteSlot(slotId);
+            loadMenuCardContainer?.Remove(card);
+            pendingDeleteSlotId = null;
+            // If no saves left, go straight to new game.
+            if (!SaveManager.HasAnySave())
+                OnLoadMenuNewGame();
+        }
+        else
+        {
+            // First click — arm delete.
+            pendingDeleteSlotId = slotId;
+            delBtn.text = "SURE?";
+            delBtn.style.backgroundColor = new StyleColor(new Color(0.7f, 0.15f, 0.15f));
+        }
+    }
+
+    // ── Save Name Prompt ──────────────────────────────────────────────────────
+
+    void ShowSaveNamePrompt()
+    {
+        if (saveNamePromptOverlay == null) return;
+        string defaultName = (skeleton?.SpeciesName ?? "Bonsai") + " " + GameManager.year;
+        if (saveNameField != null) saveNameField.value = defaultName;
+        saveNamePromptOverlay.style.display = DisplayStyle.Flex;
+    }
+
+    void OnSaveNameConfirm()
+    {
+        if (skeleton == null || skeleton.root == null) return;
+        string name = saveNameField?.value ?? "";
+        if (string.IsNullOrWhiteSpace(name))
+            name = (skeleton.SpeciesName ?? "Bonsai") + " " + GameManager.year;
+        name = name.Trim();
+
+        string slotId = SaveManager.NewSlotId();
+        var leafMgr   = skeleton.GetComponent<LeafManager>();
+        var meta = new SaveMeta
+        {
+            slotId            = slotId,
+            saveName          = name,
+            treeOrigin        = (int)skeleton.treeOrigin,
+            speciesName       = skeleton.SpeciesName,
+            year              = GameManager.year,
+            month             = GameManager.month,
+            saveTimestamp     = System.DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"),
+            nodeCount         = skeleton.allNodes?.Count ?? 0,
+            seasonsSinceRepot = skeleton.GetComponent<PotSoil>()?.seasonsSinceRepot ?? 0,
+            treeAge           = GameManager.year - skeleton.SaveStartYear,
+            avgHealth         = SaveManager.CalcAvgHealth(skeleton),
+        };
+        SaveManager.SaveSlot(slotId, skeleton, leafMgr, meta);
+        StartCoroutine(TakeScreenshotForSlot(slotId));
+
+        if (saveNamePromptOverlay != null) saveNamePromptOverlay.style.display = DisplayStyle.None;
+        if (saveStatusLabel != null)
+        {
+            saveStatusLabel.text = $"Saved as '{name}'";
+            saveStatusClearTime  = Time.realtimeSinceStartup + 4f;
+        }
+
+        // Show load-original button if a backup now exists.
+        if (loadOriginalButton != null)
+            loadOriginalButton.style.display = SaveManager.OriginalExists()
+                ? DisplayStyle.Flex : DisplayStyle.None;
+    }
+
+    void OnSaveNameCancel()
+    {
+        if (saveNamePromptOverlay != null) saveNamePromptOverlay.style.display = DisplayStyle.None;
+    }
+
+    void OnLoadOriginalButtonClick()
+    {
+        var leafMgr = skeleton != null ? skeleton.GetComponent<LeafManager>() : null;
+        bool ok = SaveManager.LoadOriginal(skeleton, leafMgr);
+        if (saveStatusLabel != null)
+        {
+            saveStatusLabel.text = ok ? $"Original tree restored  ({System.DateTime.Now:HH:mm:ss})" : "No original backup found.";
+            saveStatusClearTime  = Time.realtimeSinceStartup + 4f;
+        }
+        if (ok)
+        {
+            if (loadOriginalButton != null)
+                loadOriginalButton.style.display = DisplayStyle.None;
+            TogglePauseMenu();
+            Time.timeScale = 1f;
+            GameManager.Instance.UpdateGameState(GameManager.Instance.StateForMonth(GameManager.month));
+        }
     }
 
     public void OnTreeButtonClick(ClickEvent evt){
@@ -734,8 +1231,7 @@ public class ButtonClicker : MonoBehaviour
             skeleton?.GetComponent<TreeMeshBuilder>()?.SetDeadTint(false);
             skeleton.treeInDanger = false;
             skeleton.consecutiveCriticalSeasons = 0;
-            if (GameManager.Instance.state == GameState.TreeDead)
-                GameManager.Instance.UpdateGameState(GameState.Idle);
+            GameManager.Instance.UpdateGameState(GameManager.Instance.StateForMonth(GameManager.month));
         }
     }
 
@@ -748,6 +1244,8 @@ public class ButtonClicker : MonoBehaviour
             skeleton.treeInDanger = false;
             skeleton.consecutiveCriticalSeasons = 0;
         }
+        // Clear active slot so the new tree won't overwrite the dead tree's save.
+        SaveManager.ActiveSlotId = null;
         GameManager.Instance.UpdateGameState(GameState.SpeciesSelect);
     }
 
@@ -833,7 +1331,29 @@ public class ButtonClicker : MonoBehaviour
 
     public void OnAirLayerButtonClick(ClickEvent evt)
     {
+        // If any layer is ready to sever, open the sever prompt first.
+        if (skeleton != null && skeleton.HasSeverableLayer)
+        {
+            preSeverState = GameManager.Instance.state;
+            GameManager.Instance.UpdateGameState(GameState.AirLayerSever);
+            return;
+        }
         ToolManager.Instance.SelectTool(ToolType.AirLayer);
+    }
+
+    void OnSeverConfirmClick()
+    {
+        var layer = skeleton?.GetFirstSeverableLayer();
+        if (layer == null) { GameManager.Instance.UpdateGameState(preSeverState); return; }
+        // SeverAirLayer saves original, loads new tree, transitions to Idle.
+        skeleton.SeverAirLayer(layer);
+    }
+
+    void OnSeverCancelClick()
+    {
+        // Dismiss overlay, return to previous state (Idle, BranchGrow, etc.)
+        GameManager.Instance.UpdateGameState(
+            preSeverState == GameState.AirLayerSever ? GameState.Idle : preSeverState);
     }
 
     public void OnPlaceRockButtonClick(ClickEvent evt)
@@ -1062,7 +1582,8 @@ public class ButtonClicker : MonoBehaviour
         if (selectedSpecies == null) return;
         if (skeleton != null)
         {
-            skeleton.species = selectedSpecies;
+            skeleton.species    = selectedSpecies;
+            skeleton.treeOrigin = TreeOrigin.Seedling;
             skeleton.ApplySpecies();
         }
         GameManager.Instance.UpdateGameState(GameState.TipPause);

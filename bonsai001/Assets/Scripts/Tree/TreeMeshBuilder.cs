@@ -464,14 +464,20 @@ public class TreeMeshBuilder : MonoBehaviour
             // Root children attach at the trunk BASE (worldPosition), not the tip.
             // Pass -1 so they generate a fresh base ring at their own position rather
             // than inheriting the trunk tip ring, which would stretch triangles wildly.
-            int childBase = (!node.isRoot && child.isRoot) ? -1 : tipRingStart;
+            // Cut-site children also get a fresh base ring — the cap stays as a flat disc
+            // and the shoot mesh starts small, completely detached, until the cap is absorbed.
+            int childBase = (!node.isRoot && child.isRoot) ? -1
+                          : (node.isTrimCutPoint && node.hasWound) ? -1
+                          : tipRingStart;
             ProcessNode(child, childBase, tipHeight, frameRight, axisUp);
         }
 
-        // Cap the open tip ring on terminal (leaf) nodes so no hollow end is visible.
-        // Fan from a center point outward: winding capCenter->r1->r0 produces a normal
-        // pointing in the +axisUp direction (outward from the cut face).
-        if (!hasRenderedChild)
+        // Cap the open tip ring:
+        //   • Always for terminal nodes (close the hollow end).
+        //   • Also for cut-site nodes whose wound is still open: children grow laterally
+        //     off the stump face so the flat disc must stay visible behind them.
+        bool needsCap = !hasRenderedChild || (node.isTrimCutPoint && node.hasWound);
+        if (needsCap)
         {
             int capCenter   = vertices.Count;
             int capTriStart = triangles.Count;

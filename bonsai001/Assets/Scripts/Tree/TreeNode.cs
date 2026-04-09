@@ -74,6 +74,12 @@ public class TreeNode
     {
         get
         {
+            // Cut-site cap: while the wound is open, keep the tip ring at the full
+            // cut radius so the branch end looks like a flat sawn-off stump rather
+            // than tapering toward the new small-radius regrowth shoots.
+            if (isTrimCutPoint && hasWound)
+                return radius;
+
             float terminalTip = radius * 0.55f;
             if (children.Count == 0) return terminalTip;
 

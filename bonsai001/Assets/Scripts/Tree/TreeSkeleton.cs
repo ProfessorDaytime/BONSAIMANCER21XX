@@ -100,6 +100,9 @@ public class TreeSkeleton : MonoBehaviour
     /// <summary>Display name of the active species (or 'Unknown' if none assigned).</summary>
     public string SpeciesName => species != null ? species.speciesName : "Unknown";
 
+    /// <summary>How this tree came into existence. Preserved across saves.</summary>
+    public TreeOrigin treeOrigin = TreeOrigin.Seedling;
+
     // Inspector
 
     [Header("Growth Speed")]
@@ -502,6 +505,9 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Number of growing seasons before roots develop under the wrap.")]
     [SerializeField] int airLayerSeasonsToRoot = 2;
 
+    [Tooltip("Seasons of air-layer root growth (after unwrapping) before the Sever option appears.")]
+    [SerializeField] int airLayerRootSeasonsToSever = 2;
+
     [Tooltip("Number of new roots spawned when the wrap is removed.")]
     [SerializeField] [Range(2, 21)] int airLayerRootCount = 17;
 
@@ -684,6 +690,7 @@ public class TreeSkeleton : MonoBehaviour
         startMonth             = data.startMonth;
         lastGrownYear          = data.lastGrownYear;
         isIshitsukiMode        = data.isIshitsukiMode;
+        treeOrigin             = (TreeOrigin)data.treeOrigin;
         plantingNormal         = new Vector3(data.planNX, data.planNY, data.planNZ);
         plantingSurfacePoint   = new Vector3(data.planPX, data.planPY, data.planPZ);
         nextId                 = 0;
@@ -841,10 +848,13 @@ public class TreeSkeleton : MonoBehaviour
     /// <summary>Data for one active air layer on the trunk.</summary>
     public class AirLayerData
     {
-        public TreeNode   node;           // trunk node the layer is applied to
-        public int        seasonsElapsed; // growing seasons since placement
-        public bool       rootsSpawned;   // true once roots are ready to emerge
-        public GameObject wrapObject;     // the coir wrap visual (may be null)
+        public TreeNode   node;              // trunk node the layer is applied to
+        public int        seasonsElapsed;    // growing seasons since placement
+        public bool       rootsSpawned;      // true once roots are ready to emerge
+        public GameObject wrapObject;        // the coir wrap visual (may be null)
+        public bool       isUnwrapped;       // true after player clicks to unwrap
+        public int        rootGrowSeasons;   // seasons of root growth since unwrap
+        public bool       isSeverable;       // true when rootGrowSeasons >= threshold
     }
 
     float debugLogTimer  = 0f;
@@ -1379,6 +1389,7 @@ public class TreeSkeleton : MonoBehaviour
             if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
                 node.isTrimCutPoint = false;
         }
+        CheckCutCapAbsorption();
 
         // Refresh cached tree height and compute spread radius for this season
         cachedTreeHeight = CalculateTreeHeight();
@@ -2189,6 +2200,7 @@ public class TreeSkeleton : MonoBehaviour
             if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
                 node.isTrimCutPoint = false;
         }
+        CheckCutCapAbsorption();
 
         foreach (var node in allNodes)
         {
@@ -2410,10 +2422,14 @@ public class TreeSkeleton : MonoBehaviour
         }
 
         if (layer.wrapObject != null)
+        {
             Destroy(layer.wrapObject);
+            layer.wrapObject = null;
+        }
 
-        airLayers.Remove(layer);
-
+        // Keep layer in airLayers so UpdateAirLayers() can track post-unwrap
+        // root growth seasons and set isSeverable. SeverAirLayer removes it.
+        layer.isUnwrapped = true;
         RecalculateRadii(root);
         meshBuilder.SetDirty();
         Debug.Log($"[AirLayer] UnwrapAirLayer done — spawned {airLayerRootCount} air-layer roots");
@@ -2446,6 +2462,21 @@ public class TreeSkeleton : MonoBehaviour
     {
         foreach (var layer in airLayers)
         {
+            // Post-unwrap: track root growth seasons toward sever readiness.
+            if (layer.isUnwrapped)
+            {
+                if (!layer.isSeverable)
+                {
+                    layer.rootGrowSeasons++;
+                    if (layer.rootGrowSeasons >= airLayerRootSeasonsToSever)
+                    {
+                        layer.isSeverable = true;
+                        Debug.Log($"[AirLayer] Layer node={layer.node.id} is now severable after {layer.rootGrowSeasons} seasons of root growth.");
+                    }
+                }
+                continue;
+            }
+
             if (layer.rootsSpawned) continue;
 
             layer.seasonsElapsed++;
@@ -2465,6 +2496,123 @@ public class TreeSkeleton : MonoBehaviour
                 Debug.Log($"[AirLayer] Roots ready — node={layer.node.id} after {layer.seasonsElapsed} seasons. Click the gold wrap to unwrap.");
             }
         }
+    }
+
+    /// <summary>True if any unwrapped air layer has grown enough roots to sever.</summary>
+    public bool HasSeverableLayer => airLayers.Exists(l => l.isSeverable);
+
+    /// <summary>Returns the first severable layer, or null.</summary>
+    public AirLayerData GetFirstSeverableLayer() => airLayers.Find(l => l.isSeverable);
+
+    /// <summary>
+    /// Severs the air-layered branch from the trunk, saving the original tree as a backup,
+    /// then loads the severed branch + its air-layer roots as the new current tree.
+    /// </summary>
+    public void SeverAirLayer(AirLayerData layer)
+    {
+        if (layer == null || !layer.isSeverable)
+        {
+            Debug.LogWarning("[AirLayer] SeverAirLayer called with null or non-severable layer.");
+            return;
+        }
+
+        var leafMgr = GetComponent<LeafManager>();
+
+        // ── 1. Wound the cut site on the original tree ────────────────────
+        var cutSite = layer.node.parent;
+        if (cutSite != null)
+        {
+            cutSite.hasWound        = true;
+            cutSite.woundRadius     = layer.node.radius;
+            cutSite.woundFaceNormal = layer.node.growDirection;
+            cutSite.woundAge        = 0f;
+            cutSite.pasteApplied    = false;
+        }
+
+        // ── 2. Detach the severed subtree from the original ───────────────
+        layer.node.parent?.children.Remove(layer.node);
+        var removed = new List<TreeNode>();
+        RemoveSubtree(layer.node, removed);
+        RecalculateRadii(root);
+        meshBuilder.SetDirty();
+        Debug.Log($"[AirLayer] Severed — removed {removed.Count} nodes from original tree, wound applied at node={cutSite?.id}");
+
+        // ── 3. Save modified original (with wound, without severed branch) ─
+        SaveManager.SaveOriginal(this, leafMgr);
+
+        // ── 4. Build and load the new tree from the severed subtree ──────
+        var newData = BuildSeveredTreeSaveData(layer, removed);
+        airLayers.Remove(layer);
+        LoadFromSaveData(newData, leafMgr);
+        treeOrigin = TreeOrigin.AirLayer;
+        SaveManager.ActiveSlotId = null;   // new tree — no slot yet, prompt on first save
+
+        GameManager.Instance.UpdateGameState(GameState.Idle);
+        Debug.Log("[AirLayer] New tree loaded from severed air layer.");
+    }
+
+    SaveData BuildSeveredTreeSaveData(AirLayerData layer, List<TreeNode> subtreeNodes)
+    {
+        // Compute new depths with the air layer node as root (depth 0).
+        var depthMap = new Dictionary<int, int>();
+        AssignSubtreeDepths(layer.node, 0, depthMap);
+
+        var potSoil = GetComponent<PotSoil>();
+
+        var newData = new SaveData
+        {
+            year      = GameManager.year,
+            month     = GameManager.month,
+            day       = GameManager.day,
+            hour      = GameManager.hour,
+            waterings = 0,
+
+            treeEnergy             = treeEnergy,
+            soilMoisture           = 0.5f,
+            droughtDaysAccumulated = 0f,
+            nutrientReserve        = 1f,
+
+            // Keep the same planting surface — air layer roots have already grown to it.
+            planNX = plantingNormal.x,  planNY = plantingNormal.y,  planNZ = plantingNormal.z,
+            planPX = plantingSurfacePoint.x, planPY = plantingSurfacePoint.y, planPZ = plantingSurfacePoint.z,
+
+            startYear       = GameManager.year,
+            startMonth      = GameManager.month,
+            lastGrownYear   = lastGrownYear,
+            isIshitsukiMode = false,
+
+            // Fresh classic soil for the new pot.
+            soilAkadama   = potSoil?.akadama   ?? 0.5f,
+            soilPumice    = potSoil?.pumice    ?? 0.3f,
+            soilLavaRock  = potSoil?.lavaRock  ?? 0.2f,
+            soilPreset    = (int)PotSoil.SoilPreset.ClassicBonsai,
+            soilDegradation = 0f,
+            soilSaturation  = 0.5f,
+            soilSeasonsSinceRepot = 0,
+        };
+
+        foreach (var node in subtreeNodes)
+        {
+            var sn = SaveManager.SerializeNode(node);
+            // New root has no parent.
+            if (node == layer.node) sn.parentId = -1;
+            // Recalculate depths from the new root.
+            if (depthMap.TryGetValue(node.id, out int d)) sn.depth = d;
+            // Air-layer roots become normal roots now that they're in their own pot.
+            if (node.isAirLayerRoot) { sn.isAirLayerRoot = false; }
+            // Clear training-wire flag — not applicable in new tree.
+            sn.isTrainingWire = false;
+            newData.nodes.Add(sn);
+        }
+
+        return newData;
+    }
+
+    void AssignSubtreeDepths(TreeNode node, int depth, Dictionary<int, int> map)
+    {
+        map[node.id] = depth;
+        foreach (var child in node.children)
+            AssignSubtreeDepths(child, depth + 1, map);
     }
 
     /// <summary>
@@ -2600,6 +2748,26 @@ public class TreeSkeleton : MonoBehaviour
                 lat.isRoot         = true;
                 lat.isAirLayerRoot = node.isAirLayerRoot;
                 Debug.Log($"[GRoot] SpawnChildren lateral | node={node.id} depth={node.depth} distRatio={distRatio:F2} -> lat id={lat.id}");
+            }
+            return;
+        }
+
+        // Cut-site regrowth: shoots emerge from the side of the wound, never straight
+        // through the cap face. Always at least one shoot; often two (epicormic response).
+        if (node.isTrimCutPoint)
+        {
+            var shoot = CreateNode(node.tipPosition, CutSiteDirection(node), nodeRadius, segLength, node);
+            shoot.isRoot = false;
+            if (branchSubdivisions > 1) shoot.subdivisionsLeft = branchSubdivisions - 1;
+
+            // Second shoot from the opposite side of the cap — common after hard cuts.
+            if (Random.value < 0.65f)
+            {
+                float lat2Len = segLength * 0.85f;
+                var shoot2 = CreateNode(node.tipPosition, CutSiteDirection(node), nodeRadius, lat2Len, node);
+                shoot2.isRoot = false;
+                if (branchSubdivisions > 1) shoot2.subdivisionsLeft = branchSubdivisions - 1;
+                GameManager.branches++;
             }
             return;
         }
@@ -3032,6 +3200,42 @@ public class TreeSkeleton : MonoBehaviour
 
     // Keep old name as alias so any external callers don't break.
     Vector3 LateralBranchDirection(TreeNode node) => LateralDirection(node);
+
+    /// <summary>
+    /// Once a wound has healed and the surrounding wood has thickened enough to
+    /// visually absorb the cut cap, clear isTrimCutPoint so the tip reverts to
+    /// normal taper behaviour (no more flat disc or forced lateral regrowth).
+    /// </summary>
+    void CheckCutCapAbsorption()
+    {
+        foreach (var node in allNodes)
+        {
+            if (!node.isTrimCutPoint || node.hasWound) continue;
+            if (node.parent == null) continue;
+            // Parent's callousing wood has grown large enough to swallow the cap.
+            if (node.parent.radius >= node.radius * 0.92f)
+            {
+                node.isTrimCutPoint = false;
+                Debug.Log($"[Cap] Node {node.id} cut cap absorbed (parent.r={node.parent.radius:F3} ≥ {node.radius * 0.92f:F3})");
+                meshBuilder.SetDirty();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Direction for shoots sprouting from a cut stump.
+    /// Always a strong lateral (40–70°) so growth emerges from the side of the
+    /// cap rather than punching straight through the cut face.
+    /// </summary>
+    Vector3 CutSiteDirection(TreeNode node)
+    {
+        Vector3 perp = Vector3.Cross(node.growDirection, Random.insideUnitSphere).normalized;
+        if (perp.sqrMagnitude < 0.001f)
+            perp = Vector3.Cross(node.growDirection, Vector3.right).normalized;
+        float   angle = Random.Range(40f, 70f);
+        Vector3 dir   = Vector3.Slerp(node.growDirection, perp, angle / 90f);
+        return Vector3.Slerp(dir, SunDirection(), phototropismWeight * 0.5f);
+    }
 
     /// <summary>
     /// Returns two symmetric fork directions for Opposite budding.

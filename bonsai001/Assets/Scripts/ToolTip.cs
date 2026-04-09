@@ -33,6 +33,7 @@ public class ToolTip : MonoBehaviour
     public void StateIdle()
     {
         if (GameManager.Instance.state == GameState.SpeciesSelect) return;
+        if (GameManager.Instance.state == GameState.LoadMenu) return;
         Debug.Log("Clicked the X");
         GameManager.Instance.UpdateGameState(GameState.Idle);
     }
