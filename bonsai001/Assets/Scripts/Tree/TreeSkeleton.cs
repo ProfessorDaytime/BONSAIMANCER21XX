@@ -1292,7 +1292,7 @@ public class TreeSkeleton : MonoBehaviour
             meshBuilder.SetDirty();
 
             // Auto-save at the end of each growing season (after bud set).
-            SaveManager.Save(this, GetComponent<LeafManager>());
+            SaveManager.AutoSave(this, GetComponent<LeafManager>());
         }
 
         // TreeOrient lowers the tree so you orient at working height, not suspended in the air.

@@ -360,6 +360,42 @@ public static class SaveManager
         Debug.Log($"[Save] Saved slot={slotId} name='{meta.saveName}' nodes={data.nodes.Count}");
     }
 
+    // ── Autosave ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Saves to the active slot. If no slot exists yet, creates one automatically
+    /// with a default name so the game is never silently lost.
+    /// </summary>
+    public static void AutoSave(TreeSkeleton skeleton, LeafManager leafManager = null)
+    {
+        if (skeleton == null || skeleton.root == null) return;
+
+        if (string.IsNullOrEmpty(ActiveSlotId))
+        {
+            string slotId = NewSlotId();
+            string name   = (skeleton.SpeciesName ?? "Bonsai") + " " + GameManager.year + " (autosave)";
+            var meta = new SaveMeta
+            {
+                slotId            = slotId,
+                saveName          = name,
+                treeOrigin        = (int)skeleton.treeOrigin,
+                speciesName       = skeleton.SpeciesName,
+                year              = GameManager.year,
+                month             = GameManager.month,
+                saveTimestamp     = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"),
+                nodeCount         = skeleton.allNodes?.Count ?? 0,
+                seasonsSinceRepot = skeleton.GetComponent<PotSoil>()?.seasonsSinceRepot ?? 0,
+                treeAge           = GameManager.year - skeleton.SaveStartYear,
+                avgHealth         = CalcAvgHealth(skeleton),
+            };
+            SaveSlot(slotId, skeleton, leafManager, meta);
+            Debug.Log($"[Save] AutoSave created new slot '{name}' id={slotId}");
+            return;
+        }
+
+        Save(skeleton, leafManager);
+    }
+
     // ── Quick-save (to active slot) ───────────────────────────────────────────
 
     /// <summary>
