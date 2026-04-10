@@ -191,14 +191,21 @@ public class TreeSkeleton : MonoBehaviour
     [SerializeField] int trunkSubdivisions = 3;
 
     [Tooltip("Number of individually wire-able sub-segments per branch chord. " +
-             "Higher = smoother curves when wired. 1 = no subdivision (original behavior). " +
+             "Higher = more control points for shaping (S-curves etc). " +
+             "Does NOT change total branch length per season — just divides the same chord into more pieces. " +
              "Sub-segments share the parent branch's depth so they don't slow the depth cap.")]
-    [SerializeField] [Range(1, 8)] int branchSubdivisions = 3;
+    [SerializeField] [Range(1, 12)] int branchSubdivisions = 6;
 
     [Tooltip("Minimum length for each sub-segment after subdivision. " +
              "Prevents tip segments from becoming too small to wire. " +
              "Actual segment = max(chordLength/N, minSegmentLength).")]
-    [SerializeField] float minSegmentLength = 0.15f;
+    [SerializeField] float minSegmentLength = 0.08f;
+
+    [Tooltip("Hard cap on individual branch segment length. " +
+             "Long chords are split into however many segments are needed to stay under this length. " +
+             "Does not affect total branch length — only adds more wiring/shaping points. " +
+             "Set to 0 to disable (use branchSubdivisions count only).")]
+    [SerializeField] float maxSegmentLength = 0.35f;
 
     [Header("Bud System")]
     [Tooltip("Prefab spawned at terminal tips each autumn as a visible dormant bud. Assign in Inspector.")]
@@ -1195,28 +1202,42 @@ public class TreeSkeleton : MonoBehaviour
                         : node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
                 }
 
-                if (belowCap)
-                {
-                    node.length    = node.targetLength;
-                    node.isGrowing = false;
-                    // Finalize radius and lock minRadius so RecalculateRadii can't collapse
-                    // this node to 0 when its new children (starting at radius=0) are summed.
-                    float finalR   = node.isRoot ? rootTerminalRadius : terminalRadius;
-                    node.radius    = finalR;
-                    node.minRadius = finalR;
-                    // Training-wire cables are extended by PreGrowRootsToSoil each spring —
-                    // skip SpawnChildren here so no random children sprout between seasons.
-                    if (!(isIshitsukiMode && node.isTrainingWire))
-                        SpawnChildren(node);
-                    structureChanged = true;
-                }
+                // Always stop at targetLength — never grow past it.
+                // Previously belowCap=false nodes grew indefinitely, creating
+                // visually long "zombie" segments at the season depth boundary.
+                node.length    = node.targetLength;
+                node.isGrowing = false;
+                // Finalize radius and lock minRadius so RecalculateRadii can't collapse
+                // this node to 0 when its new children (starting at radius=0) are summed.
+                float finalR   = node.isRoot ? rootTerminalRadius : terminalRadius;
+                node.radius    = finalR;
+                node.minRadius = finalR;
+
+                // Sub-chain continuation (subdivisionsLeft > 0) uses the same depth as
+                // the parent, so it never consumes the season depth cap. Always allow it.
+                // Real depth+1 branching (subdivisionsLeft == 0) requires belowCap.
+                //
+                // At the depth frontier (belowCap=false, subdivisionsLeft=0): keep the tip
+                // growing all season by forcing one more same-depth extension segment.
+                // Each extension is maxSegmentLength long — no single segment gets long.
+                // The chain stops naturally when September arrives and isGrowing is cleared.
+                if (!belowCap && !node.isRoot && node.subdivisionsLeft == 0)
+                    node.subdivisionsLeft = 1;  // triggers sub-chain path → same-depth extension
+
+                bool canSpawn = belowCap || (!node.isRoot && node.subdivisionsLeft > 0);
+                if (canSpawn && !(isIshitsukiMode && node.isTrainingWire))
+                    SpawnChildren(node);
+                structureChanged = true;
             }
             else
             {
                 // Ramp radius proportional to growth progress so parent thickening
                 // spreads across the season rather than spiking at spawn time.
+                // Floor at 10% of target so new segments never pop to zero-radius
+                // on their first frame (which causes the visible "shrink" animation).
                 float targetR = node.isRoot ? rootTerminalRadius : terminalRadius;
-                node.radius = targetR * Mathf.Clamp01(node.length / node.targetLength);
+                float rampedR = targetR * Mathf.Clamp01(node.length / node.targetLength);
+                node.radius = Mathf.Max(rampedR, targetR * 0.1f);
             }
         }
 
@@ -1457,6 +1478,10 @@ public class TreeSkeleton : MonoBehaviour
             foreach (var node in allNodes)
             {
                 if (node.isTrimmed || node.isRoot || !node.isTerminal) continue;
+                // Skip mid-chain sub-segments — their length was fixed when the chain started.
+                // Elongating them would cause all remaining sub-segments to inherit the stretched
+                // targetLength, producing one long segment per branch instead of N short ones.
+                if (node.subdivisionsLeft > 0) continue;
                 float delta = node.targetLength * baseElongation * Mathf.Pow(elongationDepthDecay, node.depth);
                 node.targetLength += delta;
                 node.length       += delta;  // advance length directly — avoids re-triggering SpawnChildren
@@ -1569,7 +1594,9 @@ public class TreeSkeleton : MonoBehaviour
 
             // Divide the chord into sub-segments so each is independently wireable.
             // Clamp per-segment (not the chord) so tip segments stay wireable regardless of N.
-            float childLength = (!terminal.isRoot && branchSubdivisions > 1) ? chordLength / branchSubdivisions : chordLength;
+            // Also enforce maxSegmentLength: use whichever subdivision count gives shorter segments.
+            int   subdivs     = !terminal.isRoot ? SubdivsForChord(chordLength) : 1;
+            float childLength = (subdivs > 1) ? chordLength / subdivs : chordLength;
             childLength = Mathf.Max(childLength, terminal.isRoot ? 0.3f : minSegmentLength);
 
             float nodeRadius = terminal.isRoot ? rootTerminalRadius : terminalRadius;
@@ -1581,6 +1608,22 @@ public class TreeSkeleton : MonoBehaviour
                 bool isIshitsuki = isIshitsukiMode;
                 float distRatio  = RootDistRatio(terminal);
                 if (!isIshitsuki && distRatio >= 1.3f) continue;  // beyond hard outer boundary — stop
+
+                // Terminal clamp: if this root tip has already escaped the side or bottom
+                // of the pot box, stop it permanently rather than letting it grow further out.
+                // Top-face escape (surface roots) is left alone — it looks realistic.
+                if (!isIshitsuki && rootAreaTransform != null)
+                {
+                    Vector3 tipW  = transform.TransformPoint(terminal.tipPosition);
+                    Vector3 local = rootAreaTransform.InverseTransformPoint(tipW);
+                    bool outsideSide   = Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.z) > 0.5f;
+                    bool outsideBottom = local.y < -0.5f;
+                    if (outsideSide || outsideBottom)
+                    {
+                        terminal.isTrimmed = true;
+                        continue;
+                    }
+                }
                 // In Ishitsuki mode, training-wire cable growth is handled exclusively by
                 // PreGrowRootsToSoil.  Air layer roots keep growing downward each season.
                 // Training-wire tips that have reached soil spawn one underground continuation.
@@ -1640,13 +1683,13 @@ public class TreeSkeleton : MonoBehaviour
                     var (dirA, dirB) = OppositeForkDirections(terminal);
                     var forkA = CreateNode(terminal.tipPosition, dirA, nodeRadius, childLength, terminal);
                     forkA.isRoot = false;
-                    if (branchSubdivisions > 1) forkA.subdivisionsLeft = branchSubdivisions - 1;
+                    if (subdivs > 1) forkA.subdivisionsLeft = subdivs - 1;
                     currentBranchCount++;
                     if (forkNeeded)
                     {
                         var forkB = CreateNode(terminal.tipPosition, dirB, nodeRadius, childLength, terminal);
                         forkB.isRoot = false;
-                        if (branchSubdivisions > 1) forkB.subdivisionsLeft = branchSubdivisions - 1;
+                        if (subdivs > 1) forkB.subdivisionsLeft = subdivs - 1;
                         currentBranchCount++;
                     }
                     GameManager.branches++;
@@ -1655,8 +1698,8 @@ public class TreeSkeleton : MonoBehaviour
                 {
                     var cont = CreateNode(terminal.tipPosition, ContinuationDirection(terminal), nodeRadius, childLength, terminal);
                     cont.isRoot = false;
-                    if (branchSubdivisions > 1)
-                        cont.subdivisionsLeft = branchSubdivisions - 1;
+                    if (subdivs > 1)
+                        cont.subdivisionsLeft = subdivs - 1;
                     currentBranchCount++;
 
                     if (currentBranchCount < maxBranchNodes && Random.value < springLateralChance * vigorFactor * treeEnergy * terminal.branchVigor)
@@ -1664,8 +1707,8 @@ public class TreeSkeleton : MonoBehaviour
                         float latLength = childLength * 0.85f * Mathf.Max(0.1f, 1f - apicalDominance);
                         var lat = CreateNode(terminal.tipPosition, LateralDirection(terminal), nodeRadius, latLength, terminal);
                         lat.isRoot = false;
-                        if (branchSubdivisions > 1)
-                            lat.subdivisionsLeft = branchSubdivisions - 1;
+                        if (subdivs > 1)
+                            lat.subdivisionsLeft = subdivs - 1;
                         currentBranchCount++;
                         GameManager.branches++;
                     }
@@ -1788,15 +1831,16 @@ public class TreeSkeleton : MonoBehaviour
                            * Mathf.Pow(branchChanceDepthDecay, node.depth);
             if (Random.value < chance)
             {
-                float chordLen = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float chordLen    = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
                 if (node.refinementLevel > 0f)
                     chordLen *= Mathf.Pow(refinementTaper, node.refinementLevel);
-                float segLen   = branchSubdivisions > 1 ? chordLen / branchSubdivisions : chordLen;
+                int   bbSubdivs   = SubdivsForChord(chordLen);
+                float segLen      = bbSubdivs > 1 ? chordLen / bbSubdivs : chordLen;
                 segLen = Mathf.Max(segLen, minSegmentLength) * Mathf.Max(0.1f, 1f - apicalDominance);
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), terminalRadius, segLen, node);
                 lat.isRoot = false;
                 lat.refinementLevel = Mathf.Min(node.refinementLevel + refinementOnBackBud, refinementCap);
-                if (branchSubdivisions > 1) lat.subdivisionsLeft = branchSubdivisions - 1;
+                if (bbSubdivs > 1) lat.subdivisionsLeft = bbSubdivs - 1;
                 currentBranchCount++;
                 backBudCount++;
             }
@@ -1825,14 +1869,15 @@ public class TreeSkeleton : MonoBehaviour
 
                 if (Random.value >= oldWoodBudChance * vigorFactor) continue;
 
-                float chordLen = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float chordLen    = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
                 if (node.refinementLevel > 0f)
                     chordLen *= Mathf.Pow(refinementTaper, node.refinementLevel);
-                float segLen   = branchSubdivisions > 1 ? chordLen / branchSubdivisions : chordLen;
+                int   owSubdivs   = SubdivsForChord(chordLen);
+                float segLen      = owSubdivs > 1 ? chordLen / owSubdivs : chordLen;
                 segLen = Mathf.Max(segLen, minSegmentLength) * Mathf.Max(0.1f, 1f - apicalDominance);
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), terminalRadius, segLen, node);
                 lat.isRoot = false;
-                if (branchSubdivisions > 1) lat.subdivisionsLeft = branchSubdivisions - 1;
+                if (owSubdivs > 1) lat.subdivisionsLeft = owSubdivs - 1;
                 currentBranchCount++;
                 oldWoodCount++;
             }
@@ -2241,7 +2286,10 @@ public class TreeSkeleton : MonoBehaviour
                 anyGrowing     = true;
                 node.length    = node.targetLength;
                 node.isGrowing = false;
-                if (belowCap) SpawnChildren(node);
+                // SimulateYear is instant — don't add depth-cap extensions here or
+                // the while loop would spin forever. Only allow belowCap or mid-chain.
+                bool canSpawn  = belowCap || (!node.isRoot && node.subdivisionsLeft > 0);
+                if (canSpawn) SpawnChildren(node);
             }
         }
 
@@ -2695,8 +2743,13 @@ public class TreeSkeleton : MonoBehaviour
         // Same depth as parent means sub-segments don't consume the season depth cap.
         if (!node.isRoot && node.subdivisionsLeft > 0)
         {
+            // Clamp inherited targetLength to maxSegmentLength so any elongation that
+            // snuck through doesn't cascade down the rest of the chain.
+            float chainSegLen = maxSegmentLength > 0f
+                ? Mathf.Min(node.targetLength, maxSegmentLength)
+                : node.targetLength;
             var sub = new TreeNode(nextId++, node.depth, node.tipPosition,
-                                   ContinuationDirection(node), terminalRadius, node.targetLength, node)
+                                   ContinuationDirection(node), terminalRadius, chainSegLen, node)
             {
                 birthYear        = GameManager.year,
                 subdivisionsLeft = node.subdivisionsLeft - 1,
@@ -2711,10 +2764,12 @@ public class TreeSkeleton : MonoBehaviour
         float decay       = node.isRoot ? rootSegmentLengthDecay : segmentLengthDecay;
         float childLength = baseSegLen * Mathf.Pow(decay, node.depth + 1);
 
-        // Each new branch chord is divided into branchSubdivisions segments of equal length.
-        // Clamp per-segment so tip segments stay at a wireable minimum length regardless of N.
-        float segLength  = (!node.isRoot && branchSubdivisions > 1) ? childLength / branchSubdivisions : childLength;
+        // Each new branch chord is divided into however many segments are needed so
+        // neither the fixed branchSubdivisions count nor maxSegmentLength is exceeded.
+        int   nodeSubdivs = !node.isRoot ? SubdivsForChord(childLength) : 1;
+        float segLength   = (nodeSubdivs > 1) ? childLength / nodeSubdivs : childLength;
         segLength        = Mathf.Max(segLength, node.isRoot ? 0.3f : minSegmentLength);
+
         float nodeRadius = node.isRoot ? rootTerminalRadius : terminalRadius;
 
         // Root soft spread cap: laterals scale to zero at the target radius;
@@ -2729,6 +2784,17 @@ public class TreeSkeleton : MonoBehaviour
             float distRatio   = RootDistRatio(node);
             bool  isIshitsuki = isIshitsukiMode;
             if (!isIshitsuki && distRatio >= 1.3f) return;  // hard outer boundary — no further growth
+
+            // Hard spawn clamp: if the tip is already outside the box (side or bottom),
+            // don't plant new children at all.  Top-face emergence is allowed.
+            if (!isIshitsuki && rootAreaTransform != null)
+            {
+                Vector3 tipW  = transform.TransformPoint(node.tipPosition);
+                Vector3 local = rootAreaTransform.InverseTransformPoint(tipW);
+                bool outsideSide   = Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.z) > 0.5f;
+                bool outsideBottom = local.y < -0.5f;
+                if (outsideSide || outsideBottom) return;
+            }
             if (isIshitsuki)
             {
                 Vector3 tipW = transform.TransformPoint(node.tipPosition);
@@ -2758,7 +2824,7 @@ public class TreeSkeleton : MonoBehaviour
         {
             var shoot = CreateNode(node.tipPosition, CutSiteDirection(node), nodeRadius, segLength, node);
             shoot.isRoot = false;
-            if (branchSubdivisions > 1) shoot.subdivisionsLeft = branchSubdivisions - 1;
+            if (nodeSubdivs > 1) shoot.subdivisionsLeft = nodeSubdivs - 1;
 
             // Second shoot from the opposite side of the cap — common after hard cuts.
             if (Random.value < 0.65f)
@@ -2766,7 +2832,7 @@ public class TreeSkeleton : MonoBehaviour
                 float lat2Len = segLength * 0.85f;
                 var shoot2 = CreateNode(node.tipPosition, CutSiteDirection(node), nodeRadius, lat2Len, node);
                 shoot2.isRoot = false;
-                if (branchSubdivisions > 1) shoot2.subdivisionsLeft = branchSubdivisions - 1;
+                if (nodeSubdivs > 1) shoot2.subdivisionsLeft = nodeSubdivs - 1;
                 GameManager.branches++;
             }
             return;
@@ -2777,18 +2843,18 @@ public class TreeSkeleton : MonoBehaviour
             var (dirA, dirB) = OppositeForkDirections(node);
             var forkA = CreateNode(node.tipPosition, dirA, nodeRadius, segLength, node);
             forkA.isRoot = false;
-            if (branchSubdivisions > 1) forkA.subdivisionsLeft = branchSubdivisions - 1;
+            if (nodeSubdivs > 1) forkA.subdivisionsLeft = nodeSubdivs - 1;
             var forkB = CreateNode(node.tipPosition, dirB, nodeRadius, segLength, node);
             forkB.isRoot = false;
-            if (branchSubdivisions > 1) forkB.subdivisionsLeft = branchSubdivisions - 1;
+            if (nodeSubdivs > 1) forkB.subdivisionsLeft = nodeSubdivs - 1;
             GameManager.branches++;
         }
         else
         {
             var cont = CreateNode(node.tipPosition, ContinuationDirection(node), nodeRadius, segLength, node);
             cont.isRoot = false;
-            if (branchSubdivisions > 1)
-                cont.subdivisionsLeft = branchSubdivisions - 1;
+            if (nodeSubdivs > 1)
+                cont.subdivisionsLeft = nodeSubdivs - 1;
 
             float lateralChanceBranch = baseBranchChance * Mathf.Pow(branchChanceDepthDecay, node.depth);
             if (Random.value < lateralChanceBranch)
@@ -2796,8 +2862,8 @@ public class TreeSkeleton : MonoBehaviour
                 float latLength = segLength * 0.85f * Mathf.Max(0.1f, 1f - apicalDominance);
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), nodeRadius, latLength, node);
                 lat.isRoot = false;
-                if (branchSubdivisions > 1)
-                    lat.subdivisionsLeft = branchSubdivisions - 1;
+                if (nodeSubdivs > 1)
+                    lat.subdivisionsLeft = nodeSubdivs - 1;
                 GameManager.branches++;
             }
         }
@@ -2875,6 +2941,19 @@ public class TreeSkeleton : MonoBehaviour
     }
 
     /// <summary>
+    /// Returns the number of sub-segments to use for a branch chord of the given length.
+    /// Takes the maximum of branchSubdivisions and however many segments are needed to
+    /// keep each one under maxSegmentLength.  Always returns at least 1.
+    /// </summary>
+    int SubdivsForChord(float chordLength)
+    {
+        int n = branchSubdivisions;
+        if (maxSegmentLength > 0f)
+            n = Mathf.Max(n, Mathf.CeilToInt(chordLength / maxSegmentLength));
+        return Mathf.Max(1, n);
+    }
+
+    /// <summary>
     /// Returns the horizontal distance ratio of a root node's tip to the spread radius.
     /// 0 = at trunk, 1 = at target spread radius, >1 = beyond it.
     /// </summary>
@@ -2917,24 +2996,47 @@ public class TreeSkeleton : MonoBehaviour
 
         // Margin in normalised box coords (0.5 = half-extent).
         // Within this distance of a wall, start blending toward the wall surface.
-        const float margin = 0.15f;
+        const float margin = 0.20f;
 
-        Vector3 wallNormal = Vector3.zero;
-        if (areaLocal.x >  0.5f - margin) wallNormal += rootAreaTransform.right    *  Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.x);
-        if (areaLocal.x < -0.5f + margin) wallNormal -= rootAreaTransform.right    *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.x);
-        if (areaLocal.z >  0.5f - margin) wallNormal += rootAreaTransform.forward  *  Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.z);
-        if (areaLocal.z < -0.5f + margin) wallNormal -= rootAreaTransform.forward  *  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.z);
-        // Y floor and ceiling: roots approaching either face redirect horizontally
-        if (areaLocal.y < -0.5f + margin) wallNormal -= rootAreaTransform.up * Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.y);
-        if (areaLocal.y >  0.5f - margin) wallNormal += rootAreaTransform.up * Mathf.InverseLerp( 0.5f - margin,  0.5f, areaLocal.y);
+        // Accumulate a weighted inward normal for each nearby face.
+        // Side and bottom faces get a stronger push (1.0) than the top face (0.3)
+        // so surface roots can emerge naturally while lateral/downward escape is blocked hard.
+        Vector3 wallNormal   = Vector3.zero;
+        float   totalWeight  = 0f;
 
-        if (wallNormal.sqrMagnitude > 0.001f)
+        void AddFace(Vector3 faceNormal, float t, float faceWeight)
+        {
+            float w = t * faceWeight;
+            wallNormal  += faceNormal * w;
+            totalWeight += w;
+        }
+
+        AddFace( rootAreaTransform.right,   Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.x), 1.0f);
+        AddFace(-rootAreaTransform.right,   Mathf.InverseLerp(0.5f - margin,  0.5f, -areaLocal.x), 1.0f);
+        AddFace( rootAreaTransform.forward, Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.z), 1.0f);
+        AddFace(-rootAreaTransform.forward, Mathf.InverseLerp(0.5f - margin,  0.5f, -areaLocal.z), 1.0f);
+        // Bottom (floor): strong deflection — roots must not escape downward
+        AddFace(-rootAreaTransform.up,      Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.y), 1.0f);
+        // Top (soil surface): weak deflection — let roots emerge slightly above soil
+        AddFace( rootAreaTransform.up,      Mathf.InverseLerp( 0.5f - margin,  0.5f,  areaLocal.y), 0.3f);
+
+        if (totalWeight > 0.001f)
         {
             wallNormal.Normalize();
-            // Project dir onto the wall surface so the root runs along it
+            // Blend between along-wall tangent (hard redirect) and the inward normal (push back in).
+            // At the wall face the blend is 70% tangent + 30% inward push so roots curve
+            // parallel to the wall rather than bouncing straight back.
             Vector3 along = Vector3.ProjectOnPlane(worldDir, wallNormal);
+            Vector3 inward = -wallNormal;  // points back toward box interior
             if (along.sqrMagnitude > 0.001f)
-                worldDir = along.normalized;
+            {
+                float blend = Mathf.Clamp01(totalWeight);
+                worldDir = Vector3.Slerp(worldDir, Vector3.Lerp(along.normalized, inward, 0.3f), blend).normalized;
+            }
+            else
+            {
+                worldDir = inward;
+            }
         }
 
         Vector3 result = transform.InverseTransformDirection(worldDir);

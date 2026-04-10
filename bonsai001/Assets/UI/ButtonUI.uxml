@@ -80,7 +80,7 @@
             <ui:VisualElement name="TabContentTime" style="display: flex;">
                 <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
                     <ui:Label text="Time Scale" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
-                    <ui:Slider name="SliderTimescale" low-value="1" high-value="400" value="200" style="flex: 1; margin-right: 10px;" />
+                    <ui:Slider name="SliderTimescale" low-value="0.017" high-value="400" value="200" style="flex: 1; margin-right: 10px;" />
                     <ui:Label name="LabelTimescale" text="200" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />
                 </ui:VisualElement>
                 <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">

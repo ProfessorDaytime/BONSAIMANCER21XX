@@ -80,14 +80,14 @@ public class GameManager : MonoBehaviour
 
     //Time Stuff
     public static float TIMESCALE = 200f;
-    // Text hourText;
-    // Text dayText;
-    // Text monthText;
-    // Text yearText;
+    /// Slowest allowed timescale: 1 game minute per real second (TIMESCALE = 1/60 game-hrs/sec).
+    public const float TIMESCALE_MIN = 1f / 60f;
+
     string monthName = "March";
 
     public static int day, month, year;
     public static float hour;
+    static int lastCalendarMinute = -1;
 
     public Text calendar;
 
@@ -118,7 +118,7 @@ public class GameManager : MonoBehaviour
     
     void Update(){
         if (Input.GetKey(KeyCode.D)) TIMESCALE = Mathf.Min(TIMESCALE + 50f * Time.deltaTime, 400f);
-        if (Input.GetKey(KeyCode.A)) TIMESCALE = Mathf.Max(TIMESCALE - 50f * Time.deltaTime, 1f);
+        if (Input.GetKey(KeyCode.A)) TIMESCALE = Mathf.Max(TIMESCALE - 50f * Time.deltaTime, TIMESCALE_MIN);
 
         if(state == GameState.BranchGrow || state == GameState.LeafGrow || state == GameState.LeafFall || state == GameState.TimeGo){
             CalculateTime();
@@ -146,6 +146,10 @@ public class GameManager : MonoBehaviour
     void CalculateTime(){
         float winterMult = (quickWinter && IsWinterMonth(month)) ? 2f : 1f;
         hour += Time.deltaTime * TIMESCALE * winterMult;
+
+        // Refresh calendar whenever the displayed minute changes
+        int curMinute = Mathf.FloorToInt((hour % 1f) * 60f);
+        if (curMinute != lastCalendarMinute) { lastCalendarMinute = curMinute; TextCallFunction(); }
 
         
 
@@ -205,13 +209,9 @@ public class GameManager : MonoBehaviour
     }
 
     public void TextCallFunction(){
-        // dayText.text = "" + day;
-        // hourText = "" + hour;
-        // yearText = "" + year;
-    
-        
-
-        calendar.text = monthName + " " + day + ", " + year;
+        int h = Mathf.FloorToInt(hour) % 24;
+        int m = Mathf.FloorToInt((hour % 1f) * 60f);
+        calendar.text = $"{monthName} {day}, {year}  {h:D2}:{m:D2}";
     }
 
     void SetMonthText(){

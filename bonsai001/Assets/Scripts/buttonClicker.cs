@@ -48,8 +48,8 @@ public class ButtonClicker : MonoBehaviour
     VisualElement selectedSpeciesCard;
 
     enum SpeciesSortMode { None, Growth, Water, Care, Soil }
-    SpeciesSortMode currentSort    = SpeciesSortMode.None;
-    bool            sortDescending = false;
+    SpeciesSortMode currentSort    = SpeciesSortMode.Care;
+    bool            sortDescending = true;
     Button          activeSortBtn;
 
     UIDocument buttonDocument;
@@ -344,9 +344,11 @@ public class ButtonClicker : MonoBehaviour
             if (skeleton != null) skeleton.autoFertilizeEnabled = evt.newValue;
         });
 
+        if (sliderTimescale != null)
+            sliderTimescale.lowValue = GameManager.TIMESCALE_MIN;
         sliderTimescale?.RegisterValueChangedCallback(evt => {
             GameManager.TIMESCALE = evt.newValue;
-            if (labelTimescale != null) labelTimescale.text = Mathf.RoundToInt(evt.newValue).ToString();
+            if (labelTimescale != null) labelTimescale.text = FormatTimescaleLabel(evt.newValue);
         });
         toggleQuickWinter?.RegisterValueChangedCallback(evt => {
             GameManager.quickWinter = evt.newValue;
@@ -631,8 +633,9 @@ public class ButtonClicker : MonoBehaviour
 
         if (sliderTimescale != null)
         {
+            sliderTimescale.lowValue = GameManager.TIMESCALE_MIN;
             sliderTimescale.SetValueWithoutNotify(GameManager.TIMESCALE);
-            if (labelTimescale != null) labelTimescale.text = Mathf.RoundToInt(GameManager.TIMESCALE).ToString();
+            if (labelTimescale != null) labelTimescale.text = FormatTimescaleLabel(GameManager.TIMESCALE);
         }
         if (toggleQuickWinter != null)
             toggleQuickWinter.SetValueWithoutNotify(GameManager.quickWinter);
@@ -1394,7 +1397,9 @@ public class ButtonClicker : MonoBehaviour
             sortBtn.style.borderBottomLeftRadius = sortBtn.style.borderBottomRightRadius = 4;
             sortBtn.style.borderTopWidth = sortBtn.style.borderBottomWidth =
                 sortBtn.style.borderLeftWidth = sortBtn.style.borderRightWidth = 1;
-            SetSortBtnStyle(sortBtn, false, false);
+            bool isDefault = (m == currentSort);
+            SetSortBtnStyle(sortBtn, isDefault, sortDescending);
+            if (isDefault) activeSortBtn = sortBtn;
             sortBtn.RegisterCallback<ClickEvent>(_ => OnSortButtonClick(m, sortBtn));
             speciesSortBar.Add(sortBtn);
         }
@@ -1466,12 +1471,15 @@ public class ButtonClicker : MonoBehaviour
         if (speciesListContainer == null || availableSpecies == null) return;
         speciesListContainer.Clear();
 
-        // Re-select the previously selected card after rebuild
-        VisualElement reselect = null;
+        // Re-select the previously selected card after rebuild; auto-select first on first open
+        VisualElement reselect  = null;
+        VisualElement firstCard = null;
+        TreeSpecies   firstSp   = null;
         foreach (var sp in SortedSpecies())
         {
             var card = MakeSpeciesCard(sp);
             speciesListContainer.Add(card);
+            if (firstCard == null) { firstCard = card; firstSp = sp; }
             if (sp == selectedSpecies) reselect = card;
         }
 
@@ -1480,6 +1488,11 @@ public class ButtonClicker : MonoBehaviour
             selectedSpeciesCard = reselect;
             reselect.style.backgroundColor = new StyleColor(new Color(0.14f, 0.19f, 0.11f));
             SetCardBorderColor(reselect, new Color(0.898f, 0.702f, 0.086f));
+        }
+        else if (firstCard != null)
+        {
+            // Nothing previously selected — auto-select the top card
+            SelectSpeciesCard(firstSp, firstCard);
         }
     }
 
@@ -1579,6 +1592,7 @@ public class ButtonClicker : MonoBehaviour
 
     void OnSpeciesConfirmClick()
     {
+        Debug.Log($"[Species] ConfirmClick | selectedSpecies={selectedSpecies?.speciesName ?? "NULL"} overlay={speciesSelectOverlay != null}");
         if (selectedSpecies == null) return;
         if (skeleton != null)
         {
@@ -1587,6 +1601,13 @@ public class ButtonClicker : MonoBehaviour
             skeleton.ApplySpecies();
         }
         GameManager.Instance.UpdateGameState(GameState.TipPause);
+    }
+
+    static string FormatTimescaleLabel(float ts)
+    {
+        if (ts <= GameManager.TIMESCALE_MIN + 0.001f) return "1 min/s";
+        if (ts < 1f) return ts.ToString("F2");
+        return Mathf.RoundToInt(ts).ToString();
     }
 
     static void SetCardBorderColor(VisualElement el, Color col)

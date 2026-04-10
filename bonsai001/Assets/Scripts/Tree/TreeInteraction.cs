@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// Handles all player interaction with the tree mesh.
@@ -145,8 +146,8 @@ public class TreeInteraction : MonoBehaviour
         aimPreview.enabled           = false;
 
         // ── Selection cursor ──────────────────────────────────────────────────
-        // Drawn as a screen-space GL circle in OnRenderObject so its pixel
-        // size is always consistent regardless of camera distance or angle.
+        // Drawn as a screen-space GL circle via RenderPipelineManager.endCameraRendering
+        // (OnRenderObject is not called in URP).
         glCircleMat = new Material(Shader.Find("Hidden/Internal-Colored"));
         glCircleMat.hideFlags = HideFlags.HideAndDontSave;
         glCircleMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
@@ -179,15 +180,19 @@ public class TreeInteraction : MonoBehaviour
         selCircleColor = col;
     }
 
-    // Draws a screen-space circle at the cursor using GL after all geometry renders.
-    void OnRenderObject()
+    void OnEnable()  => RenderPipelineManager.endCameraRendering += DrawSelectionCircle;
+    void OnDisable() => RenderPipelineManager.endCameraRendering -= DrawSelectionCircle;
+
+    // Draws a screen-space circle at the cursor after URP finishes rendering the camera.
+    // OnRenderObject is not invoked by URP; endCameraRendering fires instead.
+    void DrawSelectionCircle(ScriptableRenderContext ctx, Camera camera)
     {
-        if (Camera.current != cam || selCirclePixelRadius <= 0f) return;
+        if (camera != cam || glCircleMat == null || selCirclePixelRadius <= 0f) return;
 
         Vector2 mouse = Input.mousePosition;
         glCircleMat.SetPass(0);
         GL.PushMatrix();
-        GL.LoadPixelMatrix(0, cam.pixelWidth, 0, cam.pixelHeight);
+        GL.LoadPixelMatrix(0, camera.pixelWidth, 0, camera.pixelHeight);
         GL.Begin(GL.LINES);
         GL.Color(selCircleColor);
         const int segs = 48;

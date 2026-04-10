@@ -592,17 +592,17 @@ confirm/cancel, `LoadOriginalButton` in pause menu (visible when backup exists).
 <details>
 <summary><strong>Species — Visuals</strong></summary>
 
-Procedural geometry + hand-authored bark textures that cross-fade between age stages.
-The player makes a set of seamless bark textures per species per age tier; the shader
-blends between adjacent tiers based on node age. Geometry variation is fully procedural.
+Procedural geometry + hand-authored bark textures that transition between age stages
+using a **pixel-perfect noise reveal** — no opacity blending, just a hard per-texel cutoff
+that gradually exposes more pixels from the new tier. Geometry variation is fully procedural.
 
 ---
 
 #### 0. Bark Texture System
 
 **Design:** Each species has N bark texture tiers (suggested 3–4: seedling, young, mature, old).
-Adjacent tiers are designed to be seamless with each other so the blend is smooth.
-The shader samples two adjacent tiers and lerps between them using a `_BlendFactor` (0→1).
+Adjacent pairs don't need to be seamlessly blendable — each pixel is always 100% one tier or
+the other. The transition looks like bark texture naturally spreading across the surface.
 
 **UV generation** — `TreeMeshBuilder.AddRing` already writes UVs. The convention needs
 to be locked down so textures tile correctly:
@@ -619,17 +619,56 @@ public float[]     barkTierAgeBreaks;  // age values where each tier begins, e.g
 public float       barkVTiling = 2f;   // how many times the texture repeats per world unit of length
 ```
 
-**Shader** (`Custom/BarkBlend`) — replaces the current `Custom/BarkVertexColor`:
+**Pixel-perfect noise transition** — instead of `lerp(texA, texB, blend)`, the shader
+uses a noise value per texel compared against a threshold. Each texel is binary: fully tier A
+or fully tier B. As `_BlendFactor` advances 0→1, more and more texels flip to tier B.
+
+Two noise options (inspector-selectable per species):
+
+| Mode | Pattern | Best for |
+|---|---|---|
+| **Scatter** | Per-texel value noise (hash of UV * resolution) | Random salt-and-pepper pixel spread |
+| **Cellular** | Voronoi / cellular noise | Patches spreading across bark like aging spots or peeling |
+
 ```hlsl
 // Inputs:
 //   _BarkTexA, _BarkTexB  — the two adjacent tier textures
-//   _BlendFactor          — 0=fully A, 1=fully B (per-mesh, set by TreeMeshBuilder)
-//   vertex.color          — still used for growth tint, seasonal tint, deadwood overlay
-//
-// Sample both, lerp, then multiply by vertex color for tint overlay.
-half4 col = lerp(tex2D(_BarkTexA, uv), tex2D(_BarkTexB, uv), _BlendFactor);
+//   _BlendFactor          — 0=fully A, 1=fully B
+//   _NoiseScale           — world-space pixels per noise cell (match your pixel art texel size)
+//   _NoiseMode            — 0=scatter, 1=cellular
+//   vertex.color          — tint overlay (growth color, fungal, deadwood, seasonal)
+
+// Snap UVs to pixel grid so noise aligns exactly with texels
+float2 texelUV = floor(uv * _TexelRes) / _TexelRes;
+
+// --- Scatter mode: each texel independently random ---
+float scatter = frac(sin(dot(texelUV, float2(127.1, 311.7))) * 43758.5453);
+
+// --- Cellular mode: Voronoi distance to nearest cell center ---
+float2 cell  = floor(texelUV * _NoiseScale);
+float  minD  = 1.0;
+for (int dy = -1; dy <= 1; dy++)
+for (int dx = -1; dx <= 1; dx++) {
+    float2 neighbor = cell + float2(dx, dy);
+    float2 point    = neighbor + frac(sin(neighbor * float2(127.1, 311.7)) * 43758.5);
+    minD = min(minD, length(texelUV * _NoiseScale - point));
+}
+float cellular = minD;  // 0 = at cell center, ~1 = at cell edge
+
+float noise = lerp(scatter, cellular, _NoiseMode);
+
+// Hard threshold — no blending, pixel is either A or B
+half4 col = noise < _BlendFactor ? SAMPLE_TEXTURE2D(_BarkTexB, ...) : SAMPLE_TEXTURE2D(_BarkTexA, ...);
 col *= IN.color;
 ```
+
+**Key property:** Because this is a hard cutoff, pixel art pixels are never semi-transparent
+or color-blended. A pixel at 60% through the transition is the same color as at 0% — it just
+hasn't flipped yet. Adjacent tiers don't need to share a design language; the transition reads
+as bark naturally changing rather than two textures dissolving together.
+
+**`_TexelRes`** should match the pixel art resolution of the texture (e.g. 64 for a 64×64 sheet).
+Set it on the material or as a global shader property.
 
 **Blend factor calculation** — `TreeMeshBuilder` determines which two tiers a node sits
 between based on its `age` and the species `barkTierAgeBreaks` array, then sets
@@ -654,16 +693,16 @@ becomes a multiplicative tint layer only:
 - Seasonal bark tint: very subtle warm/cool shift
 
 **Art workflow (for you):**
-1. Model the segment at a known scale in Blender (e.g. 1m radius, 1m tall cylinder)
-2. Paint/photograph each bark tier as a seamless square texture
-3. Each adjacent pair must be blendable — design them as variations of the same base pattern
-4. Import to Unity, assign to `barkTiers[]` on the species `.asset`
-5. Tune `barkTierAgeBreaks` and `barkVTiling` until it looks right in-engine
+1. Paint each bark tier as a seamless square pixel art texture (suggested 64×64 or 128×128)
+2. Adjacent tiers do **not** need to share colors or pattern — the noise transition handles it
+3. Import to Unity with Point (no filter) sampling to preserve hard pixels
+4. Assign to `barkTiers[]` on the species `.asset`
+5. Tune `barkTierAgeBreaks`, `barkVTiling`, `_NoiseScale`, and `_NoiseMode` in-engine
 
-**PS2/low-poly consideration:** At low `ringSegments` (5–6 for juniper), UVs stretch
-noticeably across each face — that's a feature, not a bug for this aesthetic. Slightly
-blurry or painterly textures will look better than sharp photographic ones at this poly
-count.
+**Noise mode feel:**
+- Scatter at small `_TexelRes` = static/grain, good for fine bark texture like maple
+- Cellular at larger scale = patches spreading organically, good for chunky juniper or pine bark
+- You can also bake a custom noise mask texture for species that need a very specific look
 
 ---
 
@@ -769,7 +808,7 @@ public BudBreakType budBreakType = BudBreakType.Leaf;
 
 - `TreeSpecies.cs` — all new fields above (ring segments, jitter, swell, ridges, colors, bark tier textures/age breaks/tiling)
 - `TreeMeshBuilder.cs` — `ringSegments` from species; jitter in `AddRing`; junction swell; ridge fin pass; bark tier blend via `MaterialPropertyBlock`; vertex color becomes tint-only; UV tiling scale
-- `Custom/BarkBlend` shader — new shader replacing `Custom/BarkVertexColor`; dual texture sample + lerp + vertex color multiply
+- `Custom/BarkBlend` shader — new shader replacing `Custom/BarkVertexColor`; dual texture sample with pixel-perfect noise threshold + vertex color tint multiply; scatter and cellular noise modes
 - `TreeSkeleton.cs` — expose `RingSegments` property; pass species refs to mesh builder
 - `BudManager` or extended `TreeSkeleton.cs` — bud break animation coroutine; procedural bud geometry builder
 - `GameManager.cs` — seasonal bark tint pass (analogous to `LeafHue`)
@@ -787,209 +826,227 @@ Future features not yet scheduled. Expand to read the spec.
 ---
 
 <details>
-<summary><strong>Pot-Bound Soil Block</strong></summary>
+<summary><strong>Root Containment Fix</strong></summary>
 
-When pot-bound roots go unchecked for **2+ years**, they fuse with the soil into
-a dense impacted mass that must be dealt with before Ishitsuki is available.
+**Issue:** Ground roots frequently escape the pot boundary — growing out the sides, deep through the bottom, and occasionally far above soil. Out-the-top is acceptable (surface roots are realistic); lateral and downward escapes are not.
 
-**Hard blocker** — `GameState.RockPlace` is gated until cleared.
+**Existing system:** `rootAreaTransform` six-face box deflection + `DeflectFromRootAreaWalls` in `ContinuationDirection`. The deflection is applied but roots still escape.
 
-**Two removal methods:**
-- *Wash out* — hold-input timed action; slower, low trauma
-- *Cut out* — use root-prune scissors on `isSoilBlock` nodes; faster, health cost
+**Proposed fixes:**
+1. **Hard clamp at spawn:** In `SpawnChildren` for root nodes, if `tipPosition` is already outside the boundary box (minus a small margin for top face), skip spawning — don't add the node at all
+2. **Stronger wall deflection:** Increase the deflection blend weight for side/bottom faces vs the top face; top face gets a weaker deflection (allow slight emergence)
+3. **Terminal clamp:** If an existing root terminal is outside the boundary, mark it `isTrimmed` so it stops growing and doesn't seed new children
+
+**Top-face exception:** Roots within a small vertical band above the soil plane (`0 to +topEmergenceMargin`) are left alone — surface radial roots are realistic and look good.
+
+**Scope:** `TreeSkeleton.cs` (`SpawnChildren`, `DeflectFromRootAreaWalls`, possibly `StartNewGrowingSeason`)
+
+</details>
+
+---
+
+<details>
+<summary><strong>Autosave System</strong></summary>
+
+**Current bug:** `TreeSkeleton.cs` calls `SaveManager.Save()` at the end of every growing season (TimeGo → bud set). `Save()` silently returns false when no `ActiveSlotId` is set — so unsaved new games never get written, and no feedback is given to the player.
+
+**Goals:**
+- Autosave fires at meaningful moments without interrupting the player
+- Unsaved games (no slot yet) get an autosave slot created automatically with a sensible default name
+- Player always knows the save happened (brief non-blocking toast)
+
+**Autosave triggers:**
+- End of every growing season (existing hook in `TreeSkeleton.cs`)
+- After a repot
+- After an air layer is severed (already calls `SaveOriginal`, but the new tree should also get an autosave slot immediately)
+- After confirming Ishitsuki rock orientation
+
+**No-slot behaviour:**
+- If `ActiveSlotId == null`, auto-create a slot with `slotId = NewSlotId()` and `saveName = "{SpeciesName} {Year} (autosave)"`
+- Set it as the active slot — the player can rename it later from the load menu (future: editable names)
+- This means the first season end always produces a save, even on a brand-new game
+
+**Toast notification:**
+- A `SaveToastLabel` in the HUD (small, bottom-centre, above the selection bar area)
+- Fades in, holds 2 s, fades out — driven by a coroutine in `buttonClicker.cs`
+- Text: `"Autosaved"` for automatic saves, `"Saved"` for manual saves (reuse same toast for both)
+- Replaces the current `SaveStatusLabel` in the pause menu (which the player rarely sees)
+
+**Screenshot on autosave:**
+- Same `TakeScreenshotForSlot` coroutine as manual saves — fires after autosave writes
+
+**Scope:** `TreeSkeleton.cs` (autosave call → pass to buttonClicker event or call SaveManager directly with slot-creation fallback), `SaveManager.cs` (`AutoSave()` helper that creates a slot if needed), `buttonClicker.cs` (toast coroutine, wire up autosave feedback), `ButtonUI.uxml` (SaveToastLabel)
+
+</details>
+
+---
+
+<details>
+<summary><strong>Rock Placement — Confirm/Cancel Only</strong></summary>
+
+**Issue:** During `GameState.RockPlace` and `GameState.TreeOrient`, all normal tool buttons (Trim, Wire, Water, etc.) remain visible and clickable. Only two actions should be available.
+
+**Desired behaviour:**
+- On entering `RockPlace`: hide all buttons except **Confirm** (already toggled in) and a new **Cancel** button
+- Cancel undoes all changes made since the player pressed Place Rock — restores the tree's pre-lift position/orientation and exits back to the previous state
+- On entering `TreeOrient`: same two buttons remain; Confirm advances to the next step (already works); Cancel still undoes everything back to pre-RockPlace
+
+**Implementation:**
+- Capture tree transform (position, rotation) and `plantingSurfacePoint`/`plantingNormal` when entering `RockPlace`
+- Store as `rockPlaceCancelState` on `GameManager` or `TreeSkeleton`
+- Cancel button calls a new `GameManager.CancelRockPlace()` which restores the snapshot and calls `ToggleRootPrune()` to lower the tree
+- In `OnGameStateChanged`, when `inRockPlace || inTreeOrient`: hide all HUD buttons except Confirm; show Cancel button
+- Cancel button added to UXML alongside Confirm
+
+**Scope:** `GameManager.cs`, `TreeSkeleton.cs` (snapshot), `buttonClicker.cs`, `ButtonUI.uxml`
+
+</details>
+
+---
+
+<details>
+<summary><strong>Repot Root Raking Mini-Game</strong></summary>
+
+**Trigger:** When the player repots a pot-bound tree (roots have hit the boundary wall for 2+ seasons), a rake mini-game fires before the new soil is applied.
+
+**Design rationale:**
+- Root-bound roots are tangled tightly in old soil — real repotting requires teasing them apart with a root rake before you can cut and arrange them
+- The player gets to choose which roots to keep and which to prune, making repotting a deliberate act instead of a single button press
+- Long roots are **valuable**: a long root creates surface roots and gives the tree room to develop nebari. The game should reward keeping at least one long root. The new pot generates one extra-long root on the side the player kept their longest root.
+
+**Flow:**
+1. Repot button pressed while pot-bound → enter `GameState.RootRake` (new state)
+2. Camera tilts to a top-down view of the root ball lifted out of the pot
+3. Player moves the mouse over roots to highlight them. **Left-click-drag** rakes horizontally across the root ball — each stroke un-mats nearby root nodes (visual only: they spread outward slightly)
+4. After raking, unhealthy / excess roots are highlighted in red. Player left-clicks individual root tips to **prune** them
+5. A root-count indicator shows current vs. target range. Target = approximately the count `PreGrowRootsToSoil` generates fresh (e.g., 6–10 root strands)
+6. Once within target range, **Confirm Repot** becomes enabled; pressing it:
+   - Calls `PotSoil.Repot()` as normal
+   - Discards all current root nodes
+   - Re-generates fresh roots via `PreGrowRootsToSoil` — same count as confirmed, preserving the cheat
+   - If the player kept any root longer than 1.5× the average, flags `hasLongRoot = true` on the skeleton → next call to `PreGrowRootsToSoil` spawns one extra-long root cable on that side
+
+**Root count cheat rationale:**
+The player doesn't notice because the new roots look similar in count and arrangement to what they kept. The important feedback loop is the *decision* to prune carefully, not the exact topology.
+
+**Scope:** `GameManager.cs` (new `RootRake` state), `buttonClicker.cs` (trigger + UI), `TreeSkeleton.cs` (`hasLongRoot` flag, hook into `PreGrowRootsToSoil`), `TreeInteraction.cs` (rake brush + pruning in RootRake mode), `ButtonUI.uxml` (root count indicator + Confirm Repot button)
+
+</details>
+
+---
+
+<details>
+<summary><strong>Pot and Rock Size Selection</strong></summary>
+
+**Goal:** Give the player meaningful choices when repotting or placing a rock, with different sizes creating different constraints on root growth.
+
+**Pots:**
+- Pot sizes: XS / S / M / L / XL, plus a slab option (very shallow, very wide)
+- Size affects `rootAreaTransform` scale — smaller pot → roots hit boundary sooner → pot-bound faster → repotting needed more frequently
+- Shape variants: round, oval, rectangle, cascade (tall) — affects root area aspect ratio
+- Shallow pots (slab) encourage wide lateral roots; deep pots allow longer downward roots
+- UI: a pot selection panel in the Repot flow; each pot shown as a silhouette with size label
+- Pot dimensions stored on `PotSoil` as `potWidth`, `potDepth`, `potHeight`; `rootAreaTransform` resized on repot to match
+
+**Rocks (Ishitsuki):**
+- Rock sizes: S / M / L / XL; taller rocks require more root cable length to reach soil → more seasons before the tree stabilises
+- Rock shape presets affect how `PreGrowRootsToSoil` drapes cables (steep cliff vs. gentle slope vs. plateau)
+- UI: rock selection panel before `GameState.RockPlace`; shown as silhouettes
+
+**Root issues by size:**
+| Container | Root effect |
+|-----------|-------------|
+| XS pot | Pot-bound in 1–2 years; strong nebari pressure; risk of root crush damage |
+| Slab | Wide spreading roots; minimal downward growth; surface root aesthetics strong |
+| Large rock | Very long cables; slower anchor; exposed root risk if not enough canopy to support them |
+| Small rock | Short cables; quick anchor; less dramatic nebari; easier for beginners |
+
+**Scope:** `PotSoil.cs` (`potWidth`/`potDepth`/`potHeight`, `rootAreaTransform` resize), `TreeSkeleton.cs` (Ishitsuki cable length scale by rock size), `buttonClicker.cs` + `ButtonUI.uxml` (pot/rock selection panels), `SaveData`/`SaveManager.cs` (serialize selected pot/rock)
+
+</details>
+
+---
+
+<details>
+<summary><strong>Species Visuals</strong> → scheduled as item 25</summary>
+
+*(See item 25 above for full spec.)*
+
+</details>
+
+---
+
+<details>
+<summary><strong>Sibling Branch Fusion (Graft Bridging)</strong></summary>
+
+**Goal:** When two sibling branches (same parent) grow close enough to touch, they gradually callus together and eventually fuse into one wireable unit — mimicking natural inosculation and enabling Clump Style bonsai.
+
+**Detection (cheap — runs once per spring):**
+- For each parent node, check all pairs of its direct children
+- If `distance(tipA, tipB) < radiusA + radiusB`, start a `FusionBond` (stored on `TreeSkeleton`)
+- `FusionBond`: `{ nodeIdA, nodeIdB, float progress 0→1, bool isComplete, bool wireRestarted }`
+- Progress increments each spring by a rate scaled by `SeasonalGrowthRate`; reaches 1.0 after ~3–5 growing seasons of contact
+
+**Visual bridge (ITNTCE):**
+- In `TreeMeshBuilder`, for each bond with `progress > 0`, extrude a short flattened connecting cylinder between the two nearest surface points
+- Cross-section scales from 0→full radius as `progress` goes 0→1
+- Uses the same bark vertex color as surrounding wood
+
+**Fusion completion (`progress >= 1.0`):**
+- `isComplete = true`; the two nodes are treated as a single wireable unit
+- `TreeInteraction` click on either node selects both; wire direction applied to both simultaneously
+- Wire removal on one removes both; placing wire restarts `progress = 0` (bridge "breaks" then re-fuses with `wireRestarted = true` for faster re-fusion, ~1 season)
+
+**Wiring implications:**
+- Wire data (`wireTargetDirection`, `wireSetProgress`, etc.) duplicated across both nodes in the pair
+- `SeverAirLayer` and `TrimNode` on one node of a complete bond also removes the bond
+
+**Serialization:** `FusionBond` list added to `SaveData` and `TreeSkeleton`
+
+**Future:** Non-sibling fusion (cross-tree, clump style) deferred to a separate backlog item after this is stable.
+
+**Scope:** `TreeNode.cs` (bond ref), `TreeSkeleton.cs` (bond detection + progress), `TreeMeshBuilder.cs` (bridge geometry), `TreeInteraction.cs` (unified selection), `SaveData`/`SaveManager.cs`
+
+</details>
+
+---
+
+<details>
+<summary><strong>Branch Saw System</strong></summary>
+
+**Goal:** Thick branches require a sawing action to remove rather than a single click, making large cuts feel weighty and deliberate.
+
+**Threshold:** When the player clicks a branch in Trim mode and `node.radius >= sawRadiusThreshold` (inspector-tunable, default ~0.08), instead of immediately trimming, enter a **Saw sub-state**.
+
+**Input mechanic:**
+- The branch highlights with a saw-cut line across it
+- Player must do repeated left↔right mouse/stick input across the cut line
+- Each full back-and-forth stroke increments `sawProgress` (0→1); ~4–6 strokes to complete
+- Visual: a deepening cut groove appears on the mesh at the cut face as `sawProgress` advances
+- If the player clicks elsewhere or presses Escape mid-saw, `sawProgress` resets and the mode cancels
+
+**Completion:**
+- When `sawProgress >= 1.0`, the branch severs — same `TrimNode` call as a normal cut, same wound/undo system
+- Play a crack/snap SFX at completion
+- A few seasons later the wound calluses as normal
 
 **Implementation notes:**
-- Track `potBoundYears` counter on `TreeSkeleton`; increment each spring when
-  `boundaryPressure` across all roots exceeds a threshold
-- `soilBlockActive` bool gates `GameState.RockPlace` in `buttonClicker`
-- Cut-out: clicking root nodes marked `isSoilBlock` in RootPrune mode shears them
+- New `GameState.Sawing` or a sub-mode flag on `ToolManager` — lean toward a flag to avoid a full state machine addition
+- The saw target node stored on `TreeInteraction` for the duration
+- Groove visual: a flat ring mesh (like the wound torus, but a slit) scaled by `sawProgress`; destroyed on completion or cancel
+
+**Scope:** `TreeInteraction.cs`, `TreeSkeleton.cs` (threshold field), `TreeMeshBuilder.cs` (groove mesh), `buttonClicker.cs`/`ButtonUI.uxml` (progress indicator), `AudioManager` (SFX)
 
 </details>
 
 ---
 
 <details>
-<summary><strong>Branch Weight & Strength</strong></summary>
+<summary><strong>Quick-Start / Auto-Generate</strong></summary>
 
-Heavy branches sag over time under their own load. Thin young wood bends; thick old
-wood resists. Wires, careful pruning, and prop supports counteract droop.
-
-> **Open design question:** Universal vs. species-gated? Large-branched juniper / cascading
-> pine needs this badly. Fine-twigged maple probably doesn't. Likely a species flag
-> (`branchWeightEnabled`) rather than a global system.
-
-#### Core Data
-
-Two new floats on `TreeNode`:
-```
-branchLoad     float   accumulated downward force (own mass + children's load)
-branchStrength float   derived from radius and age; not stored
-```
-
-`branchLoad` computed bottom-up each spring:
-```
-node.branchLoad = node.radius² × node.length × woodDensity
-                + sum(child.branchLoad for all children)
-```
-
-`branchStrength`:
-```
-strength = radius³ × woodHardnessFactor × Clamp01(node.age / matureAgeSeasons)
-```
-
-#### Sag Mechanic
-
-Each spring, if `branchLoad / branchStrength > sagThreshold`:
-```
-sagAngle = Clamp((load/strength - sagThreshold) * sagSensitivity, 0, maxSagAngleDeg)
-node.growDirection = Slerp(node.growDirection, -Vector3.up, sagAngle / maxSagAngleDeg * sagBlend)
-```
-
-#### Junction Stress
-
-When a child branch is very heavy relative to its attachment node:
-- `ApplyDamage(parent, DamageType.JunctionStress, stressDamage)` each spring
-- New `DamageType.JunctionStress` in `NodeHealth.cs`
-
-#### Prop Supports (optional)
-
-Player places a stick prop under a drooping branch → `hasPropSupport = true`;
-sag calculation skips those nodes.
-
-**Scope:** `TreeNode.cs`, `TreeSkeleton.cs`, `NodeHealth.cs`, species ScriptableObject
-**Dependencies:** Species system (item 25)
-
-</details>
-
----
-
-<details>
-<summary><strong>Air Layer Root Continued Growth</strong></summary>
-
-**Goal:** Air layer roots (above-ground roots on the trunk) should keep growing after
-confirmation — currently they stop at the rock surface.
-
-**Behaviour wanted:**
-- Air layer root tips continue extending each spring like any other root terminal
-- Growth direction: gravity-biased downward
-- If a rock or convex collider is nearby, roots deflect toward and along its surface
-  (same rock-following logic as Ishitsuki, but running live each season)
-- Once a root tip reaches the soil plane, it transitions to normal subsurface root behaviour
-
-**Scope:** `TreeSkeleton.cs` (`StartNewGrowingSeason` root growth pass — relax the
-`isAirLayerRoot` exclusion that currently halts their growth), `ContinuationDirection`
-(add rock-proximity deflection for air layer nodes)
-
-</details>
-
----
-
-<details>
-<summary><strong>Soil / Substrate System</strong> → scheduled as item 27</summary>
-
-**Goal:** Different soil mixes with distinct properties that interact differently with
-each tree species.
-
-#### Substrate Components
-
-| Component | Moisture Retention | Drainage | Nutrients | Notes |
-|---|---|---|---|---|
-| Akadama | High | Medium | Medium | Breaks down over time |
-| Pumice | Low | Very High | Low | Structural; doesn't compact |
-| Lava rock | Low | High | Low | Maximum aeration |
-| Organic compost | Very High | Low | High | Risk of waterlog + root rot |
-| Sand | Very Low | High | None | Fast drainage |
-| Kanuma | High | Medium | Acidic | For azaleas |
-
-#### Derived Properties
-
-```
-waterRetention  = weighted average of component retention values
-drainageRate    = weighted average of component drainage values
-nutrientLevel   = weighted average × organic fraction
-aerationScore   = inverse of water retention
-```
-
-#### Soil Degradation
-
-- Each growing season: `degradation += component.degradeRate`
-- At high degradation: `drainageRate` drops, `waterRetention` rises
-- **Repotting resets degradation**
-
-#### Repotting
-
-1. Player enters `RootPrune` mode
-2. New **Repot** button opens a substrate mixing UI (sliders, sum locked to 100%)
-3. On confirm: new mix applied, degradation reset
-4. `ApplyDamage(DamageType.RepotStress)` on all root terminals — recovers over one season
-5. Repotting outside early spring → larger stress hit
-
-#### Waterlogging & Root Rot
-
-If `drainageRate` is too low and watering too frequent:
-- `saturationLevel` accumulates
-- Above threshold: `ApplyDamage(DamageType.RootRot, rotRate)` on root nodes per season
-- No cure except repotting + removing rotted roots
-
-**Scope:** New `PotSoil.cs`, `GameManager.cs` (seasonal drain + degradation), `TreeInteraction.cs`
-(repot action), `buttonClicker.cs` + `ButtonUI.uxml` (Repot button, substrate mixing UI),
-`LeafManager.cs` (nutrient-driven colour influence)
-
-</details>
-
----
-
-<details>
-<summary><strong>Tree Death</strong></summary>
-
-**Goal:** Trees can die permanently if neglected or abused.
-
-**Death conditions:**
-- Average health across all trunk nodes < 0.05 for 2+ consecutive seasons
-- Total living root mass drops below critical minimum
-- Prolonged drought at moisture 0
-- Multiple simultaneous stressors
-
-**Death sequence:**
-1. Warning signs over 1–2 seasons: leaves brown, growth stops, bark greys
-2. Point of no return: UI warning ("This tree is dying — act now or lose it")
-3. If uncorrected: all leaves drop, mesh goes grey/brown
-4. Dead tree remains as memorial
-5. Player can start new tree or load save
-
-**Recovery window:** Between warning and death, aggressive intervention can save
-the tree — success depends on how far gone it is.
-
-**Scope:** `TreeSkeleton.cs`, `GameManager.cs`, UI (warning overlays, death screen),
-`NodeHealth.cs`
-
-</details>
-
----
-
-<details>
-<summary><strong>Branch Death & Dieback</strong></summary>
-
-**Goal:** Individual branches can die and either fall off or remain as deadwood.
-Deadwood management (jin, shari) is a real bonsai technique.
-
-**Branch death causes:**
-- Health reaches 0 on a node
-- Shading: interior branches receiving no light for 2+ seasons die back
-- Overextension: branch too long without ramification weakens at the base
-
-**What happens when a branch dies:**
-- **Light branches (small radius):** Fall off after 1–2 seasons. Parent gets a small wound.
-- **Heavy branches (large radius):** Remain as deadwood. Can be trimmed away or preserved as jin.
-  If left too long, may harbour disease (fungus system interaction).
-- **Species variation:** Junipers/pines retain deadwood; deciduous species drop faster.
-
-**Jin / Shari hook:**
-- Deliberately kill a branch tip and strip bark → jin (deadwood point)
-- Shari: strip bark along trunk → deadwood stripe
-- Aesthetic/competition scoring only
-
-**Scope:** `TreeNode.cs`, `TreeSkeleton.cs`, `TreeMeshBuilder.cs`, species ScriptableObject
+- Auto-simulate ~1 year of growth in background
+- Present 10 variation options; player picks one (or multiples) to start with
+- Foundation: needs stable multi-year simulation first
 
 </details>
 
@@ -1124,10 +1181,66 @@ prefabs, UI palette, save/load integration
 ---
 
 <details>
-<summary><strong>Camera & Input</strong></summary>
+<summary><strong>Decoration System</strong></summary>
 
-- Full Unity Input System migration (currently legacy `Input.*`)
-- Wire animation skip key revisited as part of this
+**Goal:** Cosmetic elements placed on soil surface, pot rim, rock, or around tree base.
+
+**Decoration types:**
+
+| Type | Placement | Behaviour |
+|---|---|---|
+| Moss | Soil surface, rock surface | Grows/spreads slowly; needs moisture |
+| Grass tufts | Soil surface, rock crevices | Seasonal; green spring/summer, brown autumn |
+| Accent rocks | Soil surface | Static |
+| Figurines | Anywhere on soil/rock | Static (traditional accent pieces) |
+| Fallen leaves | Soil surface | Seasonal scatter in autumn; auto-cleared in spring |
+| Deadwood pieces | Soil surface | Decorative driftwood |
+
+**Placement system:**
+- Player enters decoration mode (new game state)
+- Click to place on valid surfaces; drag to reposition; right-click to remove
+- Snapping to surface normals
+
+**Moss (living decoration):**
+- Spreads slowly each season if moisture adequate; dies if soil dries out frequently
+- Player can trim/remove
+- Moss coverage contributes to moisture retention
+
+**Scope:** `DecorationManager.cs`, `Decoration.cs`, `MossDecoration.cs`, `GameState.Decorate`,
+prefabs, UI palette, save/load integration
+
+</details>
+
+---
+
+<details>
+<summary><strong>Steam / System Achievements</strong></summary>
+
+**Goal:** Award achievements through Steamworks (or OS notifications on non-Steam builds) for meaningful milestones.
+
+**Integration approach:**
+- Wrap Steamworks.NET (or Facepunch.Steamworks) behind a thin `AchievementManager.cs` singleton
+- On non-Steam builds, fall back to a local `PlayerPrefs` unlock log + optional in-game toast
+- Call `AchievementManager.Unlock("ID")` from the relevant system; the manager deduplicates
+
+**Draft achievement list:**
+
+| ID | Name | Trigger |
+|---|---|---|
+| `FIRST_TRIM` | First Cut | Player trims for the first time |
+| `FIRST_WIRE` | In Training | Wire fully set and removed cleanly |
+| `SURVIVE_5` | Five Candles | Tree survives 5 in-game years |
+| `SURVIVE_10` | Decade | Tree survives 10 years |
+| `SURVIVE_25` | Ancient | Tree survives 25 years |
+| `FIRST_REPOT` | Root Bound | Complete a repot |
+| `ISHITSUKI` | Stone & Root | Place tree on a rock (Ishitsuki confirmed) |
+| `AIR_LAYER` | New Life | Successfully sever an air layer |
+| `MYCORRHIZAL` | Fungal Network | Achieve mycorrhizal coverage on 50 % of roots |
+| `HEALTHY_DECADE` | Thriving | Maintain avg health > 80 % for 5 consecutive seasons |
+| `ALL_SPECIES` | Collector | Grow every available species at least once |
+| `FIRST_DEATH` | Lessons Learned | Let a tree die (unlocks on death screen) |
+
+**Scope:** `AchievementManager.cs` (new), hook calls in `TreeSkeleton.cs`, `buttonClicker.cs`, `SaveManager.cs`; Steamworks package import
 
 </details>
 
@@ -1145,155 +1258,10 @@ prefabs, UI palette, save/load integration
 ---
 
 <details>
-<summary><strong>Quick-Start / Auto-Generate</strong></summary>
+<summary><strong>Camera & Input</strong></summary>
 
-- Auto-simulate ~1 year of growth in background
-- Present 10 variation options; player picks one (or multiples) to start with
-- Foundation: needs stable multi-year simulation first
-
-</details>
-
----
-
-<details>
-<summary><strong>Sibling Branch Fusion (Graft Bridging)</strong></summary>
-
-**Goal:** When two sibling branches (same parent) grow close enough to touch, they gradually callus together and eventually fuse into one wireable unit — mimicking natural inosculation and enabling Clump Style bonsai.
-
-**Detection (cheap — runs once per spring):**
-- For each parent node, check all pairs of its direct children
-- If `distance(tipA, tipB) < radiusA + radiusB`, start a `FusionBond` (stored on `TreeSkeleton`)
-- `FusionBond`: `{ nodeIdA, nodeIdB, float progress 0→1, bool isComplete, bool wireRestarted }`
-- Progress increments each spring by a rate scaled by `SeasonalGrowthRate`; reaches 1.0 after ~3–5 growing seasons of contact
-
-**Visual bridge (ITNTCE):**
-- In `TreeMeshBuilder`, for each bond with `progress > 0`, extrude a short flattened connecting cylinder between the two nearest surface points
-- Cross-section scales from 0→full radius as `progress` goes 0→1
-- Uses the same bark vertex color as surrounding wood
-
-**Fusion completion (`progress >= 1.0`):**
-- `isComplete = true`; the two nodes are treated as a single wireable unit
-- `TreeInteraction` click on either node selects both; wire direction applied to both simultaneously
-- Wire removal on one removes both; placing wire restarts `progress = 0` (bridge "breaks" then re-fuses with `wireRestarted = true` for faster re-fusion, ~1 season)
-
-**Wiring implications:**
-- Wire data (`wireTargetDirection`, `wireSetProgress`, etc.) duplicated across both nodes in the pair
-- `SeverAirLayer` and `TrimNode` on one node of a complete bond also removes the bond
-
-**Serialization:** `FusionBond` list added to `SaveData` and `TreeSkeleton`
-
-**Future:** Non-sibling fusion (cross-tree, clump style) deferred to a separate backlog item after this is stable.
-
-**Scope:** `TreeNode.cs` (bond ref), `TreeSkeleton.cs` (bond detection + progress), `TreeMeshBuilder.cs` (bridge geometry), `TreeInteraction.cs` (unified selection), `SaveData`/`SaveManager.cs`
-
-</details>
-
----
-
-<details>
-<summary><strong>Autosave System</strong></summary>
-
-**Current bug:** `TreeSkeleton.cs` calls `SaveManager.Save()` at the end of every growing season (TimeGo → bud set). `Save()` silently returns false when no `ActiveSlotId` is set — so unsaved new games never get written, and no feedback is given to the player.
-
-**Goals:**
-- Autosave fires at meaningful moments without interrupting the player
-- Unsaved games (no slot yet) get an autosave slot created automatically with a sensible default name
-- Player always knows the save happened (brief non-blocking toast)
-
-**Autosave triggers:**
-- End of every growing season (existing hook in `TreeSkeleton.cs`)
-- After a repot
-- After an air layer is severed (already calls `SaveOriginal`, but the new tree should also get an autosave slot immediately)
-- After confirming Ishitsuki rock orientation
-
-**No-slot behaviour:**
-- If `ActiveSlotId == null`, auto-create a slot with `slotId = NewSlotId()` and `saveName = "{SpeciesName} {Year} (autosave)"`
-- Set it as the active slot — the player can rename it later from the load menu (future: editable names)
-- This means the first season end always produces a save, even on a brand-new game
-
-**Toast notification:**
-- A `SaveToastLabel` in the HUD (small, bottom-centre, above the selection bar area)
-- Fades in, holds 2 s, fades out — driven by a coroutine in `buttonClicker.cs`
-- Text: `"Autosaved"` for automatic saves, `"Saved"` for manual saves (reuse same toast for both)
-- Replaces the current `SaveStatusLabel` in the pause menu (which the player rarely sees)
-
-**Screenshot on autosave:**
-- Same `TakeScreenshotForSlot` coroutine as manual saves — fires after autosave writes
-
-**Scope:** `TreeSkeleton.cs` (autosave call → pass to buttonClicker event or call SaveManager directly with slot-creation fallback), `SaveManager.cs` (`AutoSave()` helper that creates a slot if needed), `buttonClicker.cs` (toast coroutine, wire up autosave feedback), `ButtonUI.uxml` (SaveToastLabel)
-
-</details>
-
----
-
-<details>
-<summary><strong>Root Containment Fix</strong></summary>
-
-**Issue:** Ground roots frequently escape the pot boundary — growing out the sides, deep through the bottom, and occasionally far above soil. Out-the-top is acceptable (surface roots are realistic); lateral and downward escapes are not.
-
-**Existing system:** `rootAreaTransform` six-face box deflection + `DeflectFromRootAreaWalls` in `ContinuationDirection`. The deflection is applied but roots still escape.
-
-**Proposed fixes:**
-1. **Hard clamp at spawn:** In `SpawnChildren` for root nodes, if `tipPosition` is already outside the boundary box (minus a small margin for top face), skip spawning — don't add the node at all
-2. **Stronger wall deflection:** Increase the deflection blend weight for side/bottom faces vs the top face; top face gets a weaker deflection (allow slight emergence)
-3. **Terminal clamp:** If an existing root terminal is outside the boundary, mark it `isTrimmed` so it stops growing and doesn't seed new children
-
-**Top-face exception:** Roots within a small vertical band above the soil plane (`0 to +topEmergenceMargin`) are left alone — surface radial roots are realistic and look good.
-
-**Scope:** `TreeSkeleton.cs` (`SpawnChildren`, `DeflectFromRootAreaWalls`, possibly `StartNewGrowingSeason`)
-
-</details>
-
----
-
-<details>
-<summary><strong>Branch Saw System</strong></summary>
-
-**Goal:** Thick branches require a sawing action to remove rather than a single click, making large cuts feel weighty and deliberate.
-
-**Threshold:** When the player clicks a branch in Trim mode and `node.radius >= sawRadiusThreshold` (inspector-tunable, default ~0.08), instead of immediately trimming, enter a **Saw sub-state**.
-
-**Input mechanic:**
-- The branch highlights with a saw-cut line across it
-- Player must do repeated left↔right mouse/stick input across the cut line
-- Each full back-and-forth stroke increments `sawProgress` (0→1); ~4–6 strokes to complete
-- Visual: a deepening cut groove appears on the mesh at the cut face as `sawProgress` advances
-- If the player clicks elsewhere or presses Escape mid-saw, `sawProgress` resets and the mode cancels
-
-**Completion:**
-- When `sawProgress >= 1.0`, the branch severs — same `TrimNode` call as a normal cut, same wound/undo system
-- Play a crack/snap SFX at completion
-- A few seasons later the wound calluses as normal
-
-**Implementation notes:**
-- New `GameState.Sawing` or a sub-mode flag on `ToolManager` — lean toward a flag to avoid a full state machine addition
-- The saw target node stored on `TreeInteraction` for the duration
-- Groove visual: a flat ring mesh (like the wound torus, but a slit) scaled by `sawProgress`; destroyed on completion or cancel
-
-**Scope:** `TreeInteraction.cs`, `TreeSkeleton.cs` (threshold field), `TreeMeshBuilder.cs` (groove mesh), `buttonClicker.cs`/`ButtonUI.uxml` (progress indicator), `AudioManager` (SFX)
-
-</details>
-
----
-
-<details>
-<summary><strong>Rock Placement — Confirm/Cancel Only</strong></summary>
-
-**Issue:** During `GameState.RockPlace` and `GameState.TreeOrient`, all normal tool buttons (Trim, Wire, Water, etc.) remain visible and clickable. Only two actions should be available.
-
-**Desired behaviour:**
-- On entering `RockPlace`: hide all buttons except **Confirm** (already toggled in) and a new **Cancel** button
-- Cancel undoes all changes made since the player pressed Place Rock — restores the tree's pre-lift position/orientation and exits back to the previous state
-- On entering `TreeOrient`: same two buttons remain; Confirm advances to the next step (already works); Cancel still undoes everything back to pre-RockPlace
-
-**Implementation:**
-- Capture tree transform (position, rotation) and `plantingSurfacePoint`/`plantingNormal` when entering `RockPlace`
-- Store as `rockPlaceCancelState` on `GameManager` or `TreeSkeleton`
-- Cancel button calls a new `GameManager.CancelRockPlace()` which restores the snapshot and calls `ToggleRootPrune()` to lower the tree
-- In `OnGameStateChanged`, when `inRockPlace || inTreeOrient`: hide all HUD buttons except Confirm; show Cancel button
-- Cancel button added to UXML alongside Confirm
-
-**Scope:** `GameManager.cs`, `TreeSkeleton.cs` (snapshot), `buttonClicker.cs`, `ButtonUI.uxml`
+- Full Unity Input System migration (currently legacy `Input.*`)
+- Wire animation skip key revisited as part of this
 
 </details>
 
