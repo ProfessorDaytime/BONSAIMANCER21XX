@@ -1,10 +1,56 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-04-07 · Items 1–32 complete (28–30 dieback/death/weight, 31–32 air layer)
+Last updated: 2026-04-16 · Items 1–34 complete + Branch Saw + Bark Shader System; priority queue items 1–15 done
+
+---
+
+## Priority Queue
+
+Ordered by current priority. Work top-to-bottom.
+
+1. ✓ **Rock Placement — Lock UI + Cancel + Camera-Relative Controls** *(backlog)*
+2. ✓ **New Input System Migration**
+3. ✓ **Growth Season Taper** *(item 34)*
+4. ✓ **Roots → bark color over time** *(backlog)*
+5. ✓ **Branch Saw**
+6. ✓ **Pot & Rock Size Selection** *(backlog)*
+7. ✓ **Repot Root Raking Mini-Game** *(backlog)*
+8. ✓ **UI Cycle Toggle + Tree Health Stats + Active Tool in Calendar** — single `◉` button cycles Tools → Stats → Neither; stats panel shows all health values live; tool name appended to calendar TMP
+9. ✓ **Confirm/Cancel Visibility** — hidden by default; shown only in RockPlace/TreeOrient; styled to match pause button
+10. ✓ **Time Speed Toggle Button** — a small button above the `◉` cycle button, same size as Pause. Cycles between two speeds: *Fast* (TIMESCALE=200, current default) and *Slow* (1 game-hour = 2 real seconds, i.e. TIMESCALE≈1/120). Button shows current state (`▶▶` fast / `▶` slow); amber tint in slow mode. **Auto-trigger:** when the calendar enters January (`month == 1`), automatically switch to Slow so the player has comfortable trimming time. Does not auto-switch back — player controls that manually.
+    - **Scope:** `GameManager.cs` (constants, auto-trigger in `SetMonthText`), `buttonClicker.cs` (button field, click handler, Q wiring), `ButtonUI.uxml` (new button above `◉`)
+11. ✓ **Realistic Winter Pruning** — decouple dormancy from growth cap so heavy winter cuts don't create a "no growth for a year" deadlock. Four changes:
+    - **Growth window lock:** `regrowthSeasonCount` only increments during growing seasons (Mar–Aug). Winter cuts sit dormant until spring, then begin recovering at normal rate. Zero code impact outside `StartNewGrowingSeason`. *(Suggestion 2 — lowest risk, implement first)*
+    - **Forced dormant skip:** If a cut is made in winter (month 11–2) AND `trimCutDepth` is deep (> configurable threshold, e.g. depth 4), set `regrowthSeasonCount = 2` at the moment of cut so the tree skips winter + has a slow spring start. *(Suggestion 1)*
+    - **Reserve depletion:** Track total `cutDepthThisSeason` on `TreeSkeleton`; if it exceeds `heavyPruneReserveThreshold`, multiply next spring's `growthSeasonMult` by `heavyPruneRecoveryScale` (default 0.5) for one season. Reset after spring. *(Suggestion 3)*
+    - **Severity-scaled regrowth rate:** In `CutPointDepthCap`, when `severity > 0.8` (heavily pruned, ratio of cut depth to tree depth), scale `depthsPerYear` by 0.7 for that node's first recovery season. *(Suggestion 4)*
+    - **Scope:** `TreeSkeleton.cs` (`StartNewGrowingSeason`, `TrimNode`, `CutPointDepthCap`, `GrowthSeasonMult`), `TreeNode.cs` (no new fields needed), `TreeSpecies.cs` (optional threshold fields)
+12. ✓ **First-Use Tooltip System** — reuse the existing `TipPause` / tooltip overlay mechanism to pop up contextual tooltips the first time the player clicks each tool button. Each tooltip is a short text explaining what the tool does and a basic tip. Player must click X or press ESC to dismiss (same as current TipPause). After first dismissal, that tool's tooltip never shows again (track shown-set in PlayerPrefs or a `HashSet<string>` serialized to SaveData). Tooltips can also be triggered programmatically (e.g. first repot, first wiring session, first winter).
+    - **Scope:** `GameManager.cs` (new `ShowTooltip(string title, string body)` method, enters TipPause), `buttonClicker.cs` (intercept first-click per tool button, call ShowTooltip), `ButtonUI.uxml` (add title label to tooltip overlay if not already present), `SaveData` (add `shownTooltips` string list)
+13. ✓ **Graft / Sibling Branch Fusion** — Approach graft (inarizashi): two-click tool selects source terminal + target node; over `graftSeasonsToFuse` (default 2) growing seasons the source tip's direction bends toward the target; on fusion a bridge node is created spanning the gap. Amber GL line shows in-progress grafts; pale green circle marks pending source. ESC/RMB cancels selection. Failed if either node dies before fusion.
+14. ✓ **Species Visuals** — per-species bark colors (`youngBarkColor`, `matureBarkColor`, `rootNewGrowthColor`) pushed to shader `_NGColor`/`_BarkColor`/`_NGRootColor` via `TreeMeshBuilder.ApplySpeciesColors()`; per-species `leafSpringColor` replaces hardcoded green in `Leaf.cs`; `LeafManager` passes color from `species` on spawn; all fields have sensible defaults so existing `.asset` files work without edits
+15. ✓ **Bark Shader System** — 100% procedural HLSL replacing all texture lookups. 10 botanical bark patterns (smooth, fine fissures, interlacing, vertical strips, irregular blocks, large plates, peeling strips, fibrous shreds, spongy, lenticels) driven by inlined SimpleNoise/GradNoise/Voronoi. Layered blend: vertex.a fades Type-2 fine fissures (twigs) → species bark type (mature wood). 3-band cel-shaded lighting (shadow/mid/lit thresholds) + backface-inflate silhouette outline pass. Wound face embedded in unified mesh as organic callus geometry (`AddWoundCap`): swell ring + closing ring + concave center, progress-driven by `healProgress`. vertex.g = wound intensity, vertex.b = paste mask. BarkFlakerManager spawns 3D peeling meshes on trunk/scaffold for barkType 10/12/14, count = f(age, health). All 17 species `.asset` files updated with `barkType` + color values.
+16. **Gamification & Tutorial Progression** *(backlog)*
+16. **Multi-Tree / Quick-Start** *(item 26)*
+17. **Decoration System** *(backlog)*
 
 ---
 
 ## Completed This Phase
+
+- **Phototropism coordinate space fix** ✓ — `SunDirection()` in `TreeSkeleton` was returning world `Vector3.up`; `growDirection` is tree-local, so Slerping the two produced wrong results when the tree was tilted on a rock. Fixed to `transform.InverseTransformDirection(Vector3.up)`.
+- **PinchNode bud-system fix (critical)** ✓ — `PinchNode()` was setting `node.isTrimmed = true`, which excluded the node from autumn `SetBuds()`. With `budSystemActive = true` in year 2+, only `hasBud` nodes can spawn — so all pinched nodes were permanently frozen with no path back. Fix: removed `isTrimmed = true`; use `node.length = node.targetLength` instead to halt extension while keeping the node alive for the bud cycle. Growth resumes next spring via normal bud break.
+- **Defoliate hover fix** ✓ — `HandleDefoliateHover` required `n.isTerminal`, but by June most leaf-bearing nodes have already branched and are non-terminal. Removed the `isTerminal` filter; now targets any non-root, non-trimmed node that has a leaf cluster.
+- **Root health NaN fix** ✓ — `RecalculateRootHealthScore()` was dividing `com /= totalRadius` when all root nodes had zero radius. Result: NaN → `Mathf.RoundToInt(NaN)` = `int.MinValue` = -2147483648 in the UI. Added `|| totalRadius <= 0f` to the early-return guard. Added NaN/Infinity display guard in `buttonClicker.UpdateRootHealthDisplay`.
+- **3-speed time mode** ✓ — `SpeedMode` enum (Slow=0.5, Med=10, Fast=200 hrs/s) replaces the bool `IsSlowSpeed`. `ToggleSpeed()` cycles Slow→Med→Fast→Slow. Speed button shows ▶/▶▶/▶▶▶ with amber/grey/green tints. Auto-slow trigger moved from June to **April** (June is too late — growth is already done; April is the pinching window). `IsSlowSpeed` kept as back-compat property.
+- **`OnMonthChanged` event** ✓ — `static event Action<int>` on `GameManager`, fired at end of `SetMonthText`. Drives month-triggered tutorials (April ramification) without polling.
+- **`OnWireSetGold` event** ✓ — `public event Action` on `TreeSkeleton`, fired the first frame `wireSetProgress` crosses from <1 to ≥1 for any node. Unwire tooltip is now event-driven (fires on first gold wire) rather than button-click-driven.
+- **April ramification tutorial** ✓ — `OnMonthChanged(4)` in `buttonClicker` triggers `MaybeShowTooltip("april_ramification", ...)` explaining the pinch window, auxin suppression, and back-budding.
+- **Fertilizer tutorial** ✓ — `MaybeShowTooltip("fertilize", ...)` added to `OnFertilizeButtonClick`, covering seasonal timing and why the button dims Nov–Feb.
+- **Herbicide tutorial** ✓ — `MaybeShowTooltip("herbicide", ...)` added to `OnHerbicideButtonClick`, covering nutrient competition and moss suppression.
+- **Pinch visual indicators** ✓ — `DrawPinchMarkers` in `TreeInteraction` (registered to `endCameraRendering`) draws a GL octahedron at every pinchable tip when the Pinch tool is active: dim lime (r=0.055) for all eligible tips, bright lime (r=0.12) for the hovered tip. `hoveredPinchNode` cleared at top of `Update` each frame. `DrawGLDiamond` static helper draws a camera-facing 3-axis diamond.
+- **Scale debug cubes** ✓ — `ScaleDebugger.cs` component draws GL wireframe 1×1×1 m cubes in `OnRenderObject`, centred on a `gridRadius×2+1` grid at `plantingSurfacePoint.y`. Toggled from Debug tab (`ToggleScaleCubes`).
+- **UI button layout** ✓ — All tool buttons except Trim/Water reduced to 50px height. Fertilize/Herbicide/Fungicide group moved from `top:279` to `top:204` (immediately below Graft, no gap). Confirm/Cancel orient buttons changed from right-column stacked to centered row (`left:0; right:0; flex-direction:row; justify-content:center`) at `top:340px`.
 
 - **22.** Fertilizer System — `nutrientReserve` (0→2) drains 0.4/season; `Fertilize()` blocked in winter; `nutrientMult` Lerp(0.6,1.4) multiplied into per-frame growth speed; FertilizerBurn on roots if reserve >1.5 at spring start; Fertilize button + nutrient bar right-side panel; Auto-fertilize toggle in Debug tab; serialized in SaveData
 - **23.** Weed System — RMB click-hold-drag-up to pull; rip chance leaves stub (harder next pull, stump visual, 60% drain); Herbicide button clears all weeds + sets aeration penalty next season; WeedManager spawns procedural cube weeds (grass/clover/dandelion/thistle) as tree children; seasonal nutrient+moisture drain; weeds serialized in SaveData
@@ -12,6 +58,16 @@ Last updated: 2026-04-07 · Items 1–32 complete (28–30 dieback/death/weight,
 - **25.** Species Skeleton — `TreeSpecies` ScriptableObject; `ApplySpecies()` copies into existing `TreeSkeleton` fields on Awake; `BudType` moved to own file; species name displayed in Settings menu header; Japanese Maple (Opposite buds, fast/thirsty/fragile) and Juniper (slow/drought-tolerant/resilient) as starter species
 - **26.** Species Selection Menu — fullscreen overlay on game start; 16 species with Growth / Water / Care / Soil chip tags; sortable by any tag; confirms into TipPause with species applied; `SpeciesSelect` GameState; ToolTip fixed to only show in TipPause without touching Main Camera
 - **27.** Soil / Substrate System — `PotSoil` component; 7 substrates (akadama, pumice, lava rock, organic, sand, kanuma, perlite); weighted mix → derived properties; seasonal degradation + saturation + root rot; species soil mismatch penalty; `Repot()` with timing and too-soon stress multipliers; 4 presets; soil bars in Repot panel; 16 species .asset files with soil preferences; Roots→Repot rename; weeds auto-cleared on entering Repot mode; weeds excluded from trunk radius and rock surfaces
+- **Pause Menu** ✓ — `GameState.GamePause`, `TogglePause()`, pause overlay in `buttonClicker.cs`
+- **Autosave** ✓ — `SaveManager.AutoSave()` creates slot on first save, fires end-of-season
+- **debugSoilY sentinel** ✓ — `-9999` sentinel auto-populates from `plantingSurfacePoint.y` on first use
+- **Camera root-mode regression** ✓ — `lastTargetPosition` delta compensation, `isDragging` safety-clear, pitch clamp per state
+- **Root containment** ✓ — hard clamp in `SpawnChildren`: skips spawn if tip is outside side/bottom of `rootAreaTransform` box; top-face emergence allowed
+- **Rock Placement UI lock + Cancel** ✓ — HUD dims (opacity 0.25 + PickingMode.Ignore) during RockPlace/TreeOrient; Confirm/Cancel always visible; Cancel restores pre-placement snapshot; camera-relative tree translation
+- **New Input System Migration** ✓ — all `Input.*` calls replaced with `Mouse.current` / `Keyboard.current`; EventSystem updated to `InputSystemUIInputModule`
+- **Growth Season Taper (item 34)** ✓ — `GrowthSeasonMult()` in `TreeSkeleton`; `growthSlowDay`/`growthStopDay` on `TreeSpecies`; `dayOfYear` on `GameManager`; 16 species assets updated; `species == null` guard
+- **Roots → bark color over time** ✓ — removed `isRoot && !isTrainingWire` exclusion from age accumulation loop; exposed roots bark 3× faster via `fadeDays/3` in `GrowthColor`
+- **Branch Saw** ✓ — `sawRadiusThreshold` (0.08) on `TreeSkeleton`; Saw tool triggers multi-stroke mechanic for thick branches; direction-reversal half-stroke counting (10 half-strokes = done); dark annulus groove deepens toward center as progress advances; ESC/RMB cancels; completes via normal `TrimNode` path
 
 ---
 
@@ -590,6 +646,51 @@ confirm/cancel, `LoadOriginalButton` in pause menu (visible when backup exists).
 ---
 
 <details>
+<summary><strong>34. Growth Season Taper</strong></summary>
+
+**Goal:** Primary extension growth stops in early-to-mid summer, matching real tree biology. Most temperate trees set buds and shift resources from extension to radial growth and energy storage once day length shortens past their threshold. The cutoff is species-specific and should feel gradual rather than snapping off.
+
+**Science basis:**
+- Spring flush uses pre-formed bud tissue and stored energy — fast and explosive
+- Growth stop triggered primarily by shortening photoperiod, not temperature
+- After the taper: radial growth (thickening) continues, but `isGrowing` extension stops
+- Lammas (second flush) exists in some species but is not modelled here
+
+**Approximate stop windows by species:**
+
+| Species | Slow starts | Fully stopped |
+|---|---|---|
+| Juniper | ~May 20 (day 140) | ~Jun 15 (day 166) |
+| Japanese Maple | ~Jun 1 (day 152) | ~Jul 1 (day 182) |
+| Trident Maple | ~Jun 10 (day 161) | ~Jul 5 (day 186) |
+| Ficus | ~Aug 1 (day 213) | ~Sep 1 (day 244) |
+| Bald Cypress | ~Jun 15 (day 166) | ~Jul 15 (day 196) |
+
+**New fields on `TreeSpecies` ScriptableObject:**
+- `int growthSlowDay` — day of year growth begins tapering (default 150)
+- `int growthStopDay` — day of year growth multiplier reaches zero (default 180)
+
+**Implementation in `TreeSkeleton.cs`:**
+```csharp
+float GrowthSeasonMult()
+{
+    int day = GameManager.dayOfYear; // needs exposing or computing from month/day
+    if (day < species.growthSlowDay) return 1f;
+    if (day >= species.growthStopDay) return 0f;
+    return 1f - Mathf.InverseLerp(species.growthSlowDay, species.growthStopDay, day);
+}
+```
+Multiply `GrowthSeasonMult()` into the per-frame growth delta. When the multiplier reaches zero, `isGrowing` stays false and no new children are spawned for the rest of the season. Growth resumes next spring as normal.
+
+**Note:** The "keep tips extending all season via `subdivisionsLeft = 1`" change made earlier is superseded by this. The taper naturally handles late-started branches — a branch that sprouted in May gets less time than one that sprouted in March, so they land at naturally different lengths without special-casing.
+
+**Scope:** `TreeSpecies.cs` (two new fields), `TreeSkeleton.cs` (`GrowthSeasonMult()`, multiply into growth delta), `GameManager.cs` (expose `dayOfYear` as int), all 16 species `.asset` files (set slow/stop days)
+
+</details>
+
+---
+
+<details>
 <summary><strong>Species — Visuals</strong></summary>
 
 Procedural geometry + hand-authored bark textures that transition between age stages
@@ -826,6 +927,173 @@ Future features not yet scheduled. Expand to read the spec.
 ---
 
 <details>
+<summary><strong>Calendar System — Real Month Lengths + Scheduling</strong></summary>
+
+### Goal
+Replace the fixed 28-day month with real calendar month lengths and add a monthly calendar panel where the player can schedule recurring care tasks (watering, fertilizing) with optional repeat modes and seasonal templates.
+
+---
+
+### Part 1 — Real Month Lengths
+
+**Current:** every month = 28 days; `dayOfYear = (month-1)×28 + currentDay`.
+
+**Change:** use biological month lengths. The in-game year starts in January of a fictional year (e.g. 2123), so leap-year logic is optional but can be included for accuracy.
+
+```csharp
+// On GameManager
+static readonly int[] DaysInMonth = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+static bool IsLeapYear(int year) =>
+    (year % 4 == 0) && (year % 100 != 0 || year % 400 == 0);
+
+static int DaysInCurrentMonth(int month, int year) =>
+    (month == 2 && IsLeapYear(year)) ? 29 : DaysInMonth[month - 1];
+```
+
+`dayOfYear` becomes a computed property that sums `DaysInMonth[0..month-2] + dayOfMonth`.
+
+**What changes:**
+- `CalculateTime()` — day rollover uses `DaysInCurrentMonth(month, year)` instead of `28`.
+- `SetMonthText()` — month boundary fires when `dayOfMonth > DaysInCurrentMonth(...)`.
+- `dayOfYear` property — recomputed from real cumulative day counts.
+- `GrowthSeasonMult()` in `TreeSkeleton` — uses same `dayOfYear`; no change needed there since the property value is correct.
+- Winter skip (`month == 11 → month = 2, year++`) — unchanged; just skip November + December as before.
+- `OnMonthChanged` — unchanged.
+
+**Migration:** existing saves store `month` (1–12) and the accumulated `hoursElapsed`. On load the `dayOfMonth` is inferred from `hoursElapsed % (DaysInCurrentMonth(month, year) * 24)`. No save format change required.
+
+---
+
+### Part 2 — Scheduled Event Data Model
+
+```csharp
+public enum ScheduledEventType { Water, Fertilize }
+
+public enum RepeatMode { Once, EveryNDays, Weekly, Monthly, Yearly }
+
+[Serializable]
+public class ScheduledEvent
+{
+    public string           id;               // GUID, generated at creation
+    public ScheduledEventType type;
+    public int              month;            // 1–12; 0 = "every month"
+    public int              day;              // 1–31
+    public RepeatMode       repeat;
+    public int              repeatIntervalDays; // used when repeat == EveryNDays
+    // For Yearly: fires on ev.month + ev.day once per calendar year.
+    // Useful for once-a-year fertilizer applications, repot reminders, etc.
+    public bool             enabled;
+}
+```
+
+`GameManager` holds `List<ScheduledEvent> schedule` (serialized into `SaveData`). At the end of each real day tick (when `dayOfMonth` increments), `CheckScheduledEvents()` fires:
+
+```csharp
+void CheckScheduledEvents()
+{
+    foreach (var ev in schedule)
+    {
+        if (!ev.enabled) continue;
+        if (!EventFiresToday(ev, month, dayOfMonth, year)) continue;
+        switch (ev.type)
+        {
+            case ScheduledEventType.Water:      skeleton?.Water(); break;
+            case ScheduledEventType.Fertilize:  skeleton?.Fertilize(); break;
+        }
+    }
+}
+
+bool EventFiresToday(ScheduledEvent ev, int m, int d, int y)
+{
+    switch (ev.repeat)
+    {
+        case RepeatMode.Once:        return ev.month == m && ev.day == d;
+        case RepeatMode.Monthly:     return ev.day == d;  // same day every month
+        case RepeatMode.Weekly:      return dayOfYear % 7 == ev.day % 7;
+        case RepeatMode.EveryNDays:  return dayOfYear % ev.repeatIntervalDays == ev.day % ev.repeatIntervalDays;
+        case RepeatMode.Yearly:      return ev.month == m && ev.day == d;  // same month+day every year
+        default: return false;
+    }
+}
+```
+
+Scheduled actions use the same `Water()` / `Fertilize()` methods as manual button presses — no special-casing, health guards, and winter blocks apply normally. The Water button flash / Fertilize button flash will still fire, giving visible feedback that the schedule fired.
+
+---
+
+### Part 3 — Calendar Panel UI
+
+**Access:** clicking the date label (currently shows e.g. "April 1, 2123 09:02") opens the calendar. Alternatively, a small calendar icon next to the date.
+
+**Layout:**
+
+```
+┌────────────────────────────────────┐
+│  ←  April 2123  →                  │
+│  Mo Tu We Th Fr Sa Su              │
+│                  1  2  3           │
+│   4  5  6  7  8  9 10             │
+│  11 12 [13]14 15 16 17            │  ← today highlighted
+│  18 19  20 21 22 23 24            │
+│  25 26  27 28 29 30               │
+│                                    │
+│  ● Scheduled:  [+ Add]             │
+│  💧 Water every 2 days             │
+│  🌿 Fertilize monthly (1st)        │
+│  ── Seasonal Templates ──          │
+│  [Spring] [Summer] [Autumn]        │
+└────────────────────────────────────┘
+```
+
+**Day cell:** 28–32 px square. Current day gets a gold highlight. Days with scheduled events show small coloured dots (blue = water, green = fertilize). Past days are dimmed.
+
+**Month navigation:** `←` / `→` buttons step through months. Does not need to expose future months further than 12 months ahead.
+
+**Add event flow:**
+1. Click `[+ Add]` or click a day cell → opens a small event editor popup.
+2. Select type: Water | Fertilize.
+3. Set repeat: Once / Every N days / Weekly / Monthly / Yearly.
+4. If "Every N days": number input (default 2).
+5. Confirm → adds `ScheduledEvent` to `GameManager.schedule`.
+
+**Delete:** each event row has a ✕ button on the right.
+
+**Toggle:** each event row has an enable/disable checkbox so the player can pause a schedule without deleting it.
+
+---
+
+### Part 4 — Seasonal Templates
+
+Pre-built schedules that can be applied in one click. Applying a template does **not** remove manually-added events — it merges, deduplicating by type+day+repeat.
+
+| Template | Water | Fertilize |
+|---|---|---|
+| **Spring** (Mar–May) | Every 2 days | Monthly, 1st of month |
+| **Summer** (Jun–Aug) | Every 1 day (heat/growth peak) | Every 4 weeks |
+| **Autumn** (Sep–Oct) | Every 3 days | None (harden before winter) |
+| **Winter** (Nov–Feb) | Every 5 days | None (dormant — Fertilize blocked anyway) |
+
+Templates target the species' active season — a Ficus "Summer" template runs longer than a Juniper one. Implementation: templates are static `List<ScheduledEvent>` definitions; `ApplyTemplate(TemplateType)` merges them into `schedule`.
+
+---
+
+### Scope
+
+| File | Change |
+|---|---|
+| `GameManager.cs` | `DaysInMonth[]`, `DaysInCurrentMonth()`, `IsLeapYear()`, `dayOfMonth` field, real-day rollover in `CalculateTime()`, `CheckScheduledEvents()`, `schedule` list, `AddScheduledEvent()` / `RemoveScheduledEvent()`, seasonal template builders |
+| `SaveData.cs` | Add `scheduledEvents` list |
+| `buttonClicker.cs` | Calendar panel open/close, month navigation, day-cell grid build, event list render, add/delete/toggle handlers, template buttons |
+| `ButtonUI.uxml` | `CalendarOverlay` — date header, 7-col day grid, event list, add-event popup, template buttons; date label made clickable |
+
+**Not in scope:** notification/reminder outside the game, scheduling trim/wire tasks (these require player decision-making, not automation), multi-year advance scheduling.
+
+</details>
+
+---
+
+<details>
 <summary><strong>Root Containment Fix</strong></summary>
 
 **Issue:** Ground roots frequently escape the pot boundary — growing out the sides, deep through the bottom, and occasionally far above soil. Out-the-top is acceptable (surface roots are realistic); lateral and downward escapes are not.
@@ -882,23 +1150,23 @@ Future features not yet scheduled. Expand to read the spec.
 ---
 
 <details>
-<summary><strong>Rock Placement — Confirm/Cancel Only</strong></summary>
+<summary><strong>Rock Placement — Lock UI + Cancel + Camera-Relative Controls</strong></summary>
 
-**Issue:** During `GameState.RockPlace` and `GameState.TreeOrient`, all normal tool buttons (Trim, Wire, Water, etc.) remain visible and clickable. Only two actions should be available.
+**What's done:** `confirmOrientButton` toggles in during RockPlace/TreeOrient. `ToolManager.ClearTool()` fires on entering those states.
 
-**Desired behaviour:**
-- On entering `RockPlace`: hide all buttons except **Confirm** (already toggled in) and a new **Cancel** button
-- Cancel undoes all changes made since the player pressed Place Rock — restores the tree's pre-lift position/orientation and exits back to the previous state
-- On entering `TreeOrient`: same two buttons remain; Confirm advances to the next step (already works); Cancel still undoes everything back to pre-RockPlace
+**What still needs doing:**
 
-**Implementation:**
-- Capture tree transform (position, rotation) and `plantingSurfacePoint`/`plantingNormal` when entering `RockPlace`
-- Store as `rockPlaceCancelState` on `GameManager` or `TreeSkeleton`
-- Cancel button calls a new `GameManager.CancelRockPlace()` which restores the snapshot and calls `ToggleRootPrune()` to lower the tree
-- In `OnGameStateChanged`, when `inRockPlace || inTreeOrient`: hide all HUD buttons except Confirm; show Cancel button
-- Cancel button added to UXML alongside Confirm
+1. **Hide all other HUD buttons** during `RockPlace` and `TreeOrient` — currently Trim, Wire, Water, Repot, etc. remain visible and clickable, which corrupts the placement flow if pressed. In `OnGameStateChanged`, when `inRockPlace || inTreeOrient`, set every HUD button except Confirm and Cancel to `display: none`; restore them on exit.
 
-**Scope:** `GameManager.cs`, `TreeSkeleton.cs` (snapshot), `buttonClicker.cs`, `ButtonUI.uxml`
+2. **Cancel button** — alongside Confirm. Pressing it reverts everything to the moment before Place Rock was pressed:
+   - Snapshot tree transform (position, rotation), `plantingSurfacePoint`, `plantingNormal`, and root-prune state when entering `RockPlace`
+   - Store as `rockPlaceCancelSnapshot` on `TreeSkeleton` or `GameManager`
+   - `CancelRockPlace()`: restore snapshot, call `ToggleRootPrune()` to lower the tree, return to pre-lift state
+   - Cancel works from both `RockPlace` and `TreeOrient` — both revert all the way back
+
+3. **Camera-relative controls** — dragging/rotating the tree on the rock currently uses world-space axes, so controls feel reversed when the camera is behind or to the side. Fix: project mouse delta onto the camera's right/forward vectors when computing drag translation and rotation in `TreeInteraction.cs` (or wherever RockPlace/TreeOrient mouse handling lives).
+
+**Scope:** `GameManager.cs` (`CancelRockPlace()`), `TreeSkeleton.cs` (snapshot struct), `buttonClicker.cs` (hide/show HUD, wire Cancel), `ButtonUI.uxml` (Cancel button), `TreeInteraction.cs` (camera-relative drag/rotate)
 
 </details>
 

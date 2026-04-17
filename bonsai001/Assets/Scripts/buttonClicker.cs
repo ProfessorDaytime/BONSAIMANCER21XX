@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+using UnityEngine.InputSystem;
 
 public class ButtonClicker : MonoBehaviour
 {
@@ -64,8 +65,11 @@ public class ButtonClicker : MonoBehaviour
     Button quickWinterButton;
     Button pasteButton;
     Button airLayerButton;
+    Button graftButton;
     Button placeRockButton;
     Button confirmOrientButton;
+    Button cancelOrientButton;
+    VisualElement orientButtonContainer;
     Slider selectionRadiusSlider;
 
     VisualElement rootHealthPanel;
@@ -93,9 +97,52 @@ public class ButtonClicker : MonoBehaviour
     Button        repotFreeDrainButton;
     Button        repotMoistButton;
     Button        repotAcidicButton;
+    Button        potSizeXSButton;
+    Button        potSizeSButton;
+    Button        potSizeMButton;
+    Button        potSizeLButton;
+    Button        potSizeXLButton;
+    Button        potSizeSlabButton;
+    Label         potSizeLabel;
+    PotSoil.PotSize pendingPotSize = PotSoil.PotSize.M;
+
+    // ── Root Rake mini-game ───────────────────────────────────────────────────
+    VisualElement rootRakePanel;
+    Label         rakeStatusLabel;
+    Button        confirmRepotButton;
+    Button        cancelRakeButton;
+
+    // ── First-use tooltips ────────────────────────────────────────────────────
+    VisualElement tooltipOverlay;
+    Label         tooltipTitleLabel;
+    Label         tooltipBodyLabel;
+    Button        tooltipDismissButton;
+    // IDs of tooltips already shown — persisted in PlayerPrefs.
+    static HashSet<string> shownTooltips;
+    const string TooltipPrefsKey = "ShownTooltips_v1";
 
     // ── Undo indicator ───────────────────────────────────────────────────────
     Label         undoLabel;
+
+    // ── Speed toggle ──────────────────────────────────────────────────────────
+    Button speedToggleButton;
+
+    // ── UI cycle toggle (tools → stats → neither → …) ────────────────────────
+    enum UIToggleState { Tools, Stats, Neither }
+    UIToggleState uiToggleState = UIToggleState.Tools;
+    Button        uiToggleButton;
+
+    // ── Tree stats panel ──────────────────────────────────────────────────────
+    Button        statsToggleButton;   // kept for back-compat query; unused after refactor
+    VisualElement treeStatsPanel;
+    Label         statMoisture;
+    Label         statNutrients;
+    Label         statAvgHealth;
+    Label         statEnergy;
+    Label         statCompaction;
+    Label         statFungal;
+    Label         statWounds;
+    Label         statRepot;
 
     // ── Pause / Settings menu ────────────────────────────────────────────────
     Label         speciesLabel;
@@ -116,6 +163,7 @@ public class ButtonClicker : MonoBehaviour
     // Debug tab controls
     Toggle        toggleAutoWater;
     Toggle        toggleAutoFertilize;
+    Toggle        toggleScaleCubes;
 
     // Sliders + value labels
     Slider sliderTimescale;      Label labelTimescale;
@@ -141,6 +189,15 @@ public class ButtonClicker : MonoBehaviour
         }
 
         var root = buttonDocument.rootVisualElement;
+        // Anchor root to fill the full UIDocument panel. Without this, the root height
+        // collapses to its flow-content height when HUD buttons are hidden (display:none),
+        // causing full-screen overlays (top:0; bottom:0) to offset from actual screen bounds.
+        root.style.position = Position.Absolute;
+        root.style.top      = 0;
+        root.style.left     = 0;
+        root.style.right    = 0;
+        root.style.bottom   = 0;
+        root.style.overflow = new StyleEnum<Overflow>(Overflow.Visible);
 
         trimButton          = root.Q("TrimButton")          as Button;
         waterButton         = root.Q("WaterButton")         as Button;
@@ -153,8 +210,11 @@ public class ButtonClicker : MonoBehaviour
         quickWinterButton   = root.Q("QuickWinterButton")   as Button;
         pasteButton         = root.Q("PasteButton")         as Button;
         airLayerButton      = root.Q("AirLayerButton")      as Button;
+        graftButton         = root.Q("GraftButton")         as Button;
         placeRockButton     = root.Q("PlaceRockButton")     as Button;
-        confirmOrientButton = root.Q("ConfirmOrientButton") as Button;
+        confirmOrientButton    = root.Q("ConfirmOrientButton")    as Button;
+        cancelOrientButton     = root.Q("CancelOrientButton")     as Button;
+        orientButtonContainer  = root.Q("OrientButtonContainer");
         selectionRadiusSlider  = root.Q("SelectionRadiusSlider")  as Slider;
         labelSelectionRadius   = root.Q("LabelSelectionRadius")  as Label;
 
@@ -174,6 +234,34 @@ public class ButtonClicker : MonoBehaviour
         repotFreeDrainButton  = root.Q("RepotFreeDrainButton") as Button;
         repotMoistButton      = root.Q("RepotMoistButton")     as Button;
         repotAcidicButton     = root.Q("RepotAcidicButton")    as Button;
+        potSizeXSButton       = root.Q("PotSizeXSButton")      as Button;
+        potSizeSButton        = root.Q("PotSizeSButton")       as Button;
+        potSizeMButton        = root.Q("PotSizeMButton")       as Button;
+        potSizeLButton        = root.Q("PotSizeLButton")       as Button;
+        potSizeXLButton       = root.Q("PotSizeXLButton")      as Button;
+        potSizeSlabButton     = root.Q("PotSizeSlabButton")    as Button;
+        potSizeLabel          = root.Q("PotSizeLabel")          as Label;
+
+        rootRakePanel        = root.Q("RootRakePanel");
+        rakeStatusLabel      = root.Q("RakeStatusLabel")       as Label;
+        confirmRepotButton   = root.Q("ConfirmRepotButton")    as Button;
+        cancelRakeButton     = root.Q("CancelRakeButton")      as Button;
+
+        tooltipOverlay       = root.Q("TooltipOverlay");
+        tooltipTitleLabel    = root.Q("TooltipTitleLabel")     as Label;
+        tooltipBodyLabel     = root.Q("TooltipBodyLabel")      as Label;
+        tooltipDismissButton = root.Q("TooltipDismissButton")  as Button;
+        if (tooltipOverlay != null) tooltipOverlay.style.display = DisplayStyle.None;
+
+        // Load the set of already-shown tooltip IDs from PlayerPrefs.
+        if (shownTooltips == null)
+        {
+            shownTooltips = new HashSet<string>();
+            string saved = PlayerPrefs.GetString(TooltipPrefsKey, "");
+            if (!string.IsNullOrEmpty(saved))
+                foreach (var id in saved.Split(','))
+                    if (!string.IsNullOrEmpty(id)) shownTooltips.Add(id);
+        }
 
         rootHealthPanel      = root.Q("RootHealthPanel");
         rootHealthScoreLabel = root.Q("RootHealthScoreLabel") as Label;
@@ -252,6 +340,22 @@ public class ButtonClicker : MonoBehaviour
         pauseMenuOverlay = root.Q("PauseMenuOverlay");
         resumeButton     = root.Q("ResumeButton")     as Button;
 
+        // ── Speed toggle ─────────────────────────────────────────────────────
+        speedToggleButton = root.Q("SpeedToggleButton") as Button;
+
+        // ── HUD cycle toggle + stats panel ──────────────────────────────────
+        uiToggleButton   = root.Q("UIToggleButton")    as Button;
+        statsToggleButton = null;   // removed from UXML; was StatsToggleButton
+        treeStatsPanel   = root.Q("TreeStatsPanel");
+        statMoisture     = root.Q("StatMoisture")      as Label;
+        statNutrients    = root.Q("StatNutrients")     as Label;
+        statAvgHealth    = root.Q("StatAvgHealth")     as Label;
+        statEnergy       = root.Q("StatEnergy")        as Label;
+        statCompaction   = root.Q("StatCompaction")    as Label;
+        statFungal       = root.Q("StatFungal")        as Label;
+        statWounds       = root.Q("StatWounds")        as Label;
+        statRepot        = root.Q("StatRepot")         as Label;
+
         tabBtnTime      = root.Q("TabBtnTime")      as Button;
         tabBtnGrowth    = root.Q("TabBtnGrowth")    as Button;
         tabBtnIshitsuki = root.Q("TabBtnIshitsuki") as Button;
@@ -263,6 +367,7 @@ public class ButtonClicker : MonoBehaviour
 
         toggleAutoWater     = root.Q("ToggleAutoWater")     as Toggle;
         toggleAutoFertilize = root.Q("ToggleAutoFertilize") as Toggle;
+        toggleScaleCubes    = root.Q("ToggleScaleCubes")    as Toggle;
 
         saveButton           = root.Q("SaveButton")           as Button;
         loadButton           = root.Q("LoadButton")           as Button;
@@ -304,8 +409,10 @@ public class ButtonClicker : MonoBehaviour
         quickWinterButton?.RegisterCallback<ClickEvent>(OnQuickWinterButtonClick);
         pasteButton?.RegisterCallback<ClickEvent>(OnPasteButtonClick);
         airLayerButton?.RegisterCallback<ClickEvent>(OnAirLayerButtonClick);
+        graftButton?.RegisterCallback<ClickEvent>(_ => OnGraftButtonClick());
         placeRockButton?.RegisterCallback<ClickEvent>(OnPlaceRockButtonClick);
         confirmOrientButton?.RegisterCallback<ClickEvent>(OnConfirmOrientButtonClick);
+        cancelOrientButton?.RegisterCallback<ClickEvent>(_ => OnCancelOrientButtonClick());
         selectionRadiusSlider?.RegisterValueChangedCallback(evt => {
             GameManager.selectionRadius = evt.newValue;
             if (labelSelectionRadius != null) labelSelectionRadius.text = evt.newValue.ToString("F2");
@@ -321,6 +428,8 @@ public class ButtonClicker : MonoBehaviour
 
         // Wire up pause menu
         pauseButton?.RegisterCallback<ClickEvent>(_ => TogglePauseMenu());
+        speedToggleButton?.RegisterCallback<ClickEvent>(_ => OnSpeedToggleClick());
+        uiToggleButton?.RegisterCallback<ClickEvent>(_ => OnUIToggleClick());
         resumeButton?.RegisterCallback<ClickEvent>(_ => TogglePauseMenu());
         tabBtnTime?.RegisterCallback<ClickEvent>(_ => SelectTab(0));
         tabBtnGrowth?.RegisterCallback<ClickEvent>(_ => SelectTab(1));
@@ -336,6 +445,18 @@ public class ButtonClicker : MonoBehaviour
         repotMoistButton?.RegisterCallback<ClickEvent>(_ => OnRepotButtonClick(PotSoil.SoilPreset.MoistureRetaining));
         repotAcidicButton?.RegisterCallback<ClickEvent>(_ => OnRepotButtonClick(PotSoil.SoilPreset.Acidic));
 
+        potSizeXSButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.XS));
+        potSizeSButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.S));
+        potSizeMButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.M));
+        potSizeLButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.L));
+        potSizeXLButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.XL));
+        potSizeSlabButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.Slab));
+
+        confirmRepotButton?.RegisterCallback<ClickEvent>(_ => OnConfirmRepotClick());
+        cancelRakeButton?.RegisterCallback<ClickEvent>(_ => OnCancelRakeClick());
+
+        tooltipDismissButton?.RegisterCallback<ClickEvent>(_ => GameManager.Instance?.ExitTipPause());
+
         toggleAutoWater?.RegisterValueChangedCallback(evt => {
             if (skeleton != null) skeleton.autoWaterEnabled = evt.newValue;
         });
@@ -344,11 +465,34 @@ public class ButtonClicker : MonoBehaviour
             if (skeleton != null) skeleton.autoFertilizeEnabled = evt.newValue;
         });
 
+        toggleScaleCubes?.RegisterValueChangedCallback(evt => {
+            var dbg = skeleton != null ? skeleton.GetComponent<ScaleDebugger>() : null;
+            if (dbg != null)
+                dbg.Visible = evt.newValue;
+            else
+                Debug.LogWarning("[ScaleDebugger] Component not found on skeleton GameObject. Add ScaleDebugger to the tree.");
+        });
+
         if (sliderTimescale != null)
-            sliderTimescale.lowValue = GameManager.TIMESCALE_MIN;
+        {
+            sliderTimescale.lowValue = 0f;
+            sliderTimescale.highValue = 1f;
+        }
         sliderTimescale?.RegisterValueChangedCallback(evt => {
-            GameManager.TIMESCALE = evt.newValue;
-            if (labelTimescale != null) labelTimescale.text = FormatTimescaleLabel(evt.newValue);
+            float ts = SliderToTimescale(evt.newValue);
+            // Snap to nearest notch if within ±3% of slider range
+            foreach (float notch in TimescaleNotches)
+            {
+                float notchPos = TimescaleToSlider(notch);
+                if (Mathf.Abs(evt.newValue - notchPos) < 0.03f)
+                {
+                    ts = notch;
+                    sliderTimescale.SetValueWithoutNotify(notchPos);
+                    break;
+                }
+            }
+            GameManager.TIMESCALE = ts;
+            if (labelTimescale != null) labelTimescale.text = FormatTimescaleLabel(ts);
         });
         toggleQuickWinter?.RegisterValueChangedCallback(evt => {
             GameManager.quickWinter = evt.newValue;
@@ -385,6 +529,8 @@ public class ButtonClicker : MonoBehaviour
         });
 
         GameManager.OnGameStateChanged += OnGameStateChanged;
+        GameManager.OnMonthChanged     += OnMonthChanged;
+        if (skeleton != null) skeleton.OnWireSetGold += OnWireSetGold;
 
         // Sync overlay visibility to whatever state was set before OnEnable ran
         var initState = GameManager.Instance?.state ?? GameState.SpeciesSelect;
@@ -408,15 +554,19 @@ public class ButtonClicker : MonoBehaviour
     void OnDisable()
     {
         GameManager.OnGameStateChanged -= OnGameStateChanged;
+        GameManager.OnMonthChanged     -= OnMonthChanged;
+        if (skeleton != null) skeleton.OnWireSetGold -= OnWireSetGold;
     }
 
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Escape))
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
             var s = GameManager.Instance?.state ?? GameState.Idle;
             if (s == GameState.LoadMenu && loadMenuHasBack)
                 OnLoadMenuBack();
+            else if (s == GameState.TipPause && !string.IsNullOrEmpty(GameManager.TooltipTitle))
+                GameManager.Instance.ExitTipPause();  // dismiss first-use tooltip with ESC
             else if (s != GameState.LoadMenu && s != GameState.SpeciesSelect &&
                      s != GameState.TipPause && s != GameState.TreeDead && s != GameState.AirLayerSever)
                 TogglePauseMenu();
@@ -499,6 +649,14 @@ public class ButtonClicker : MonoBehaviour
             var potSoil = skeleton.GetComponent<PotSoil>();
             if (potSoil != null)
             {
+                // Sync pending pot size from actual pot on first open
+                if (pendingPotSize != potSoil.potSize)
+                {
+                    pendingPotSize = potSoil.potSize;
+                    if (potSizeLabel != null) potSizeLabel.text = $"Current: {potSoil.potSize}";
+                    RefreshPotSizeButtons();
+                }
+
                 float deg = potSoil.soilDegradation;
                 float sat = potSoil.saturationLevel;
 
@@ -524,6 +682,29 @@ public class ButtonClicker : MonoBehaviour
                 }
             }
         }
+
+        // Root rake panel: show in RootRake state, update status label
+        bool inRootRake = GameManager.Instance.state == GameState.RootRake;
+        if (rootRakePanel != null)
+            rootRakePanel.style.display = inRootRake ? DisplayStyle.Flex : DisplayStyle.None;
+
+        if (inRootRake && skeleton != null)
+        {
+            var rakeManager = skeleton.GetComponent<RootRakeManager>();
+            if (rakeManager != null && rakeStatusLabel != null)
+            {
+                float removed = rakeManager.SoilRemovedFraction() * 100f;
+                int strands = rakeManager.RootStrandCount();
+                rakeStatusLabel.text = $"Soil removed: {removed:F0}%\nRoot strands: {strands}";
+            }
+        }
+
+        // Stats panel: refresh every frame while open
+        if (uiToggleState == UIToggleState.Stats)
+            RefreshStatsPanel();
+
+        // Speed toggle button: keep in sync with GameManager (catches auto-slow in January)
+        RefreshSpeedToggleButton();
 
         // Tree danger banner: show when tree is stressed but not yet dead
         if (treeDangerBanner != null && skeleton != null)
@@ -560,9 +741,197 @@ public class ButtonClicker : MonoBehaviour
                     undoLabel.text = $"<< UNDO  Ctrl+Z  ({skeleton.UndoTimeRemaining:F0}s)";
             }
 
-            if (canUndo && Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.Z))
+            if (canUndo && Keyboard.current != null && Keyboard.current.leftCtrlKey.isPressed && Keyboard.current.zKey.wasPressedThisFrame)
                 skeleton.UndoLastTrim();
         }
+    }
+
+    // ── First-use tooltips ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Show a first-use tooltip for the given id if it hasn't been shown before.
+    /// Call this AFTER the underlying action so the tool is already active when the tip appears.
+    /// </summary>
+    void MaybeShowTooltip(string id, string title, string body)
+    {
+        if (shownTooltips == null || shownTooltips.Contains(id)) return;
+        shownTooltips.Add(id);
+        SaveShownTooltips();
+        GameManager.Instance?.ShowTooltip(title, body);
+    }
+
+    void SaveShownTooltips()
+    {
+        PlayerPrefs.SetString(TooltipPrefsKey, string.Join(",", shownTooltips));
+        PlayerPrefs.Save();
+    }
+
+    // ── Speed toggle ─────────────────────────────────────────────────────────
+
+    void OnSpeedToggleClick()
+    {
+        GameManager.Instance.ToggleSpeed();
+        RefreshSpeedToggleButton();
+    }
+
+    void RefreshSpeedToggleButton()
+    {
+        if (speedToggleButton == null) return;
+        var mode = GameManager.CurrentSpeed;
+        speedToggleButton.text = mode switch
+        {
+            GameManager.SpeedMode.Slow => "▶",
+            GameManager.SpeedMode.Med  => "▶▶",
+            _                          => "▶▶▶",
+        };
+        speedToggleButton.style.color = mode switch
+        {
+            GameManager.SpeedMode.Slow => new StyleColor(new Color(0.9f, 0.7f, 0.2f)),   // amber
+            GameManager.SpeedMode.Med  => new StyleColor(new Color(0.63f, 0.63f, 0.63f)),// grey
+            _                          => new StyleColor(new Color(0.55f, 0.85f, 0.55f)),// green
+        };
+    }
+
+    // ── UI cycle toggle ───────────────────────────────────────────────────────
+
+    void OnUIToggleClick()
+    {
+        // Advance: Tools → Stats → Neither → Tools …
+        uiToggleState = uiToggleState switch
+        {
+            UIToggleState.Tools   => UIToggleState.Stats,
+            UIToggleState.Stats   => UIToggleState.Neither,
+            _                     => UIToggleState.Tools,
+        };
+        ApplyUIToggleState();
+    }
+
+    void ApplyUIToggleState()
+    {
+        bool showTools = uiToggleState == UIToggleState.Tools;
+        bool showStats = uiToggleState == UIToggleState.Stats;
+
+        SetHideableButtonsVisible(showTools);
+
+        if (treeStatsPanel != null)
+            treeStatsPanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
+        if (rootHealthPanel != null)
+            rootHealthPanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
+
+        if (uiToggleButton != null)
+            uiToggleButton.style.color = uiToggleState switch
+            {
+                UIToggleState.Tools   => new StyleColor(new Color(0.63f, 0.63f, 0.63f)), // grey  — default
+                UIToggleState.Stats   => new StyleColor(new Color(0.55f, 0.85f, 0.55f)), // green — stats open
+                _                     => new StyleColor(new Color(0.9f, 0.7f, 0.2f)),    // amber — all hidden
+            };
+
+        if (showStats) RefreshStatsPanel();
+    }
+
+    /// <summary>
+    /// Elements toggled by the cycle button.
+    /// Excludes: UIToggleButton, PauseButton, and always-visible overlays.
+    /// </summary>
+    void SetHideableButtonsVisible(bool visible)
+    {
+        var ds = visible ? DisplayStyle.Flex : DisplayStyle.None;
+        void Set(VisualElement e) { if (e != null) e.style.display = ds; }
+
+        // Left-column tool buttons
+        Set(trimButton); Set(waterButton);
+        Set(pinchButton); Set(defoliateButton); Set(defoliateAllButton);
+        Set(wireButton); Set(removeWireButton);
+
+        // Right-column tool buttons (absolute-positioned; only the ones not context-controlled)
+        Set(pasteButton); Set(rootPruneButton); Set(airLayerButton); Set(graftButton);
+
+        // Right-column action buttons
+        Set(fertilizeButton); Set(herbicideButton); Set(fungicideButton);
+
+        // Moisture and nutrient bars sit beside their buttons — hide together
+        var mbar = moistureBarFill?.parent; if (mbar != null) mbar.style.display = ds;
+        if (nutrientBarFill != null)
+        {
+            var nbar = nutrientBarFill.parent;
+            if (nbar != null) nbar.style.display = ds;
+        }
+    }
+
+    void RefreshStatsPanel()
+    {
+        if (skeleton == null || treeStatsPanel == null) return;
+        UpdateRootHealthDisplay();
+
+        // Moisture
+        float moist = skeleton.soilMoisture;
+        if (statMoisture != null)
+        {
+            statMoisture.text = $"{moist * 100f:F0}%";
+            statMoisture.style.color = new StyleColor(moist < 0.25f
+                ? new Color(0.9f, 0.4f, 0.3f)
+                : moist < 0.5f ? new Color(0.9f, 0.7f, 0.3f)
+                : new Color(0.55f, 0.85f, 0.55f));
+        }
+
+        // Nutrients
+        float nutr = skeleton.nutrientReserve;
+        if (statNutrients != null)
+        {
+            statNutrients.text = $"{nutr:F2}";
+            statNutrients.style.color = new StyleColor(nutr < 0.3f
+                ? new Color(0.9f, 0.4f, 0.3f)
+                : nutr > 1.5f ? new Color(0.9f, 0.6f, 0.2f)
+                : new Color(0.55f, 0.85f, 0.55f));
+        }
+
+        // Average health
+        float avgH = 0f; int hc = 0;
+        foreach (var n in skeleton.allNodes) if (!n.isTrimmed) { avgH += n.health; hc++; }
+        if (hc > 0) avgH /= hc;
+        if (statAvgHealth != null)
+        {
+            statAvgHealth.text = $"{avgH * 100f:F0}%";
+            statAvgHealth.style.color = new StyleColor(avgH < 0.4f
+                ? new Color(0.9f, 0.3f, 0.3f)
+                : avgH < 0.65f ? new Color(0.9f, 0.7f, 0.3f)
+                : new Color(0.55f, 0.85f, 0.55f));
+        }
+
+        // Energy
+        if (statEnergy != null)
+            statEnergy.text = $"{skeleton.treeEnergy * 100f:F0}%";
+
+        // Soil
+        var potSoil = skeleton.GetComponent<PotSoil>();
+        if (statCompaction != null)
+            statCompaction.text = potSoil != null ? $"{potSoil.soilDegradation * 100f:F0}%" : "—";
+
+        // Fungal load — average across all nodes
+        float fungSum = 0f; int fc = 0;
+        foreach (var n in skeleton.allNodes) if (!n.isTrimmed) { fungSum += n.fungalLoad; fc++; }
+        float fungAvg = fc > 0 ? fungSum / fc : 0f;
+        if (statFungal != null)
+        {
+            statFungal.text = $"{fungAvg * 100f:F0}%";
+            statFungal.style.color = new StyleColor(fungAvg > 0.3f
+                ? new Color(0.9f, 0.4f, 0.3f)
+                : fungAvg > 0.1f ? new Color(0.9f, 0.7f, 0.3f)
+                : new Color(0.55f, 0.85f, 0.55f));
+        }
+
+        // Wound count
+        int woundCount = 0;
+        foreach (var n in skeleton.allNodes) if (n.hasWound && !n.isTrimmed) woundCount++;
+        if (statWounds != null)
+            statWounds.text = woundCount == 0 ? "None" : woundCount.ToString();
+
+        // Seasons since repot
+        if (statRepot != null)
+            statRepot.text = potSoil != null ? $"{potSoil.seasonsSinceRepot} seasons" : "—";
+
+        // Root health score (nebari quality) — only shown in root panel; omitted here to avoid confusion
+        // with the separate "root vitality" (avg health %) which is a different metric.
     }
 
     // ── Pause menu helpers ───────────────────────────────────────────────────
@@ -633,8 +1002,9 @@ public class ButtonClicker : MonoBehaviour
 
         if (sliderTimescale != null)
         {
-            sliderTimescale.lowValue = GameManager.TIMESCALE_MIN;
-            sliderTimescale.SetValueWithoutNotify(GameManager.TIMESCALE);
+            sliderTimescale.lowValue = 0f;
+            sliderTimescale.highValue = 1f;
+            sliderTimescale.SetValueWithoutNotify(TimescaleToSlider(GameManager.TIMESCALE));
             if (labelTimescale != null) labelTimescale.text = FormatTimescaleLabel(GameManager.TIMESCALE);
         }
         if (toggleQuickWinter != null)
@@ -676,10 +1046,49 @@ public class ButtonClicker : MonoBehaviour
         }
     }
 
+    // ── Month-triggered tutorials ─────────────────────────────────────────────
+
+    void OnWireSetGold()
+    {
+        MaybeShowTooltip("removewire",
+            "Wire Is Set — Remove Now",
+            "A wire has turned gold. The branch has held its new direction.\n\n" +
+            "Remove the wire before it bites into the bark — wire left too long cuts into the cambium and leaves scars that take years to callus over.\n\n" +
+            "Use the Unwire tool (click the gold wire) to remove it safely.");
+    }
+
+    void OnMonthChanged(int month)
+    {
+        if (month == 4)
+        {
+            MaybeShowTooltip("april_ramification",
+                "April — Pinching & Ramification",
+                "New shoots are extending right now. This is the most important window of the year.\n\n" +
+                "PINCH any shoot that has extended 2–3 leaves. Removing the growing tip stops auxin production — the hormone that suppresses side buds. Within a week, 2–4 new buds will break from the nodes below the cut.\n\n" +
+                "This is how ramification works: each pinch turns 1 tip into 2–4. Do this every spring and your branch count doubles each year.\n\n" +
+                "TRIM vs PINCH:\n" +
+                "• Pinch = soft tip only, now, while it's green. Short internodes, maximum back-budding.\n" +
+                "• Trim = any time on hardened wood. For structure — removing whole branches.\n\n" +
+                "Heavy trimming in January forced energy back into the old wood. Now those backbuds are extending. Pinch them before they run — don't let any one shoot dominate.");
+        }
+    }
+
     // ── Button swap logic ────────────────────────────────────────────────────
 
     void OnGameStateChanged(GameState state)
     {
+        // First-use tooltip overlay: visible in TipPause when a tooltip title is set.
+        if (tooltipOverlay != null)
+        {
+            bool showTip = state == GameState.TipPause && !string.IsNullOrEmpty(GameManager.TooltipTitle);
+            tooltipOverlay.style.display = showTip ? DisplayStyle.Flex : DisplayStyle.None;
+            if (showTip)
+            {
+                if (tooltipTitleLabel != null) tooltipTitleLabel.text = GameManager.TooltipTitle;
+                if (tooltipBodyLabel  != null) tooltipBodyLabel.text  = GameManager.TooltipBody;
+            }
+        }
+
         // Species select overlay: shown only during species picker state
         if (speciesSelectOverlay != null)
             speciesSelectOverlay.style.display = state == GameState.SpeciesSelect
@@ -732,14 +1141,34 @@ public class ButtonClicker : MonoBehaviour
         if (inRockPlace || inTreeOrient)
             ToolManager.Instance.ClearTool();
 
-        // Air Layer slot → Place Rock while in any root-lift state
-        if (airLayerButton   != null) airLayerButton.style.display   = inRootLift ? DisplayStyle.None : DisplayStyle.Flex;
-        if (placeRockButton  != null) placeRockButton.style.display  = inRootPrune ? DisplayStyle.Flex : DisplayStyle.None;
+        bool inPlacement = inRockPlace || inTreeOrient;
 
-        // Paste slot → Confirm Orientation while placing rock or orienting tree
-        bool showConfirm = inRockPlace || inTreeOrient;
-        if (pasteButton        != null) pasteButton.style.display        = showConfirm ? DisplayStyle.None : DisplayStyle.Flex;
-        if (confirmOrientButton!= null) confirmOrientButton.style.display= showConfirm ? DisplayStyle.Flex : DisplayStyle.None;
+        // Dim and disable all tool buttons during rock placement / tree orient
+        Button[] toolButtons = {
+            trimButton, waterButton, pinchButton, defoliateButton, defoliateAllButton,
+            wireButton, removeWireButton, rootPruneButton, quickWinterButton,
+            pasteButton, fertilizeButton, herbicideButton, fungicideButton,
+            airLayerButton, graftButton, placeRockButton,
+            repotClassicButton, repotFreeDrainButton, repotMoistButton, repotAcidicButton,
+        };
+        foreach (var btn in toolButtons)
+        {
+            if (btn == null) continue;
+            btn.pickingMode   = inPlacement ? PickingMode.Ignore : PickingMode.Position;
+            btn.style.opacity = inPlacement ? 0.25f : 1f;
+        }
+
+        // Air Layer / Place Rock slot visibility (only when not in placement)
+        if (!inPlacement)
+        {
+            if (airLayerButton  != null) airLayerButton.style.display  = inRootLift  ? DisplayStyle.None : DisplayStyle.Flex;
+            if (graftButton     != null) graftButton.style.display     = inRootLift  ? DisplayStyle.None : DisplayStyle.Flex;
+            if (placeRockButton != null) placeRockButton.style.display = inRootPrune ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        // Confirm / Cancel orient buttons — visible only during rock placement / tree orient
+        if (orientButtonContainer != null)
+            orientButtonContainer.style.display = inPlacement ? DisplayStyle.Flex : DisplayStyle.None;
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────────
@@ -1131,16 +1560,25 @@ public class ButtonClicker : MonoBehaviour
     public void OnTreeButtonClick(ClickEvent evt){
         ToolManager.Instance.SelectTool(ToolType.SmallClippers);
         AudioManager.Instance.PlaySFX("Trim");
+        MaybeShowTooltip("trim",
+            "Trimming",
+            "Click a branch tip to cut it. The parent node becomes a cut point — growth continues from there the following spring.\n\nTip: trimming in winter (Jan–Feb) is standard bonsai practice and gives the best recovery.");
     }
 
     public void OnPinchButtonClick(ClickEvent evt){
         ToolManager.Instance.SelectTool(ToolType.Pinch);
         AudioManager.Instance.PlaySFX("Trim");
+        MaybeShowTooltip("pinch",
+            "Pinching",
+            "Click a soft growing tip to pinch it. This stops tip elongation and stimulates back-budding nearby, creating denser branching.\n\nBest used in active growth season (spring–summer).");
     }
 
     public void OnDefoliateButtonClick(ClickEvent evt){
         if (!IsDefoliationAllowed()) return;
         ToolManager.Instance.SelectTool(ToolType.Defoliate);
+        MaybeShowTooltip("defoliate",
+            "Defoliation",
+            "Remove leaves to shock the tree into producing smaller replacement foliage and stronger ramification.\n\nOnly effective in June–July. Weakens the tree — do not defoliate if the tree is stressed.");
     }
 
     public void OnDefoliateAllButtonClick(ClickEvent evt){
@@ -1206,12 +1644,44 @@ public class ButtonClicker : MonoBehaviour
             s == GameState.LeafFall || s == GameState.LeafGrow)
         {
             skeleton.Fertilize();
+            MaybeShowTooltip("fertilize",
+                "Fertilizing",
+                "Fertilizer replenishes nutrient reserves that fuel growth and thickening.\n\n" +
+                "A balanced fertilizer in spring and summer promotes strong growth. Switch to a low-nitrogen fertilizer in late summer to harden the wood before winter.\n\n" +
+                "Do not fertilize in winter — dormant roots cannot absorb nutrients and excess salts will burn them. The fertilize button dims in Nov–Feb as a reminder.");
         }
     }
 
     void OnHerbicideButtonClick()
     {
         WeedManager.Instance?.HerbicideAll();
+        MaybeShowTooltip("herbicide",
+            "Weeding",
+            "Weeds compete directly for nutrients and moisture in the small soil volume of a bonsai pot.\n\n" +
+            "Remove them early — a weed allowed to flower and seed will spread across the pot surface. Herbicide kills all active weeds at once.\n\n" +
+            "Check the soil surface after each watering. A layer of fine moss over the soil surface is the best long-term weed suppressor.");
+    }
+
+    void SelectPotSize(PotSoil.PotSize size)
+    {
+        pendingPotSize = size;
+        if (potSizeLabel != null)
+            potSizeLabel.text = $"Current: {size}";
+        RefreshPotSizeButtons();
+    }
+
+    void RefreshPotSizeButtons()
+    {
+        var sizes = new[] { (potSizeXSButton, PotSoil.PotSize.XS), (potSizeSButton, PotSoil.PotSize.S),
+                            (potSizeMButton,  PotSoil.PotSize.M),  (potSizeLButton,  PotSoil.PotSize.L),
+                            (potSizeXLButton, PotSoil.PotSize.XL), (potSizeSlabButton, PotSoil.PotSize.Slab) };
+        foreach (var (btn, sz) in sizes)
+        {
+            if (btn == null) continue;
+            btn.style.backgroundColor = (sz == pendingPotSize)
+                ? new UnityEngine.UIElements.StyleColor(new Color(0.40f, 0.55f, 0.35f))
+                : new UnityEngine.UIElements.StyleColor(new Color(0.25f, 0.25f, 0.25f));
+        }
     }
 
     void OnRepotButtonClick(PotSoil.SoilPreset preset)
@@ -1219,9 +1689,36 @@ public class ButtonClicker : MonoBehaviour
         if (skeleton == null) return;
         var potSoil = skeleton.GetComponent<PotSoil>();
         if (potSoil == null) return;
-        potSoil.Repot(skeleton, preset);
+
+        // Pot-bound trees get the rake mini-game before new soil is applied
+        if (skeleton.IsPotBound())
+        {
+            var rakeManager = skeleton.GetComponent<RootRakeManager>();
+            if (rakeManager != null)
+            {
+                bool sizeChanged = pendingPotSize != potSoil.potSize;
+                rakeManager.EnterRakeMode(preset, pendingPotSize, sizeChanged);
+                return;
+            }
+        }
+
+        // Normal (non-pot-bound) repot — apply immediately
+        bool changed = pendingPotSize != potSoil.potSize;
+        potSoil.Repot(skeleton, preset, pendingPotSize, changed);
         // Refresh leaf tint — repot stress may have changed node health
         skeleton.GetComponent<LeafManager>()?.RefreshFungalTint(skeleton);
+    }
+
+    void OnConfirmRepotClick()
+    {
+        if (skeleton == null) return;
+        skeleton.GetComponent<RootRakeManager>()?.ConfirmRepot();
+    }
+
+    void OnCancelRakeClick()
+    {
+        if (skeleton == null) return;
+        skeleton.GetComponent<RootRakeManager>()?.CancelRakeMode();
     }
 
     void OnDeadLoadClick()
@@ -1281,11 +1778,17 @@ public class ButtonClicker : MonoBehaviour
         var s = GameManager.Instance.state;
         if (s == GameState.Idle || s == GameState.BranchGrow || s == GameState.TimeGo)
             skeleton?.Water();
+        MaybeShowTooltip("water",
+            "Watering",
+            "Keep soil moisture in the healthy range (shown on the moisture bar). Too dry and the tree stresses; too wet and roots rot.\n\nTip: water less in winter when the tree is dormant — cold wet soil encourages root rot.");
     }
 
     public void OnWireButtonClick(ClickEvent evt)
     {
         ToolManager.Instance.SelectTool(ToolType.Wire);
+        MaybeShowTooltip("wire",
+            "Wiring",
+            "Apply wire to guide a branch's direction over time. Click the base anchor, then click a tip to wrap the wire along the branch.\n\nCheck in spring — remove before the wire bites into bark.");
     }
 
     public void OnRemoveWireButtonClick(ClickEvent evt)
@@ -1296,14 +1799,29 @@ public class ButtonClicker : MonoBehaviour
     public void OnRootPruneButtonClick(ClickEvent evt)
     {
         GameManager.Instance.ToggleRootPrune();
+        MaybeShowTooltip("repot",
+            "Repotting",
+            "Lift the tree to manage its root system and repot into fresh soil.\n\nBest done in late winter (Jan–Feb). When roots are pot-bound, rake away the soil ball before repotting to straighten and refresh the roots.");
     }
 
     void UpdateRootHealthDisplay()
     {
         if (skeleton == null || rootHealthScoreLabel == null || rootHealthSectors == null) return;
 
-        int score = Mathf.RoundToInt(skeleton.RootHealthScore);
-        rootHealthScoreLabel.text = score.ToString();
+        // Only show a score once the tree has root nodes; "—" avoids garbage values at startup.
+        bool hasRoots = false;
+        foreach (var n in skeleton.allNodes) if (n.isRoot && !n.isTrimmed) { hasRoots = true; break; }
+
+        if (!hasRoots)
+        {
+            rootHealthScoreLabel.text = "—";
+            return;
+        }
+
+        float raw = skeleton.RootHealthScore;
+        rootHealthScoreLabel.text = float.IsNaN(raw) || float.IsInfinity(raw)
+            ? "—"
+            : Mathf.RoundToInt(raw).ToString();
 
         float[] coverage = skeleton.RootHealthSectorCoverage;
         for (int i = 0; i < 8 && i < rootHealthSectors.childCount; i++)
@@ -1330,6 +1848,9 @@ public class ButtonClicker : MonoBehaviour
     public void OnPasteButtonClick(ClickEvent evt)
     {
         ToolManager.Instance.SelectTool(ToolType.Paste);
+        MaybeShowTooltip("paste",
+            "Wound Paste",
+            "Apply paste to open wounds (shown as coloured marks on cut surfaces) to prevent fungal infection and accelerate callus formation.\n\nAlways paste large cuts, especially heading cuts made in wet or cold seasons.");
     }
 
     public void OnAirLayerButtonClick(ClickEvent evt)
@@ -1342,6 +1863,19 @@ public class ButtonClicker : MonoBehaviour
             return;
         }
         ToolManager.Instance.SelectTool(ToolType.AirLayer);
+        MaybeShowTooltip("airlayer",
+            "Air Layering",
+            "Mark a healthy branch to grow roots at a midpoint along its length. After several seasons of rooting, sever it to propagate a new tree.\n\nRequires patience — the layer needs to build a strong root mass before severing.");
+    }
+
+    void OnGraftButtonClick()
+    {
+        ToolManager.Instance.SelectTool(ToolType.Graft);
+        MaybeShowTooltip("graft",
+            "Approach Grafting",
+            "Select a living branch tip as the source, then click a nearby node on a different branch as the target.\n\n" +
+            "Over 2 growing seasons the source tip will grow toward the target and fuse, creating a living bridge between the two branches.\n\n" +
+            "Tip: keep both nodes healthy during the fusion period — if either dies, the graft fails.");
     }
 
     void OnSeverConfirmClick()
@@ -1367,6 +1901,12 @@ public class ButtonClicker : MonoBehaviour
     public void OnConfirmOrientButtonClick(ClickEvent evt)
     {
         GameManager.Instance.ConfirmRockOrient();
+    }
+
+    void OnCancelOrientButtonClick()
+    {
+        skeleton?.RestorePrePlacementSnapshot();
+        GameManager.Instance.ToggleRootPrune();
     }
 
     // ── Species Selection ────────────────────────────────────────────────────
@@ -1600,14 +2140,38 @@ public class ButtonClicker : MonoBehaviour
             skeleton.treeOrigin = TreeOrigin.Seedling;
             skeleton.ApplySpecies();
         }
-        GameManager.Instance.UpdateGameState(GameState.TipPause);
+        string speciesName = selectedSpecies?.speciesName ?? "your tree";
+        GameManager.Instance.ShowTooltip(
+            $"Your {speciesName} is planted.",
+            "Use the tool buttons on the left to water, trim, and train your tree as the seasons pass.\n\n" +
+            "Time auto-slows in January — your pruning window. Use ▶▶/▶ in the corner to control speed.\n\n" +
+            "Press the ◉ button to hide the tools or view health stats.");
     }
+
+    const float TIMESCALE_MAX = 400f;
+    static readonly float[] TimescaleNotches =
+    {
+        GameManager.TIMESCALE_MIN, // 1 game-min / real-sec
+        0.5f,                      // 1 hr / 2 real-sec
+        1f,                        // 1 hr / real-sec
+        50f, 100f, 200f,
+        TIMESCALE_MAX,
+    };
+
+    static float SliderToTimescale(float s) =>
+        Mathf.Exp(Mathf.Lerp(Mathf.Log(GameManager.TIMESCALE_MIN), Mathf.Log(TIMESCALE_MAX), s));
+
+    static float TimescaleToSlider(float ts) =>
+        Mathf.InverseLerp(Mathf.Log(GameManager.TIMESCALE_MIN), Mathf.Log(TIMESCALE_MAX),
+                          Mathf.Log(Mathf.Max(ts, GameManager.TIMESCALE_MIN)));
 
     static string FormatTimescaleLabel(float ts)
     {
         if (ts <= GameManager.TIMESCALE_MIN + 0.001f) return "1 min/s";
-        if (ts < 1f) return ts.ToString("F2");
-        return Mathf.RoundToInt(ts).ToString();
+        if (Mathf.Abs(ts - 0.5f)  < 0.01f) return "1 hr/2s";
+        if (Mathf.Abs(ts - 1f)    < 0.01f) return "1 hr/s";
+        if (ts < 1f) return $"{ts:F2}×";
+        return $"{Mathf.RoundToInt(ts)}×";
     }
 
     static void SetCardBorderColor(VisualElement el, Color col)

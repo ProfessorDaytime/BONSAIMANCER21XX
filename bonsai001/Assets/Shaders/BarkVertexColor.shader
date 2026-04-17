@@ -1,43 +1,46 @@
 Shader "Custom/BarkVertexColor"
 {
-    // Two full PBR material sets — New Growth and Bark — blended by vertex alpha.
-    //   vertex alpha = 0  →  fully new growth (young thin branches)
-    //   vertex alpha = 1  →  fully bark        (mature thick branches)
-    //   vertex red   = 0  →  branch (green new growth color)
-    //   vertex red   = 1  →  root   (white/beige new growth color)
-    // The blend is driven by TreeMeshBuilder based on node radius and age.
+    // ── Vertex color encoding (set by TreeMeshBuilder) ───────────────────────
+    //   R = isRoot      (0 = branch, 1 = root)
+    //   G = woundMask   (0 = healthy, 1 = fresh wound — fades with woundAge)
+    //   B = pasteMask   (0 = none, 1 = cut paste applied)
+    //   A = barkBlend   (0 = new growth / thin twig, 1 = mature bark)
     //
-    // URP HLSL rewrite — replaces the old surface shader.
-    // Properties use Roughness (not Smoothness) per artist preference.
+    // ── Bark patterns ────────────────────────────────────────────────────────
+    //   _BarkType (int 1-18) selects the procedural pattern for mature bark.
+    //   Thin branches always use Type-2 fine fissures regardless of species.
+    //   The barkBlend weight fades between them — matching real bark development.
+    //
+    // ── Lighting ─────────────────────────────────────────────────────────────
+    //   3-band cel shading (shadow / mid / lit) with a separate outline pass.
 
     Properties
     {
-        [Header(Bark)]
-        _BarkColor        ("Color",             Color)      = (1,1,1,1)
-        _BarkTex          ("Albedo",            2D)         = "white" {}
-        [Normal]
-        _BarkBump         ("Normal Map",        2D)         = "bump"  {}
-        _BarkRoughness    ("Roughness",         Range(0,1)) = 0.99
-        _BarkMetallic     ("Metallic",          Range(0,1)) = 0.0
-        [HDR]
-        _BarkEmissionColor("Emission Color",    Color)      = (0,0,0,1)
-        _BarkEmissionMap  ("Emission Map",      2D)         = "white" {}
-        _BarkOcclusionMap ("Occlusion Map",     2D)         = "white" {}
-        _BarkOcclusionStr ("Occlusion Strength",Range(0,1)) = 1.0
+        [Header(Species Bark Colors)]
+        _BarkColor        ("Mature Bark Color",   Color)      = (0.45,0.38,0.30,1)
+        _NGColor          ("Young Bark (branch)", Color)      = (0.42,0.62,0.25,1)
+        _NGRootColor      ("Young Bark (root)",   Color)      = (0.82,0.75,0.58,1)
 
-        [Header(New Growth)]
-        _NGColor          ("Color (branches)",  Color)      = (0.5,0.95,0.4,1)
-        _NGRootColor      ("Color (roots)",     Color)      = (0.92,0.90,0.85,1)
-        _NGTex            ("Albedo",            2D)         = "white" {}
-        [Normal]
-        _NGBump           ("Normal Map",        2D)         = "bump"  {}
-        _NGRoughness      ("Roughness",         Range(0,1)) = 0.9
-        _NGMetallic       ("Metallic",          Range(0,1)) = 0.0
-        [HDR]
-        _NGEmissionColor  ("Emission Color",    Color)      = (0,0,0,1)
-        _NGEmissionMap    ("Emission Map",      2D)         = "white" {}
-        _NGOcclusionMap   ("Occlusion Map",     2D)         = "white" {}
-        _NGOcclusionStr   ("Occlusion Strength",Range(0,1)) = 1.0
+        [Header(Bark Pattern)]
+        [IntRange] _BarkType      ("Bark Type (1-18)", Range(1,18)) = 2
+        _BarkPatternScale         ("Pattern Scale",    Float)      = 1.0
+        _BarkGrooveDepth          ("Groove Darkness",  Range(0,1)) = 0.45
+
+        [Header(Wound)]
+        _WoundHeartColor   ("Heartwood Color",  Color) = (0.82,0.68,0.48,1)
+        _WoundCambiumColor ("Cambium Ring",     Color) = (0.55,0.72,0.30,1)
+        _WoundCallusColor  ("Callus Color",     Color) = (0.52,0.38,0.24,1)
+        _PasteColor        ("Cut Paste Color",  Color) = (0.22,0.20,0.18,1)
+
+        [Header(Cel Shading)]
+        _ShadowThreshold  ("Shadow Threshold",  Range(0,1)) = 0.20
+        _MidThreshold     ("Mid Threshold",     Range(0,1)) = 0.55
+        _ShadowTint       ("Shadow Tint",       Color)      = (0.25,0.22,0.28,1)
+        _MidTint          ("Mid Tint",          Color)      = (0.78,0.75,0.72,1)
+
+        [Header(Outline)]
+        _OutlineWidth     ("Outline Width",     Float)      = 0.018
+        _OutlineColor     ("Outline Color",     Color)      = (0.10,0.08,0.06,1)
     }
 
     SubShader
@@ -50,9 +53,76 @@ Shader "Custom/BarkVertexColor"
         }
         LOD 300
 
-        // ────────────────────────────────────────────────────────────────────────────
-        //  FORWARD LIT PASS
-        // ────────────────────────────────────────────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────────
+        //  PASS 1 — Silhouette outline (backface inflate)
+        // ────────────────────────────────────────────────────────────────────
+        Pass
+        {
+            Name "Outline"
+            Tags { "LightMode" = "SRPDefaultUnlit" }
+            Cull Front
+            ZWrite On
+
+            HLSLPROGRAM
+            #pragma vertex   OutlineVert
+            #pragma fragment OutlineFrag
+            #pragma multi_compile_instancing
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            CBUFFER_START(UnityPerMaterial)
+                float4 _BarkColor;
+                float4 _NGColor;
+                float4 _NGRootColor;
+                int    _BarkType;
+                float  _BarkPatternScale;
+                float  _BarkGrooveDepth;
+                float4 _WoundHeartColor;
+                float4 _WoundCambiumColor;
+                float4 _WoundCallusColor;
+                float4 _PasteColor;
+                float  _ShadowThreshold;
+                float  _MidThreshold;
+                float4 _ShadowTint;
+                float4 _MidTint;
+                float  _OutlineWidth;
+                float4 _OutlineColor;
+            CBUFFER_END
+
+            struct OAttr
+            {
+                float4 posOS  : POSITION;
+                float3 nrmOS  : NORMAL;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+            struct OVary
+            {
+                float4 posHCS : SV_POSITION;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+
+            OVary OutlineVert(OAttr IN)
+            {
+                OVary OUT;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
+                // Push outward in world space along the normal
+                float3 posWS  = TransformObjectToWorld(IN.posOS.xyz);
+                float3 nrmWS  = normalize(TransformObjectToWorldNormal(IN.nrmOS));
+                posWS        += nrmWS * _OutlineWidth;
+                OUT.posHCS    = TransformWorldToHClip(posWS);
+                return OUT;
+            }
+            half4 OutlineFrag(OVary IN) : SV_Target
+            {
+                return _OutlineColor;
+            }
+            ENDHLSL
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        //  PASS 2 — Forward Lit (3-band cel + procedural bark)
+        // ────────────────────────────────────────────────────────────────────
         Pass
         {
             Name "ForwardLit"
@@ -65,40 +135,31 @@ Shader "Custom/BarkVertexColor"
 
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
-            #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile _ _SHADOWS_SOFT
-            #pragma multi_compile _ LIGHTMAP_ON DIRLIGHTMAP_COMBINED
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-            // ── Per-material constants (SRP Batcher compatible) ──────────────────
             CBUFFER_START(UnityPerMaterial)
-                float4 _BarkTex_ST;
-                float4 _NGTex_ST;
                 float4 _BarkColor;
-                float4 _BarkEmissionColor;
-                float  _BarkRoughness;
-                float  _BarkMetallic;
-                float  _BarkOcclusionStr;
                 float4 _NGColor;
                 float4 _NGRootColor;
-                float4 _NGEmissionColor;
-                float  _NGRoughness;
-                float  _NGMetallic;
-                float  _NGOcclusionStr;
+                int    _BarkType;
+                float  _BarkPatternScale;
+                float  _BarkGrooveDepth;
+                float4 _WoundHeartColor;
+                float4 _WoundCambiumColor;
+                float4 _WoundCallusColor;
+                float4 _PasteColor;
+                float  _ShadowThreshold;
+                float  _MidThreshold;
+                float4 _ShadowTint;
+                float4 _MidTint;
+                float  _OutlineWidth;
+                float4 _OutlineColor;
             CBUFFER_END
-
-            TEXTURE2D(_BarkTex);          SAMPLER(sampler_BarkTex);
-            TEXTURE2D(_BarkBump);         SAMPLER(sampler_BarkBump);
-            TEXTURE2D(_BarkEmissionMap);  SAMPLER(sampler_BarkEmissionMap);
-            TEXTURE2D(_BarkOcclusionMap); SAMPLER(sampler_BarkOcclusionMap);
-            TEXTURE2D(_NGTex);            SAMPLER(sampler_NGTex);
-            TEXTURE2D(_NGBump);           SAMPLER(sampler_NGBump);
-            TEXTURE2D(_NGEmissionMap);    SAMPLER(sampler_NGEmissionMap);
-            TEXTURE2D(_NGOcclusionMap);   SAMPLER(sampler_NGOcclusionMap);
 
             struct Attributes
             {
@@ -113,16 +174,164 @@ Shader "Custom/BarkVertexColor"
             struct Varyings
             {
                 float4 positionHCS : SV_POSITION;
-                float2 uvBark      : TEXCOORD0;
-                float2 uvNG        : TEXCOORD1;
-                float3 positionWS  : TEXCOORD2;
-                float3 normalWS    : TEXCOORD3;
-                float4 tangentWS   : TEXCOORD4;  // xyz=tangent w=sign
-                half4  color       : TEXCOORD5;
-                float  fogCoord    : TEXCOORD6;
+                float2 uv          : TEXCOORD0;
+                float3 positionWS  : TEXCOORD1;
+                float3 normalWS    : TEXCOORD2;
+                half4  color       : TEXCOORD3;
+                float  fogCoord    : TEXCOORD4;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
+
+            // ── Noise utilities (Unity ShaderGraph built-ins, inlined) ──────
+
+            // Hash for 2D → float
+            float Hash21(float2 p)
+            {
+                p = frac(p * float2(234.34, 435.345));
+                p += dot(p, p + 34.23);
+                return frac(p.x * p.y);
+            }
+            // Hash for 2D → 2D
+            float2 Hash22(float2 p)
+            {
+                float2 q = float2(dot(p, float2(127.1, 311.7)),
+                                  dot(p, float2(269.5, 183.3)));
+                return frac(sin(q) * 43758.54);
+            }
+
+            // Simple noise (value noise)
+            float SimpleNoise(float2 uv, float scale)
+            {
+                uv *= scale;
+                float2 i = floor(uv), f = frac(uv);
+                float2 u = f * f * (3.0 - 2.0 * f);
+                return lerp(lerp(Hash21(i),              Hash21(i + float2(1,0)), u.x),
+                            lerp(Hash21(i + float2(0,1)), Hash21(i + float2(1,1)), u.x), u.y);
+            }
+
+            // Gradient noise
+            float GradNoise(float2 uv, float scale)
+            {
+                uv *= scale;
+                float2 i = floor(uv), f = frac(uv);
+                float2 u = f * f * (3.0 - 2.0 * f);
+                float a = dot(Hash22(i),              f);
+                float b = dot(Hash22(i + float2(1,0)), f - float2(1,0));
+                float c = dot(Hash22(i + float2(0,1)), f - float2(0,1));
+                float d = dot(Hash22(i + float2(1,1)), f - float2(1,1));
+                return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y) * 0.5 + 0.5;
+            }
+
+            // Voronoi — returns distance to nearest cell center
+            float Voronoi(float2 uv, float2 scale, float angleOffset, out float cells)
+            {
+                uv *= scale;
+                float2 g = floor(uv), f = frac(uv);
+                float minDist = 8.0;
+                float minCell = 0.0;
+                for (int y = -1; y <= 1; y++)
+                for (int x = -1; x <= 1; x++)
+                {
+                    float2 nb  = float2(x, y);
+                    float2 rnd = Hash22(g + nb);
+                    rnd = 0.5 + 0.5 * sin(angleOffset + 6.2831 * rnd);
+                    float2 r  = nb + rnd - f;
+                    float  d  = dot(r, r);
+                    if (d < minDist) { minDist = d; minCell = Hash21(g + nb); }
+                }
+                cells = minCell;
+                return sqrt(minDist);
+            }
+
+            // ── Per-type pattern functions ───────────────────────────────────
+            // All return a float [0,1]: 1 = bark surface, 0 = deep groove.
+
+            float BarkType1(float2 uv)  // Smooth (Ficus, Beech)
+            {
+                return 0.85 + SimpleNoise(uv, 4.0) * 0.15;
+            }
+
+            float BarkType2(float2 uv)  // Fine fissures (Maple, Wisteria) — also the universal young-bark pattern
+            {
+                float n = GradNoise(uv * float2(10.0, 1.5), 1.0);
+                return step(0.52, n);
+            }
+
+            float BarkType4(float2 uv)  // Interlacing ridges (Willow, Elm)
+            {
+                float nA = GradNoise(uv * float2(7.0, 1.0), 1.0);
+                float nB = GradNoise(uv * float2(7.0, 1.0) + float2(0.35, 0.0), 1.0);
+                return max(step(0.48, nA), step(0.48, nB));
+            }
+
+            float BarkType7(float2 uv)  // Vertical strip scales (Atlas Cedar)
+            {
+                float cells;
+                float v = Voronoi(uv, float2(0.09, 4.5), 2.0, cells);
+                return smoothstep(0.04, 0.18, v);
+            }
+
+            float BarkType8(float2 uv)  // Irregular close blocks (Spruce)
+            {
+                float cA, cB;
+                float vA = Voronoi(uv, float2(1.3, 2.2), 2.0, cA);
+                float vB = Voronoi(uv, float2(2.6, 3.0), 2.0, cB);
+                return lerp(step(0.14, vA), step(0.10, vB), 0.40);
+            }
+
+            float BarkType9(float2 uv)  // Large plates (Pine)
+            {
+                float cells;
+                float v = Voronoi(uv, float2(0.7, 1.1), 2.0, cells);
+                // Thick dark border = plate edges; pale interior = plate face
+                return 1.0 - saturate(v * 7.0);
+            }
+
+            float BarkType10(float2 uv)  // Peeling horizontal strips (Birch)
+            {
+                float warp = GradNoise(uv * float2(2.0, 0.35), 1.0) * 3.2;
+                float bands = sin(uv.y * 20.0 + warp);
+                return smoothstep(0.2, 0.7, bands * 0.5 + 0.5);
+            }
+
+            float BarkType12(float2 uv)  // Fibrous shreds (Juniper, Cedar, Redwood)
+            {
+                float n = SimpleNoise(uv * float2(38.0, 0.9), 1.0);
+                return step(0.52, n);
+            }
+
+            float BarkType14(float2 uv)  // Spongy fibrous (Swamp Cypress)
+            {
+                float base = GradNoise(uv * float2(4.5, 0.45), 1.0);
+                float edge = SimpleNoise(uv * float2(18.0, 2.5), 1.0);
+                return step(0.42, base + edge * 0.22);
+            }
+
+            float BarkType16(float2 uv)  // Horizontal lenticels (Cherry)
+            {
+                float n = SimpleNoise(uv * float2(0.7, 28.0), 1.0);
+                return step(0.70, n);  // sparse bright dashes on dark bark
+            }
+
+            float BarkPattern(float2 uv, int barkType)
+            {
+                // Scale the UV by the artist-controlled pattern scale
+                uv *= _BarkPatternScale;
+
+                if      (barkType == 1)  return BarkType1(uv);
+                else if (barkType == 4)  return BarkType4(uv);
+                else if (barkType == 7)  return BarkType7(uv);
+                else if (barkType == 8)  return BarkType8(uv);
+                else if (barkType == 9)  return BarkType9(uv);
+                else if (barkType == 10) return BarkType10(uv);
+                else if (barkType == 12) return BarkType12(uv);
+                else if (barkType == 14) return BarkType14(uv);
+                else if (barkType == 16) return BarkType16(uv);
+                else                     return BarkType2(uv);  // default / type 2
+            }
+
+            // ── Vertex / Fragment ────────────────────────────────────────────
 
             Varyings Vert(Attributes IN)
             {
@@ -137,9 +346,7 @@ Shader "Custom/BarkVertexColor"
                 OUT.positionHCS = posInputs.positionCS;
                 OUT.positionWS  = posInputs.positionWS;
                 OUT.normalWS    = nrmInputs.normalWS;
-                OUT.tangentWS   = float4(nrmInputs.tangentWS, IN.tangentOS.w * GetOddNegativeScale());
-                OUT.uvBark      = TRANSFORM_TEX(IN.uv, _BarkTex);
-                OUT.uvNG        = TRANSFORM_TEX(IN.uv, _NGTex);
+                OUT.uv          = IN.uv;
                 OUT.color       = IN.color;
                 OUT.fogCoord    = ComputeFogFactor(posInputs.positionCS.z);
                 return OUT;
@@ -150,78 +357,90 @@ Shader "Custom/BarkVertexColor"
                 UNITY_SETUP_INSTANCE_ID(IN);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                half blend  = saturate(IN.color.a);  // 0=new growth, 1=bark
-                half isRoot = IN.color.r;            // 0=branch, 1=root
+                // ── Decode vertex channels ───────────────────────────────────
+                half isRoot    = IN.color.r;          // 0=branch, 1=root
+                half woundMask = saturate(IN.color.g); // 0=healthy, 1=fresh wound
+                half pasteMask = saturate(IN.color.b); // 0=none, 1=paste
+                half blend     = saturate(IN.color.a); // 0=new growth, 1=mature bark
 
-                // ── Albedo ──────────────────────────────────────────────────────────
+                // ── Bark pattern — layered ───────────────────────────────────
+                // Young: always Type 2 fine fissures; mature: species type.
+                float2 uv          = IN.uv;
+                float youngPattern = BarkType2(uv * _BarkPatternScale);
+                float maturePattern= BarkPattern(uv, _BarkType);
+                float pattern      = lerp(youngPattern, maturePattern, blend);
+
+                // ── Base species albedo ──────────────────────────────────────
                 half4 ngTint  = lerp(_NGColor, _NGRootColor, isRoot);
-                half4 barkAlb = SAMPLE_TEXTURE2D(_BarkTex, sampler_BarkTex, IN.uvBark) * _BarkColor;
-                half4 ngAlb   = SAMPLE_TEXTURE2D(_NGTex,   sampler_NGTex,   IN.uvNG)   * ngTint;
-                half3 albedo  = lerp(ngAlb.rgb, barkAlb.rgb, blend);
+                half3 albedo  = lerp(ngTint.rgb, _BarkColor.rgb, blend);
 
-                // ── Normal (tangent space) ──────────────────────────────────────────
-                half3 barkN   = UnpackNormal(SAMPLE_TEXTURE2D(_BarkBump, sampler_BarkBump, IN.uvBark));
-                half3 ngN     = UnpackNormal(SAMPLE_TEXTURE2D(_NGBump,   sampler_NGBump,   IN.uvNG));
-                half3 normalTS = normalize(lerp(ngN, barkN, blend));
+                // Grooves darken the color — pattern=1 is ridges, pattern=0 is groove
+                albedo *= lerp(1.0 - _BarkGrooveDepth, 1.0, pattern);
 
-                // ── Occlusion ───────────────────────────────────────────────────────
-                half barkOcc   = lerp(1.0h, SAMPLE_TEXTURE2D(_BarkOcclusionMap, sampler_BarkOcclusionMap, IN.uvBark).g, _BarkOcclusionStr);
-                half ngOcc     = lerp(1.0h, SAMPLE_TEXTURE2D(_NGOcclusionMap,   sampler_NGOcclusionMap,   IN.uvNG).g,   _NGOcclusionStr);
-                half occlusion = lerp(ngOcc, barkOcc, blend);
+                // ── Wound layer ──────────────────────────────────────────────
+                // Three zones driven by woundMask value:
+                //   woundMask ≈ 0.8-1.0 → inner heartwood (fresh exposed wood)
+                //   woundMask ≈ 0.3-0.7 → cambium ring (green edge)
+                //   woundMask ≈ 0.0-0.3 → callus / healing bark
+                if (woundMask > 0.01h)
+                {
+                    half3 woundZone;
+                    if (woundMask > 0.65h)
+                        woundZone = lerp(_WoundCambiumColor.rgb, _WoundHeartColor.rgb,
+                                         smoothstep(0.65, 1.0, woundMask));
+                    else
+                        woundZone = lerp(_WoundCallusColor.rgb, _WoundCambiumColor.rgb,
+                                         smoothstep(0.0, 0.65, woundMask));
+                    albedo = lerp(albedo, woundZone, woundMask);
+                }
 
-                // ── Emission ────────────────────────────────────────────────────────
-                half3 barkEmit = SAMPLE_TEXTURE2D(_BarkEmissionMap, sampler_BarkEmissionMap, IN.uvBark).rgb * _BarkEmissionColor.rgb;
-                half3 ngEmit   = SAMPLE_TEXTURE2D(_NGEmissionMap,   sampler_NGEmissionMap,   IN.uvNG).rgb   * _NGEmissionColor.rgb;
-                half3 emission = lerp(ngEmit, barkEmit, blend);
+                // ── Paste override ───────────────────────────────────────────
+                albedo = lerp(albedo, _PasteColor.rgb, pasteMask);
 
-                // ── PBR scalars (Roughness exposed, converted to Smoothness for URP) ─
-                half metallic  = lerp(_NGMetallic,  _BarkMetallic,  blend);
-                half roughness = lerp(_NGRoughness, _BarkRoughness, blend);
+                // ── Dead-wood check (passed in when isDead, vertex alpha pushed to 1
+                //    and vertex.g overridden — handled via albedo already being grey) ──
 
-                // ── World-space normal from TBN ─────────────────────────────────────
-                float3 bitangentWS = cross(IN.normalWS, IN.tangentWS.xyz) * IN.tangentWS.w;
-                float3x3 TBN       = float3x3(IN.tangentWS.xyz, bitangentWS, IN.normalWS);
-                float3 normalWS    = normalize(TransformTangentToWorld(normalTS, TBN));
-
-                // ── Fill URP surface data ───────────────────────────────────────────
-                SurfaceData surfaceData;
-                ZERO_INITIALIZE(SurfaceData, surfaceData);
-                surfaceData.albedo     = albedo;
-                surfaceData.metallic   = metallic;
-                surfaceData.smoothness = 1.0h - roughness;
-                surfaceData.normalTS   = normalTS;
-                surfaceData.emission   = emission;
-                surfaceData.occlusion  = occlusion;
-                surfaceData.alpha      = 1.0h;
-
-                // ── Fill URP input data ─────────────────────────────────────────────
-                InputData inputData;
-                ZERO_INITIALIZE(InputData, inputData);
-                inputData.positionWS              = IN.positionWS;
-                inputData.normalWS                = normalWS;
-                inputData.viewDirectionWS         = GetWorldSpaceNormalizeViewDir(IN.positionWS);
-                inputData.fogCoord                = IN.fogCoord;
-                inputData.vertexLighting          = half3(0, 0, 0);
-                inputData.bakedGI                 = half3(0, 0, 0);
-                inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(IN.positionHCS);
-                inputData.shadowMask              = half4(1, 1, 1, 1);
+                // ── 3-band cel lighting ──────────────────────────────────────
+                float3 normalWS = normalize(IN.normalWS);
 
                 #if defined(_MAIN_LIGHT_SHADOWS) || defined(_MAIN_LIGHT_SHADOWS_CASCADE) || defined(_MAIN_LIGHT_SHADOWS_SCREEN)
-                    inputData.shadowCoord = TransformWorldToShadowCoord(IN.positionWS);
+                    float4 shadowCoord = TransformWorldToShadowCoord(IN.positionWS);
                 #else
-                    inputData.shadowCoord = float4(0, 0, 0, 0);
+                    float4 shadowCoord = float4(0, 0, 0, 0);
                 #endif
 
-                half4 color = UniversalFragmentPBR(inputData, surfaceData);
-                color.rgb   = MixFog(color.rgb, IN.fogCoord);
-                return color;
+                Light mainLight = GetMainLight(shadowCoord);
+                float NdotL     = dot(normalWS, normalize(mainLight.direction));
+                float litVal    = saturate(NdotL) * mainLight.shadowAttenuation;
+
+                // Step into 3 bands
+                half3 lightTint;
+                if      (litVal < _ShadowThreshold) lightTint = _ShadowTint.rgb;
+                else if (litVal < _MidThreshold)    lightTint = _MidTint.rgb;
+                else                                lightTint = half3(1.0, 1.0, 1.0);
+
+                half3 finalColor = albedo * mainLight.color.rgb * lightTint;
+
+                // Add additional lights (no cel banding on them — just additive fill)
+                #ifdef _ADDITIONAL_LIGHTS
+                    uint lightCount = GetAdditionalLightsCount();
+                    for (uint i = 0u; i < lightCount; ++i)
+                    {
+                        Light addLight = GetAdditionalLight(i, IN.positionWS);
+                        float addNdotL = saturate(dot(normalWS, addLight.direction));
+                        finalColor    += albedo * addLight.color * addNdotL * addLight.distanceAttenuation * 0.3h;
+                    }
+                #endif
+
+                finalColor = MixFog(finalColor, IN.fogCoord);
+                return half4(finalColor, 1.0h);
             }
             ENDHLSL
         }
 
-        // ────────────────────────────────────────────────────────────────────────────
-        //  SHADOW CASTER PASS
-        // ────────────────────────────────────────────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────────
+        //  PASS 3 — Shadow Caster
+        // ────────────────────────────────────────────────────────────────────
         Pass
         {
             Name "ShadowCaster"
@@ -236,54 +455,47 @@ Shader "Custom/BarkVertexColor"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 
-            // Must match ForwardLit CBUFFER exactly for SRP Batcher
             CBUFFER_START(UnityPerMaterial)
-                float4 _BarkTex_ST;
-                float4 _NGTex_ST;
                 float4 _BarkColor;
-                float4 _BarkEmissionColor;
-                float  _BarkRoughness;
-                float  _BarkMetallic;
-                float  _BarkOcclusionStr;
                 float4 _NGColor;
                 float4 _NGRootColor;
-                float4 _NGEmissionColor;
-                float  _NGRoughness;
-                float  _NGMetallic;
-                float  _NGOcclusionStr;
+                int    _BarkType;
+                float  _BarkPatternScale;
+                float  _BarkGrooveDepth;
+                float4 _WoundHeartColor;
+                float4 _WoundCambiumColor;
+                float4 _WoundCallusColor;
+                float4 _PasteColor;
+                float  _ShadowThreshold;
+                float  _MidThreshold;
+                float4 _ShadowTint;
+                float4 _MidTint;
+                float  _OutlineWidth;
+                float4 _OutlineColor;
             CBUFFER_END
 
             float3 _LightDirection;
 
-            struct ShadowAttr
-            {
-                float4 posOS : POSITION;
-                float3 nrmOS : NORMAL;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
-            };
-            struct ShadowVary
-            {
-                float4 posHCS : SV_POSITION;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
-            };
+            struct ShadowAttr { float4 posOS : POSITION; float3 nrmOS : NORMAL; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct ShadowVary { float4 posHCS : SV_POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };
 
             ShadowVary ShadowVert(ShadowAttr IN)
             {
                 ShadowVary OUT;
                 UNITY_SETUP_INSTANCE_ID(IN);
                 UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
-                float3 posWS  = TransformObjectToWorld(IN.posOS.xyz);
-                float3 nrmWS  = TransformObjectToWorldNormal(IN.nrmOS);
-                OUT.posHCS    = TransformWorldToHClip(ApplyShadowBias(posWS, nrmWS, _LightDirection));
+                float3 posWS = TransformObjectToWorld(IN.posOS.xyz);
+                float3 nrmWS = TransformObjectToWorldNormal(IN.nrmOS);
+                OUT.posHCS   = TransformWorldToHClip(ApplyShadowBias(posWS, nrmWS, _LightDirection));
                 return OUT;
             }
             half4 ShadowFrag(ShadowVary IN) : SV_Target { return 0; }
             ENDHLSL
         }
 
-        // ────────────────────────────────────────────────────────────────────────────
-        //  DEPTH ONLY PASS
-        // ────────────────────────────────────────────────────────────────────────────
+        // ────────────────────────────────────────────────────────────────────
+        //  PASS 4 — Depth Only
+        // ────────────────────────────────────────────────────────────────────
         Pass
         {
             Name "DepthOnly"
@@ -297,21 +509,23 @@ Shader "Custom/BarkVertexColor"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            // Must match ForwardLit CBUFFER exactly for SRP Batcher
             CBUFFER_START(UnityPerMaterial)
-                float4 _BarkTex_ST;
-                float4 _NGTex_ST;
                 float4 _BarkColor;
-                float4 _BarkEmissionColor;
-                float  _BarkRoughness;
-                float  _BarkMetallic;
-                float  _BarkOcclusionStr;
                 float4 _NGColor;
                 float4 _NGRootColor;
-                float4 _NGEmissionColor;
-                float  _NGRoughness;
-                float  _NGMetallic;
-                float  _NGOcclusionStr;
+                int    _BarkType;
+                float  _BarkPatternScale;
+                float  _BarkGrooveDepth;
+                float4 _WoundHeartColor;
+                float4 _WoundCambiumColor;
+                float4 _WoundCallusColor;
+                float4 _PasteColor;
+                float  _ShadowThreshold;
+                float  _MidThreshold;
+                float4 _ShadowTint;
+                float4 _MidTint;
+                float  _OutlineWidth;
+                float4 _OutlineColor;
             CBUFFER_END
 
             struct DepthAttr { float4 posOS : POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };

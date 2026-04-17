@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 
 public class GameManager : MonoBehaviour
 {
@@ -11,6 +12,8 @@ public class GameManager : MonoBehaviour
     public GameState state;
 
     public static event Action<GameState> OnGameStateChanged;
+    /// <summary>Fired each time the calendar month changes. Subscribers receive the new month (1–12).</summary>
+    public static event Action<int> OnMonthChanged;
 
     public static int waterings = -1;
 
@@ -24,9 +27,11 @@ public class GameManager : MonoBehaviour
     public static bool canRemoveWire = false;
     public static bool canPaste      = false;
     public static bool canRootWork   = false;
+    public static bool canRootRake   = false;
     public static bool canAirLayer      = false;
     public static bool canPinch         = false;
     public static bool canDefoliate     = false;
+    public static bool canGraft         = false;
     public static float selectionRadius = 0.5f;
 
     // Saved state to restore when exiting RootPrune mode.
@@ -34,6 +39,14 @@ public class GameManager : MonoBehaviour
 
     // Saved state to restore when unpausing.
     static GameState prePauseState = GameState.Idle;
+
+    // Saved state to restore when dismissing a tooltip.
+    static GameState preTipPauseState = GameState.Idle;
+
+    /// <summary>Title of the currently-showing first-use tooltip. Empty when no tooltip is active.</summary>
+    public static string TooltipTitle { get; private set; } = "";
+    /// <summary>Body text of the currently-showing first-use tooltip.</summary>
+    public static string TooltipBody  { get; private set; } = "";
 
     /// <summary>
     /// How fast the tree grows this month (0 = dormant, 1 = peak spring growth).
@@ -80,13 +93,27 @@ public class GameManager : MonoBehaviour
 
     //Time Stuff
     public static float TIMESCALE = 200f;
+    /// Fast speed — default. 200 game-hours per real second.
+    public const float TIMESCALE_FAST = 200f;
+    /// Medium speed — roughly 10× real-time. Good for watching active growth.
+    public const float TIMESCALE_MED  = 10f;
+    /// Slow speed — 1 game-hour = 2 real seconds (0.5 game-hrs/real-sec). Comfortable for trimming.
+    public const float TIMESCALE_SLOW = 0.5f;
     /// Slowest allowed timescale: 1 game minute per real second (TIMESCALE = 1/60 game-hrs/sec).
     public const float TIMESCALE_MIN = 1f / 60f;
+
+    public enum SpeedMode { Slow, Med, Fast }
+    public static SpeedMode CurrentSpeed { get; private set; } = SpeedMode.Fast;
+    /// Back-compat: true when Slow mode is active.
+    public static bool IsSlowSpeed => CurrentSpeed == SpeedMode.Slow;
 
     string monthName = "March";
 
     public static int day, month, year;
     public static float hour;
+
+    /// <summary>Approximate day of year (1–336). Each month = 28 days, year starts March=1.</summary>
+    public static int dayOfYear => (month - 1) * 28 + day;
     static int lastCalendarMinute = -1;
 
     public Text calendar;
@@ -117,8 +144,8 @@ public class GameManager : MonoBehaviour
     }
     
     void Update(){
-        if (Input.GetKey(KeyCode.D)) TIMESCALE = Mathf.Min(TIMESCALE + 50f * Time.deltaTime, 400f);
-        if (Input.GetKey(KeyCode.A)) TIMESCALE = Mathf.Max(TIMESCALE - 50f * Time.deltaTime, TIMESCALE_MIN);
+        if (Keyboard.current != null && Keyboard.current.rightArrowKey.isPressed) TIMESCALE = Mathf.Min(TIMESCALE + 50f * Time.deltaTime, 400f);
+        if (Keyboard.current != null && Keyboard.current.leftArrowKey.isPressed)  TIMESCALE = Mathf.Max(TIMESCALE - 50f * Time.deltaTime, TIMESCALE_MIN);
 
         if(state == GameState.BranchGrow || state == GameState.LeafGrow || state == GameState.LeafFall || state == GameState.TimeGo){
             CalculateTime();
@@ -211,7 +238,30 @@ public class GameManager : MonoBehaviour
     public void TextCallFunction(){
         int h = Mathf.FloorToInt(hour) % 24;
         int m = Mathf.FloorToInt((hour % 1f) * 60f);
-        calendar.text = $"{monthName} {day}, {year}  {h:D2}:{m:D2}";
+        string toolName = ActiveToolLabel();
+        calendar.text = string.IsNullOrEmpty(toolName)
+            ? $"{monthName} {day}, {year}  {h:D2}:{m:D2}"
+            : $"{monthName} {day}, {year}  {h:D2}:{m:D2}  ·  {toolName}";
+    }
+
+    static string ActiveToolLabel()
+    {
+        var tool = ToolManager.Instance?.ActiveTool ?? ToolType.None;
+        return tool switch
+        {
+            ToolType.Shears        => "Shears",
+            ToolType.SmallClippers => "Small Clippers",
+            ToolType.BigClippers   => "Big Clippers",
+            ToolType.Saw           => "Saw",
+            ToolType.Wire          => "Wire",
+            ToolType.RemoveWire    => "Remove Wire",
+            ToolType.Paste         => "Paste",
+            ToolType.AirLayer      => "Air Layer",
+            ToolType.Pinch         => "Pinch",
+            ToolType.Defoliate     => "Defoliate",
+            ToolType.Graft         => "Graft",
+            _                      => string.Empty,
+        };
     }
 
     void SetMonthText(){
@@ -219,6 +269,8 @@ public class GameManager : MonoBehaviour
         switch(month){
             case 1:
                 monthName = "January";
+                // Auto-slow: switch to trimming speed for the dormant pruning window
+                if (!IsSlowSpeed) SetSpeed(slow: true);
                 break;
             case 2:
                 monthName = "February";
@@ -232,6 +284,8 @@ public class GameManager : MonoBehaviour
                 break;
             case 4:
                 monthName = "April";
+                // Auto-slow: new shoots are extending — prime window for pinching and light pruning
+                if (!IsSlowSpeed) SetSpeed(slow: true);
                 break;
             case 5:
                 monthName = "May";
@@ -262,6 +316,8 @@ public class GameManager : MonoBehaviour
                 monthName = "December";
                 break;
         }
+
+        OnMonthChanged?.Invoke(month);
     }
 
     public void UpdateGameState(GameState newState){
@@ -273,6 +329,9 @@ public class GameManager : MonoBehaviour
         canRootWork = (newState == GameState.RootPrune  ||
                        newState == GameState.RockPlace  ||
                        newState == GameState.TreeOrient);
+
+        // Rake mode is its own interaction block (handled separately in TreeInteraction).
+        canRootRake = (newState == GameState.RootRake);
 
         Debug.Log("GAME STATE: " + newState);
 
@@ -309,6 +368,9 @@ public class GameManager : MonoBehaviour
                 break;
             case GameState.RootPrune:
                 HandleRootPruneState();
+                break;
+            case GameState.RootRake:
+                // Rake mini-game — tree stays lifted; RootRakeManager drives the interaction.
                 break;
             case GameState.RockPlace:
                 break;
@@ -355,7 +417,8 @@ public class GameManager : MonoBehaviour
     public static bool IsRootLiftActive(GameState s) =>
         s == GameState.RootPrune ||
         s == GameState.RockPlace ||
-        s == GameState.TreeOrient;
+        s == GameState.TreeOrient ||
+        s == GameState.RootRake;
 
     /// <summary>
     /// Called by Confirm Orientation button.
@@ -392,6 +455,32 @@ public class GameManager : MonoBehaviour
     /// Toggles the game pause. Freezes Time.timeScale (stops all deltaTime-based
     /// systems) and saves/restores the active game state.
     /// </summary>
+    /// <summary>Cycles Slow → Med → Fast → Slow.</summary>
+    public void ToggleSpeed()
+    {
+        SetSpeedMode(CurrentSpeed switch
+        {
+            SpeedMode.Slow => SpeedMode.Med,
+            SpeedMode.Med  => SpeedMode.Fast,
+            _              => SpeedMode.Slow,
+        });
+    }
+
+    /// <summary>Set speed mode explicitly. Back-compat bool overload: true = Slow.</summary>
+    public void SetSpeed(bool slow) => SetSpeedMode(slow ? SpeedMode.Slow : SpeedMode.Fast);
+
+    public void SetSpeedMode(SpeedMode mode)
+    {
+        CurrentSpeed = mode;
+        TIMESCALE    = mode switch
+        {
+            SpeedMode.Slow => TIMESCALE_SLOW,
+            SpeedMode.Med  => TIMESCALE_MED,
+            _              => TIMESCALE_FAST,
+        };
+        Debug.Log($"[Time] Speed → {mode} TIMESCALE={TIMESCALE} | year={year} month={month}");
+    }
+
     public void TogglePause()
     {
         if (state == GameState.GamePause)
@@ -416,6 +505,35 @@ public class GameManager : MonoBehaviour
         if (m >= 3 && m <= 8) return GameState.BranchGrow;
         if (m == 10)          return GameState.LeafFall;
         return GameState.TimeGo;   // Sep, Nov, Dec, Jan, Feb
+    }
+
+    /// <summary>
+    /// Show a first-use informational tooltip overlay. Enters TipPause so the HUD is blocked.
+    /// The caller can still select tools before calling this — the tooltip is purely advisory.
+    /// </summary>
+    public void ShowTooltip(string title, string body)
+    {
+        if (state == GameState.TipPause) return;   // already showing something
+        preTipPauseState = state;
+        TooltipTitle     = title;
+        TooltipBody      = body;
+        UpdateGameState(GameState.TipPause);
+    }
+
+    /// <summary>
+    /// Dismiss the current tooltip and restore the state that was active before it appeared.
+    /// Use this for the first-use tooltip dismiss button. The existing ToolTip.StateIdle()
+    /// continues to handle the initial species-select tip (goes to Idle).
+    /// </summary>
+    public void ExitTipPause()
+    {
+        if (state != GameState.TipPause) return;
+        TooltipTitle = "";
+        TooltipBody  = "";
+        GameState restore = (preTipPauseState == GameState.TipPause ||
+                             preTipPauseState == GameState.SpeciesSelect)
+            ? GameState.Idle : preTipPauseState;
+        UpdateGameState(restore);
     }
 
     public void ToggleRootPrune()
@@ -463,6 +581,7 @@ public enum GameState {
     Wiring,
     WireAnimate,  // time frozen; spring-bend animation playing
     RootPrune,    // tree lifted, root mesh visible, root trim/placement active
+    RootRake,     // rake mini-game: soil ball visible, player rakes to reveal roots before repot
     RockPlace,    // rock grabbed and being positioned in 3D space
     TreeOrient,   // tree transform being rotated onto the placed rock
     TreeDead,      // tree has died; gameplay halted

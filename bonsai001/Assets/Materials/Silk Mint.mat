@@ -52,7 +52,7 @@ Material:
     m_Ints: []
     m_Floats:
     - _Amplitude: 6
-    - _Noise_Scale: 11
+    - _Noise_Scale: 5
     - _QueueControl: 0
     - _QueueOffset: 0
     - _Turned_On: 1

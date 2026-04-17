@@ -19,6 +19,12 @@ public class Leaf : MonoBehaviour
     // Updated each frame so leaves track the node when wire-bending moves it.
     [HideInInspector] public Vector3  tipOffset;
 
+    // ── Species colour (set by LeafManager on spawn) ─────────────────────────
+
+    // Spring/summer leaf color. LeafManager sets this from species.leafSpringColor.
+    // Defaults to the same green used in FallGradient[0] so existing trees are unchanged.
+    [HideInInspector] public Color springColor = new Color(0.15f, 0.55f, 0.10f);
+
     // ── Fall colour (set by LeafManager when autumn begins) ───────────────────
 
     // How fast this leaf runs through the colour gradient relative to the base rate.
@@ -141,7 +147,7 @@ public class Leaf : MonoBehaviour
         }
         else
         {
-            color = Color.Lerp(FallGradient[0], FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
+            color = Color.Lerp(springColor, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
         }
 
         leafRenderer.GetPropertyBlock(propBlock);

@@ -1,40 +1,25 @@
 using UnityEngine;
 
+/// <summary>
+/// Legacy tooltip component — replaced by the UIElements TooltipOverlay system in ButtonClicker.
+/// This stub keeps the scene reference intact. The tipPanel/tipCanvas GameObjects should be
+/// disabled or deleted from the scene; this script no longer shows or hides them.
+/// </summary>
 public class ToolTip : MonoBehaviour
 {
-    // Drag the ToolTipDarkPanel and ToolTipCanvas GameObjects here in the Inspector.
-    // The script hides these two children without touching the parent (which holds the camera).
     [SerializeField] GameObject tipPanel;
     [SerializeField] GameObject tipCanvas;
 
     void Awake()
     {
-        GameManager.OnGameStateChanged += OnStateChanged;
+        // Keep both objects permanently hidden — the new overlay handles TipPause.
+        if (tipPanel  != null) tipPanel.SetActive(false);
+        if (tipCanvas != null) tipCanvas.SetActive(false);
     }
 
-    void Start()
-    {
-        if (GameManager.Instance != null)
-            OnStateChanged(GameManager.Instance.state);
-    }
-
-    void OnDestroy()
-    {
-        GameManager.OnGameStateChanged -= OnStateChanged;
-    }
-
-    void OnStateChanged(GameState state)
-    {
-        bool show = state == GameState.TipPause;
-        if (tipPanel != null)  tipPanel.SetActive(show);
-        if (tipCanvas != null) tipCanvas.SetActive(show);
-    }
-
+    /// <summary>Legacy exit button handler — routes to ExitTipPause so it works with the new system.</summary>
     public void StateIdle()
     {
-        if (GameManager.Instance.state == GameState.SpeciesSelect) return;
-        if (GameManager.Instance.state == GameState.LoadMenu) return;
-        Debug.Log("Clicked the X");
-        GameManager.Instance.UpdateGameState(GameState.Idle);
+        GameManager.Instance?.ExitTipPause();
     }
 }

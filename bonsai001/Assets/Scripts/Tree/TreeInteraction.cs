@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Handles all player interaction with the tree mesh.
@@ -50,7 +51,7 @@ public class TreeInteraction : MonoBehaviour
 
     // ── Highlight state ───────────────────────────────────────────────────────
 
-    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste, AirLayer, Pinch, Defoliate }
+    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste, AirLayer, Pinch, Defoliate, GraftSource, GraftTarget }
 
     TreeNode        highlightedNode;
     HighlightMode   highlightMode = HighlightMode.None;
@@ -65,6 +66,8 @@ public class TreeInteraction : MonoBehaviour
     static readonly Color ColRootWork   = new Color(0.9f, 0.45f, 0.1f);  // orange (root work)
     static readonly Color ColPinch      = new Color(0.55f, 1.0f, 0.15f); // lime-green (pinch tip)
     static readonly Color ColDefoliate  = new Color(1.0f,  0.75f, 0.0f); // amber (defoliate)
+    static readonly Color ColGraft      = new Color(0.55f, 1.0f,  0.45f); // pale green (graft source)
+    static readonly Color ColGraftTgt   = new Color(1.0f,  0.9f,  0.3f);  // gold (graft target)
 
     // ── Wire aim / animation state ────────────────────────────────────────────
 
@@ -90,10 +93,33 @@ public class TreeInteraction : MonoBehaviour
     // Direction preview arrow
     LineRenderer aimPreview;
 
+    // ── Saw sub-state ─────────────────────────────────────────────────────────
+
+    [Tooltip("Pixels of mouse travel in one direction before a direction reversal counts as a half-stroke.")]
+    [SerializeField] float sawMinStrokePx = 20f;
+
+    [Tooltip("Number of half-strokes (direction reversals) needed to complete a saw cut (~4–6 full strokes).")]
+    [SerializeField] int sawTotalHalfStrokes = 10;
+
+    bool     isSawing;
+    TreeNode sawTarget;
+    float    sawProgress;       // 0→1
+    float    sawLastMouseX;
+    float    sawCurrentDir;     // +1 or -1
+    float    sawDirTravel;      // pixels traveled in current direction
+    int      sawHalfStrokes;
+
+    GameObject sawGrooveGO;
+    Mesh       sawGrooveMesh;
+
     // ── Selection cursor (screen-space GL circle) ─────────────────────────────
     Material glCircleMat;
     float    selCirclePixelRadius;
     Color    selCircleColor;
+
+    // ── Pinch tip markers ─────────────────────────────────────────────────────
+    // Hovered pinchable node, updated each frame in HandlePinchHover.
+    TreeNode hoveredPinchNode;
 
     // ── Selection diagnostics ─────────────────────────────────────────────────
     struct FailedClick
@@ -180,8 +206,18 @@ public class TreeInteraction : MonoBehaviour
         selCircleColor = col;
     }
 
-    void OnEnable()  => RenderPipelineManager.endCameraRendering += DrawSelectionCircle;
-    void OnDisable() => RenderPipelineManager.endCameraRendering -= DrawSelectionCircle;
+    void OnEnable()
+    {
+        RenderPipelineManager.endCameraRendering += DrawSelectionCircle;
+        RenderPipelineManager.endCameraRendering += DrawGraftLines;
+        RenderPipelineManager.endCameraRendering += DrawPinchMarkers;
+    }
+    void OnDisable()
+    {
+        RenderPipelineManager.endCameraRendering -= DrawSelectionCircle;
+        RenderPipelineManager.endCameraRendering -= DrawGraftLines;
+        RenderPipelineManager.endCameraRendering -= DrawPinchMarkers;
+    }
 
     // Draws a screen-space circle at the cursor after URP finishes rendering the camera.
     // OnRenderObject is not invoked by URP; endCameraRendering fires instead.
@@ -189,7 +225,7 @@ public class TreeInteraction : MonoBehaviour
     {
         if (camera != cam || glCircleMat == null || selCirclePixelRadius <= 0f) return;
 
-        Vector2 mouse = Input.mousePosition;
+        Vector2 mouse = Mouse.current.position.ReadValue();
         glCircleMat.SetPass(0);
         GL.PushMatrix();
         GL.LoadPixelMatrix(0, camera.pixelWidth, 0, camera.pixelHeight);
@@ -209,6 +245,62 @@ public class TreeInteraction : MonoBehaviour
         GL.PopMatrix();
     }
 
+    // Draws world-space graft lines: amber for in-progress grafts, green for pending source.
+    void DrawGraftLines(ScriptableRenderContext ctx, Camera camera)
+    {
+        if (camera != cam || glCircleMat == null) return;
+        if (skeleton == null) return;
+
+        bool hasPending  = skeleton.pendingGraftSource != null;
+        bool hasAttempts = skeleton.graftAttempts.Count > 0;
+        if (!hasPending && !hasAttempts) return;
+
+        glCircleMat.SetPass(0);
+        GL.PushMatrix();
+        GL.LoadProjectionMatrix(camera.projectionMatrix);
+        GL.modelview = camera.worldToCameraMatrix;
+        GL.Begin(GL.LINES);
+
+        // Pending source → mouse cursor in world (dashed look via short lines)
+        if (hasPending)
+        {
+            GL.Color(new Color(0.55f, 1.0f, 0.45f, 0.85f));
+            var src = skeleton.pendingGraftSource;
+            Vector3 srcWorld = skeleton.transform.TransformPoint(src.tipPosition);
+            // Draw a pulsing dot at the pending source tip
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i / 8f * Mathf.PI * 2f;
+                float r = 0.04f;
+                GL.Vertex(srcWorld + new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, 0));
+                GL.Vertex(srcWorld + new Vector3(Mathf.Cos(a + Mathf.PI / 4f) * r, Mathf.Sin(a + Mathf.PI / 4f) * r, 0));
+            }
+        }
+
+        // In-progress graft attempts — amber line source tip → target
+        if (hasAttempts)
+        {
+            var nodes = skeleton.allNodes;
+            foreach (var g in skeleton.graftAttempts)
+            {
+                if (g.succeeded) continue;
+                TreeNode src = nodes.Find(n => n.id == g.sourceId);
+                TreeNode tgt = nodes.Find(n => n.id == g.targetId);
+                if (src == null || tgt == null) continue;
+
+                float t  = (float)g.seasonsElapsed / Mathf.Max(1, skeleton.GraftSeasonsToFuse);
+                Color c  = Color.Lerp(new Color(0.9f, 0.6f, 0.1f, 0.7f),
+                                      new Color(0.4f, 0.9f, 0.4f, 0.9f), t);
+                GL.Color(c);
+                GL.Vertex(skeleton.transform.TransformPoint(src.tipPosition));
+                GL.Vertex(skeleton.transform.TransformPoint(tgt.worldPosition));
+            }
+        }
+
+        GL.End();
+        GL.PopMatrix();
+    }
+
     Color ToolColor()
     {
         if (GameManager.canRootWork) return ColRootWork;
@@ -223,6 +315,7 @@ public class TreeInteraction : MonoBehaviour
             case ToolType.AirLayer:   return ColAirLayer;
             case ToolType.Pinch:      return ColPinch;
             case ToolType.Defoliate:  return ColDefoliate;
+            case ToolType.Graft:      return skeleton?.pendingGraftSource != null ? ColGraftTgt : ColGraft;
             default:                  return Color.white;
         }
     }
@@ -310,7 +403,12 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
 
+        // Clear pending graft selection if the tool was switched away
+        if (!GameManager.canGraft && skeleton.pendingGraftSource != null)
+            skeleton.CancelPendingGraft();
+
         UpdateSelectionCursor();
+        hoveredPinchNode = null;  // reset every frame; HandlePinchHover will re-set if active
 
         // Wire animation blocks all other interaction until complete
         if (wirePhase == WirePhase.Animating)
@@ -326,7 +424,19 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
 
+        // Saw sub-state — block all other interaction while sawing
+        if (isSawing)
+        {
+            UpdateSawing();
+            return;
+        }
+
         var gstate = GameManager.Instance.state;
+        if (GameManager.canRootRake)
+        {
+            HandleRootRakeHover();
+            return;
+        }
         if (GameManager.canRootWork &&
             gstate != GameState.RockPlace &&
             gstate != GameState.TreeOrient)
@@ -345,6 +455,8 @@ public class TreeInteraction : MonoBehaviour
             HandlePinchHover();
         else if (GameManager.canDefoliate)
             HandleDefoliateHover();
+        else if (GameManager.canGraft)
+            HandleGraftHover();
         else
             SetHighlight(null, HighlightMode.None);
     }
@@ -357,10 +469,10 @@ public class TreeInteraction : MonoBehaviour
 
     void HandleRootWorkHover()
     {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
 
         // Diagnostic: F key dumps recorded failed clicks.
-        if (Input.GetKeyDown(KeyCode.F) && diagArmed)
+        if (Keyboard.current.fKey.wasPressedThisFrame && diagArmed)
             DumpSelectionDiagnostics();
 
         // Priority 1: trim an existing root.
@@ -368,7 +480,7 @@ public class TreeInteraction : MonoBehaviour
         if (rootNode != null)
         {
             SetHighlight(rootNode, HighlightMode.TrimSubtree);
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 SetHighlight(null, HighlightMode.None);
                 // If there were queued failed clicks, log this as the intended target.
@@ -387,7 +499,7 @@ public class TreeInteraction : MonoBehaviour
         }
 
         // Record a failed click (clicked but no root found).
-        if (Input.GetMouseButtonDown(0))
+        if (Mouse.current.leftButton.wasPressedThisFrame)
             RecordFailedClick(ray);
 
 
@@ -397,7 +509,7 @@ public class TreeInteraction : MonoBehaviour
         {
             SetHighlight(null, HighlightMode.None);
 
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 Vector3 worldPoint     = ray.GetPoint(dist);
                 Vector3 trunkBaseWorld = transform.TransformPoint(skeleton.root.worldPosition);
@@ -415,7 +527,7 @@ public class TreeInteraction : MonoBehaviour
 
         // Right-click any non-tree surface to place the tree on it.
         // The tree lowers to that surface and subsequent root growth hugs it.
-        if (Input.GetMouseButtonDown(1))
+        if (Mouse.current.rightButton.wasPressedThisFrame)
         {
             if (Physics.Raycast(ray, out RaycastHit surfaceHit) &&
                 surfaceHit.collider.gameObject != gameObject)
@@ -425,6 +537,51 @@ public class TreeInteraction : MonoBehaviour
         }
 
         SetHighlight(null, HighlightMode.None);
+    }
+
+    // ── Root Rake mode ────────────────────────────────────────────────────────
+
+    // Minimum absolute vertical mouse movement (screen pixels) per frame to count as a rake stroke.
+    const float RakeMinDeltaY = 5f;
+
+    void HandleRootRakeHover()
+    {
+        var rakeManager = skeleton.GetComponent<RootRakeManager>();
+        if (rakeManager == null) return;
+
+        // ESC cancels rake mode
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            rakeManager.CancelRakeMode();
+            return;
+        }
+
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+
+        // Priority 1: click a root node tip to prune it (same as RootWork)
+        TreeNode rootNode = PickNode(ray, out _, n => n.isRoot && n != skeleton.root);
+        if (rootNode != null)
+        {
+            SetHighlight(rootNode, HighlightMode.TrimSubtree);
+            if (Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                SetHighlight(null, HighlightMode.None);
+                skeleton.TrimNode(rootNode);
+            }
+            return;
+        }
+
+        SetHighlight(null, HighlightMode.None);
+
+        // Priority 2: rake stroke — vertical mouse drag over the soil ball
+        if (rakeManager.SoilBallGO == null) return;
+        if (!Physics.Raycast(ray, out RaycastHit soilHit, 200f)) return;
+        if (soilHit.collider.gameObject != rakeManager.SoilBallGO) return;
+
+        // Only rake on significant vertical movement (up or down — either counts)
+        float deltaY = Mouse.current.delta.ReadValue().y;
+        if (Mathf.Abs(deltaY) >= RakeMinDeltaY)
+            rakeManager.RakeAt(soilHit.point);
     }
 
     void RecordFailedClick(Ray ray)
@@ -446,7 +603,7 @@ public class TreeInteraction : MonoBehaviour
         {
             camPos        = cam.transform.position,
             camFwd        = cam.transform.forward,
-            mouseScreen   = Input.mousePosition,
+            mouseScreen   = Mouse.current.position.ReadValue(),
             selRadius     = GameManager.selectionRadius,
             selPixelRadius = selCirclePixelRadius,
             ray           = ray,
@@ -525,31 +682,200 @@ public class TreeInteraction : MonoBehaviour
 
     void HandleTrimHover()
     {
-        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        Ray      ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         TreeNode node = PickNode(ray, out _, n => n != skeleton.root && !n.isRoot);
         if (node != null)
         {
             SetHighlight(node, HighlightMode.TrimSubtree);
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
-                SetHighlight(null, HighlightMode.None);
-                skeleton.TrimNode(node);
+                bool needsSaw = ToolManager.Instance.ActiveTool == ToolType.Saw
+                             && node.radius >= skeleton.sawRadiusThreshold;
+                if (needsSaw)
+                {
+                    StartSawing(node);
+                }
+                else
+                {
+                    SetHighlight(null, HighlightMode.None);
+                    skeleton.TrimNode(node);
+                }
             }
             return;
         }
         SetHighlight(null, HighlightMode.None);
     }
 
+    // ── Saw mechanic ──────────────────────────────────────────────────────────
+
+    void StartSawing(TreeNode node)
+    {
+        sawTarget      = node;
+        sawProgress    = 0f;
+        sawHalfStrokes = 0;
+        sawCurrentDir  = 0f;
+        sawDirTravel   = 0f;
+        sawLastMouseX  = Mouse.current.position.ReadValue().x;
+        isSawing       = true;
+        BuildSawGroove();
+        SetHighlight(node, HighlightMode.TrimSubtree);
+    }
+
+    void UpdateSawing()
+    {
+        // Guard: node might have been trimmed or tree rebuilt externally
+        if (sawTarget == null || sawTarget.isTrimmed || !GameManager.canTrim)
+        {
+            CancelSaw();
+            return;
+        }
+
+        // ESC, RMB, or any click on a different target → cancel
+        if (Keyboard.current.escapeKey.wasPressedThisFrame
+            || Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            CancelSaw();
+            return;
+        }
+
+        // Track horizontal mouse movement; count direction reversals as strokes
+        float mouseX = Mouse.current.position.ReadValue().x;
+        float dx     = mouseX - sawLastMouseX;
+        sawLastMouseX = mouseX;
+
+        if (Mathf.Abs(dx) > 0.5f)
+        {
+            float dir = Mathf.Sign(dx);
+            if (sawCurrentDir == 0f)
+            {
+                // First movement — establish direction
+                sawCurrentDir = dir;
+                sawDirTravel  = Mathf.Abs(dx);
+            }
+            else if (dir == sawCurrentDir)
+            {
+                sawDirTravel += Mathf.Abs(dx);
+            }
+            else
+            {
+                // Reversed direction — count a half-stroke if enough travel
+                if (sawDirTravel >= sawMinStrokePx)
+                    sawHalfStrokes++;
+                sawCurrentDir = dir;
+                sawDirTravel  = Mathf.Abs(dx);
+            }
+        }
+
+        sawProgress = Mathf.Clamp01((float)sawHalfStrokes / sawTotalHalfStrokes);
+        UpdateSawGroove();
+        SetHighlight(sawTarget, HighlightMode.TrimSubtree);
+
+        if (sawHalfStrokes >= sawTotalHalfStrokes)
+            CompleteSaw();
+    }
+
+    void CompleteSaw()
+    {
+        var node = sawTarget;
+        DestroySawGroove();
+        SetHighlight(null, HighlightMode.None);
+        isSawing    = false;
+        sawTarget   = null;
+        sawProgress = 0f;
+        AudioManager.Instance?.PlaySFX("Trim");
+        skeleton.TrimNode(node);
+    }
+
+    void CancelSaw()
+    {
+        DestroySawGroove();
+        SetHighlight(null, HighlightMode.None);
+        isSawing    = false;
+        sawTarget   = null;
+        sawProgress = 0f;
+        sawHalfStrokes = 0;
+    }
+
+    // Builds a flat dark ring (annulus) at the cut face, perpendicular to the branch.
+    // The ring deepens toward the center as sawProgress increases.
+    void BuildSawGroove()
+    {
+        DestroySawGroove();
+        sawGrooveGO = new GameObject("_SawGroove");
+        sawGrooveGO.transform.SetParent(transform, false);
+
+        var mf = sawGrooveGO.AddComponent<MeshFilter>();
+        var mr = sawGrooveGO.AddComponent<MeshRenderer>();
+        mr.material          = new Material(Shader.Find("Unlit/Color")) { color = new Color(0.12f, 0.06f, 0.03f) };
+        mr.shadowCastingMode = ShadowCastingMode.Off;
+        mr.receiveShadows    = false;
+
+        sawGrooveMesh = new Mesh { name = "SawGroove" };
+        mf.mesh = sawGrooveMesh;
+
+        UpdateSawGroove();
+    }
+
+    void UpdateSawGroove()
+    {
+        if (sawTarget == null || sawGrooveMesh == null) return;
+
+        // Build annulus in local (tree) space at the node base, perpendicular to growDirection.
+        Vector3 center = sawTarget.worldPosition;
+        Vector3 axis   = sawTarget.growDirection.normalized;
+
+        // Build an orthonormal frame perpendicular to the branch axis
+        Vector3 perp  = Vector3.Cross(axis, Vector3.up);
+        if (perp.sqrMagnitude < 0.01f) perp = Vector3.Cross(axis, Vector3.right);
+        perp = perp.normalized;
+        Vector3 perp2 = Vector3.Cross(perp, axis).normalized;
+
+        float outerR = sawTarget.radius * 1.12f;
+        // Inner radius shrinks from just inside the outer edge toward zero as progress grows
+        float innerR = Mathf.Lerp(sawTarget.radius * 0.9f, 0f, sawProgress);
+
+        const int segs = 20;
+        var verts = new Vector3[segs * 2];
+        var tris  = new int[segs * 6];
+
+        for (int i = 0; i < segs; i++)
+        {
+            float a   = (float)i / segs * Mathf.PI * 2f;
+            Vector3 d = Mathf.Cos(a) * perp + Mathf.Sin(a) * perp2;
+            verts[i]        = center + d * outerR;
+            verts[segs + i] = center + d * innerR;
+        }
+
+        for (int i = 0; i < segs; i++)
+        {
+            int ni = (i + 1) % segs;
+            int b  = i * 6;
+            tris[b + 0] = i;        tris[b + 1] = ni;       tris[b + 2] = segs + i;
+            tris[b + 3] = segs + i; tris[b + 4] = ni;       tris[b + 5] = segs + ni;
+        }
+
+        sawGrooveMesh.Clear();
+        sawGrooveMesh.SetVertices(verts);
+        sawGrooveMesh.SetTriangles(tris, 0);
+        sawGrooveMesh.RecalculateNormals();
+    }
+
+    void DestroySawGroove()
+    {
+        if (sawGrooveGO != null) { Destroy(sawGrooveGO); sawGrooveGO = null; }
+        sawGrooveMesh = null;
+    }
+
     // ── Wire placement ────────────────────────────────────────────────────────
 
     void HandleWireHover()
     {
-        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        Ray      ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         TreeNode node = PickNode(ray, out _, n => n != skeleton.root && (!n.isRoot || n.isAirLayerRoot) && !n.hasWire);
         if (node != null)
         {
             SetHighlight(node, HighlightMode.SingleGold);
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
                 StartWireAim(node);
             return;
         }
@@ -585,7 +911,7 @@ public class TreeInteraction : MonoBehaviour
         // Update aim direction: project mouse onto a plane facing the camera at the branch base
         Vector3 branchWorldPos = transform.TransformPoint(wireTarget.worldPosition);
         Plane   aimPlane       = new Plane(-cam.transform.forward, branchWorldPos);
-        Ray     ray            = cam.ScreenPointToRay(Input.mousePosition);
+        Ray     ray            = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
 
         if (aimPlane.Raycast(ray, out float dist))
         {
@@ -597,8 +923,8 @@ public class TreeInteraction : MonoBehaviour
         UpdateAimPreview();
         SetHighlight(wireTarget, HighlightMode.SingleGold);
 
-        if (Input.GetMouseButtonDown(0)) { ConfirmWire(); return; }
-        if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape)) CancelWire();
+        if (Mouse.current.leftButton.wasPressedThisFrame) { ConfirmWire(); return; }
+        if (Mouse.current.rightButton.wasPressedThisFrame || Keyboard.current.escapeKey.wasPressedThisFrame) CancelWire();
     }
 
     void UpdateAimPreview()
@@ -665,7 +991,7 @@ public class TreeInteraction : MonoBehaviour
         wireAnimTimer += Time.deltaTime;
 
         bool done = wireAnimTimer >= WIRE_ANIM_DURATION
-                    || Input.GetKeyDown(KeyCode.Return);
+                    || Keyboard.current.enterKey.wasPressedThisFrame;
 
         float t      = done ? 1f : Mathf.Clamp01(wireAnimTimer / WIRE_ANIM_DURATION);
         float spring = WireSpringCurve(t);
@@ -708,7 +1034,7 @@ public class TreeInteraction : MonoBehaviour
 
     void HandleRemoveWireHover()
     {
-        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        Ray      ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         // Training wires (Ishitsuki) are locked until fully set — exclude them while silver
         TreeNode node = PickNode(ray, out _, n => n.hasWire);
         if (node != null)
@@ -723,7 +1049,7 @@ public class TreeInteraction : MonoBehaviour
             else
                 SetHighlight(node, HighlightMode.SingleGreen);
 
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 skeleton.UnwireRun(node);
                 SetHighlight(null, HighlightMode.None);
@@ -739,7 +1065,7 @@ public class TreeInteraction : MonoBehaviour
             {
                 // Reuse SingleGreen highlight on the tree mesh as a visual cue
                 SetHighlight(skeleton.root, HighlightMode.SingleGreen);
-                if (Input.GetMouseButtonDown(0))
+                if (Mouse.current.leftButton.wasPressedThisFrame)
                 {
                     Destroy(ishWire.gameObject);
                     SetHighlight(null, HighlightMode.None);
@@ -755,12 +1081,12 @@ public class TreeInteraction : MonoBehaviour
 
     void HandlePasteHover()
     {
-        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        Ray      ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         TreeNode node = PickNode(ray, out _, n => n.hasWound && !n.pasteApplied);
         if (node != null)
         {
             SetHighlight(node, HighlightMode.Paste);
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 skeleton.ApplyPaste(node);
                 SetHighlight(null, HighlightMode.None);
@@ -774,7 +1100,7 @@ public class TreeInteraction : MonoBehaviour
 
     void HandleAirLayerHover()
     {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         if (!Physics.Raycast(ray, out RaycastHit hit))
         {
             SetHighlight(null, HighlightMode.None);
@@ -787,7 +1113,7 @@ public class TreeInteraction : MonoBehaviour
             if (layer.wrapObject != null && hit.collider.gameObject == layer.wrapObject)
             {
                 SetHighlight(null, HighlightMode.None);
-                if (layer.rootsSpawned && Input.GetMouseButtonDown(0))
+                if (layer.rootsSpawned && Mouse.current.leftButton.wasPressedThisFrame)
                     skeleton.UnwrapAirLayer(layer);
                 return;
             }
@@ -818,7 +1144,7 @@ public class TreeInteraction : MonoBehaviour
         }
 
         SetHighlight(node, HighlightMode.AirLayer);
-        if (Input.GetMouseButtonDown(0))
+        if (Mouse.current.leftButton.wasPressedThisFrame)
         {
             skeleton.PlaceAirLayer(node);
             SetHighlight(null, HighlightMode.None);
@@ -829,13 +1155,14 @@ public class TreeInteraction : MonoBehaviour
 
     void HandlePinchHover()
     {
-        Ray      ray  = cam.ScreenPointToRay(Input.mousePosition);
+        Ray      ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         // Only target terminal, growing, non-root branch nodes
         TreeNode node = PickNode(ray, out _, n => n.isTerminal && n.isGrowing && !n.isRoot && !n.isTrimmed);
+        hoveredPinchNode = node;
         if (node != null)
         {
             SetHighlight(node, HighlightMode.Pinch);
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 SetHighlight(null, HighlightMode.None);
                 skeleton.PinchNode(node);
@@ -845,21 +1172,87 @@ public class TreeInteraction : MonoBehaviour
         SetHighlight(null, HighlightMode.None);
     }
 
+    // Draws world-space diamond markers at every pinchable tip when the pinch tool is active.
+    // All tips get a small lime diamond; the hovered tip gets a larger bright one.
+    void DrawPinchMarkers(ScriptableRenderContext ctx, Camera camera)
+    {
+        if (camera != cam || glCircleMat == null) return;
+        if (!GameManager.canPinch || skeleton == null || skeleton.allNodes == null) return;
+
+        glCircleMat.SetPass(0);
+        GL.PushMatrix();
+        GL.LoadProjectionMatrix(camera.projectionMatrix);
+        GL.modelview = camera.worldToCameraMatrix;
+        GL.Begin(GL.LINES);
+
+        foreach (var node in skeleton.allNodes)
+        {
+            if (!node.isTerminal || !node.isGrowing || node.isRoot || node.isTrimmed) continue;
+
+            Vector3 wp     = transform.TransformPoint(node.tipPosition);
+            bool    hov    = node == hoveredPinchNode;
+            float   r      = hov ? 0.12f : 0.055f;
+            Color   col    = hov
+                ? new Color(0.55f, 1.0f, 0.15f, 1.0f)   // bright lime
+                : new Color(0.55f, 1.0f, 0.15f, 0.55f);  // dimmer for all tips
+
+            GL.Color(col);
+            DrawGLDiamond(wp, r, camera);
+        }
+
+        GL.End();
+        GL.PopMatrix();
+    }
+
+    // Draws a 3-axis diamond (6 points) around a world position, sized in world units.
+    // Assumes GL.Begin(GL.LINES) is already active.
+    static void DrawGLDiamond(Vector3 center, float r, Camera cam)
+    {
+        // Use camera right/up so diamond always faces camera
+        Vector3 rt = cam.transform.right   * r;
+        Vector3 up = cam.transform.up      * r;
+        Vector3 fw = cam.transform.forward * r;
+
+        Vector3 px = center + rt;
+        Vector3 nx = center - rt;
+        Vector3 py = center + up;
+        Vector3 ny = center - up;
+        Vector3 pz = center + fw;
+        Vector3 nz = center - fw;
+
+        // Horizontal diamond (camera-facing)
+        GL.Vertex(px); GL.Vertex(py);
+        GL.Vertex(py); GL.Vertex(nx);
+        GL.Vertex(nx); GL.Vertex(ny);
+        GL.Vertex(ny); GL.Vertex(px);
+
+        // Depth spikes
+        GL.Vertex(py); GL.Vertex(pz);
+        GL.Vertex(py); GL.Vertex(nz);
+        GL.Vertex(ny); GL.Vertex(pz);
+        GL.Vertex(ny); GL.Vertex(nz);
+        GL.Vertex(px); GL.Vertex(pz);
+        GL.Vertex(px); GL.Vertex(nz);
+        GL.Vertex(nx); GL.Vertex(pz);
+        GL.Vertex(nx); GL.Vertex(nz);
+    }
+
     // ── Defoliate ─────────────────────────────────────────────────────────────
 
     void HandleDefoliateHover()
     {
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         var leafManager = skeleton.GetComponent<LeafManager>();
 
-        // Target terminal non-root nodes that currently have a leaf cluster
+        // Target any non-root node that has a leaf cluster — NOT restricted to terminal,
+        // because by June most leaf-bearing nodes have already branched and are no longer terminal.
         TreeNode node = PickNode(ray, out _,
-            n => n.isTerminal && !n.isRoot && !n.isTrimmed && leafManager != null && leafManager.NodeHasLeaves(n.id));
+            n => !n.isRoot && !n.isTrimmed && leafManager != null && leafManager.NodeHasLeaves(n.id));
 
         if (node != null)
         {
             SetHighlight(node, HighlightMode.Defoliate);
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 SetHighlight(null, HighlightMode.None);
                 leafManager.DefoliateNode(node);
@@ -867,6 +1260,62 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
         SetHighlight(null, HighlightMode.None);
+    }
+
+    // ── Graft ─────────────────────────────────────────────────────────────────
+
+    void HandleGraftHover()
+    {
+        // ESC / RMB cancels a pending source selection
+        if (Mouse.current.rightButton.wasPressedThisFrame ||
+            (UnityEngine.InputSystem.Keyboard.current?.escapeKey.wasPressedThisFrame ?? false))
+        {
+            skeleton.CancelPendingGraft();
+            SetHighlight(null, HighlightMode.None);
+            return;
+        }
+
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+
+        if (skeleton.pendingGraftSource == null)
+        {
+            // Phase 1: pick source — must be a living non-root terminal
+            TreeNode node = PickNode(ray, out _,
+                n => n.isTerminal && !n.isRoot && !n.isTrimmed && !n.isDead && !n.isGraftSource);
+
+            SetHighlight(node, HighlightMode.GraftSource);
+
+            if (node != null && Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                skeleton.pendingGraftSource = node;
+                SetHighlight(null, HighlightMode.None);
+                Debug.Log($"[Graft] Source selected: node={node.id} depth={node.depth}");
+            }
+        }
+        else
+        {
+            // Phase 2: pick target — any living non-root node, different ancestry, in range
+            TreeNode src = skeleton.pendingGraftSource;
+            TreeNode node = PickNode(ray, out _,
+                n => n != src && !n.isRoot && !n.isTrimmed && !n.isDead);
+
+            SetHighlight(node, HighlightMode.GraftTarget);
+
+            if (node != null && Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                var (ok, reason) = skeleton.TryStartGraft(src, node);
+                if (ok)
+                {
+                    SetHighlight(null, HighlightMode.None);
+                    Debug.Log($"[Graft] Attempt started: {src.id} → {node.id}");
+                }
+                else
+                {
+                    Debug.Log($"[Graft] Invalid target: {reason}");
+                    // Keep source selected; player can try another target
+                }
+            }
+        }
     }
 
     // ── Highlight ─────────────────────────────────────────────────────────────
@@ -893,6 +1342,8 @@ public class TreeInteraction : MonoBehaviour
             case HighlightMode.AirLayer:    highlightMat.color = ColAirLayer;   break;
             case HighlightMode.Pinch:       highlightMat.color = ColPinch;      break;
             case HighlightMode.Defoliate:   highlightMat.color = ColDefoliate;  break;
+            case HighlightMode.GraftSource: highlightMat.color = ColGraft;      break;
+            case HighlightMode.GraftTarget: highlightMat.color = ColGraftTgt;   break;
         }
 
         RebuildHighlightMesh(node, singleNode: mode != HighlightMode.TrimSubtree);

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Handles Ishitsuki rock placement and tree orientation.
@@ -125,18 +126,18 @@ public class RockPlacer : MonoBehaviour
         if (rockGrabbed)
         {
             // Move rock on horizontal plane at its current Y — but not while rotating.
-            if (!Input.GetMouseButton(1))
+            if (!Mouse.current.rightButton.isPressed)
             {
                 movePlane = new Plane(Vector3.up, transform.position);
-                Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+                Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
                 if (movePlane.Raycast(ray, out float dist))
                     transform.position = ray.GetPoint(dist);
             }
 
             // Scroll (no right-click) → raise / lower.
-            if (!Input.GetMouseButton(1))
+            if (!Mouse.current.rightButton.isPressed)
             {
-                float scroll = Input.GetAxis("Mouse ScrollWheel");
+                float scroll = Mouse.current.scroll.ReadValue().y / 120f;
                 if (scroll != 0f)
                 {
                     var p = transform.position;
@@ -146,15 +147,15 @@ public class RockPlacer : MonoBehaviour
 
             // Left-click to drop the rock in place (stays in RockPlace).
             // Confirm button transitions to TreeOrient.
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
                 rockGrabbed = false;
         }
         else
         {
             // Left-click on the rock to grab it.
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
-                Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+                Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
                 if (rockCollider != null && rockCollider.Raycast(ray, out RaycastHit _, 200f))
                     rockGrabbed = true;
             }
@@ -175,27 +176,32 @@ public class RockPlacer : MonoBehaviour
         //   Scroll    → move tree on world Z axis
         if (treeGrabbed)
         {
-            if (!Input.GetMouseButton(1))
+            if (!Mouse.current.rightButton.isPressed)
             {
-                float mx = Input.GetAxis("Mouse X");
-                float my = Input.GetAxis("Mouse Y");
-                float mz = Input.GetAxis("Mouse ScrollWheel");
+                Vector2 md = Mouse.current.delta.ReadValue() * 0.01f;
+                float mx = md.x;
+                float my = md.y;
+                float mz = Mouse.current.scroll.ReadValue().y / 120f;
 
-                var p = treeTransform.position;
-                treeTransform.position = new Vector3(
-                    p.x - mx * rotateSensitivity * 2f,
-                    p.y + my * rotateSensitivity * 2f,
-                    p.z + mz * liftSensitivity * 10f);
+                // Camera-relative axes projected onto horizontal plane so
+                // dragging always moves the tree away from / toward the camera.
+                Vector3 camRight = Vector3.ProjectOnPlane(cam.transform.right,   Vector3.up).normalized;
+                Vector3 camFwd   = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up).normalized;
+
+                treeTransform.position = treeTransform.position
+                    + camRight   * (mx * rotateSensitivity * 2f)
+                    + Vector3.up * (my * rotateSensitivity * 2f)
+                    + camFwd     * (mz * liftSensitivity   * 10f);
             }
 
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
                 treeGrabbed = false;
         }
         else
         {
-            if (Input.GetMouseButtonDown(0))
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
-                Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+                Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
                 if (Physics.Raycast(ray, out RaycastHit hit) &&
                     (hit.transform == treeTransform || hit.transform.IsChildOf(treeTransform)))
                     treeGrabbed = true;
@@ -207,25 +213,25 @@ public class RockPlacer : MonoBehaviour
 
     void HandleRightDragRotate(Transform target)
     {
-        bool rightDown = Input.GetMouseButtonDown(1);
-        bool rightHeld = Input.GetMouseButton(1);
-        bool rightUp   = Input.GetMouseButtonUp(1);
+        bool rightDown = Mouse.current.rightButton.wasPressedThisFrame;
+        bool rightHeld = Mouse.current.rightButton.isPressed;
+        bool rightUp   = Mouse.current.rightButton.wasReleasedThisFrame;
 
         if (rightDown)
         {
             rightDragging = true;
-            lastMousePos  = Input.mousePosition;
+            lastMousePos  = Mouse.current.position.ReadValue();
         }
         if (rightUp)
             rightDragging = false;
 
         if (rightDragging && rightHeld)
         {
-            Vector2 mouse  = Input.mousePosition;
+            Vector2 mouse  = Mouse.current.position.ReadValue();
             Vector2 delta  = mouse - lastMousePos;
             lastMousePos   = mouse;
 
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            float scroll = Mouse.current.scroll.ReadValue().y / 120f;
 
             if (scroll != 0f)
             {
@@ -235,7 +241,7 @@ public class RockPlacer : MonoBehaviour
             else
             {
                 // Yaw around world up, pitch around camera right.
-                target.Rotate(Vector3.up,             delta.x * rotateSensitivity, Space.World);
+                target.Rotate(Vector3.up, delta.x * rotateSensitivity, Space.World);
                 target.Rotate(cam.transform.right,   -delta.y * rotateSensitivity, Space.World);
             }
         }

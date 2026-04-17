@@ -42,6 +42,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
     TreeSkeleton  skeleton;
     Mesh          mesh;
+    MeshRenderer  meshRenderer;
     Material      _dbgRainbowMat;
     Material      _dbgHealthMat;
     MeshCollider  meshCollider;
@@ -90,6 +91,10 @@ public class TreeMeshBuilder : MonoBehaviour
              "The fade uses whichever comes first: enough time passing OR the branch getting thick.")]
     [SerializeField] float newGrowthFadeDays = 150f;
 
+    [Tooltip("Growing seasons until a wound fully fades from the vertex color channel.\n" +
+             "Controls how long wound / callus visual remains visible after healing.")]
+    [SerializeField] float woundFadeSeasons = 8f;
+
     [Tooltip("When enabled, still-growing segments are highlighted with the debug colour below.")]
     [SerializeField] bool showGrowingDebugColor = false;
 
@@ -122,13 +127,31 @@ public class TreeMeshBuilder : MonoBehaviour
         mesh.name        = "BonsaiTree";
         mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;  // supports 4 billion vertices; default 16-bit caps at 65535
         GetComponent<MeshFilter>().mesh = mesh;
-        meshCollider = GetComponent<MeshCollider>();
+        meshCollider  = GetComponent<MeshCollider>();
+        meshRenderer  = GetComponent<MeshRenderer>();
 
         if (skeleton == null)
             Debug.LogError("TreeMeshBuilder: no TreeSkeleton found on this GameObject.", this);
     }
 
     public void SetDirty() => isDirty = true;
+
+    /// <summary>
+    /// Pushes the current species' bark colors to the MeshRenderer's material.
+    /// Safe to call any time species changes (species select, load, etc.).
+    /// No-op when species is null or renderer has no material.
+    /// </summary>
+    public void ApplySpeciesColors()
+    {
+        if (meshRenderer == null || skeleton?.species == null) return;
+
+        // material creates a per-instance copy on first access — fine for a single tree.
+        var mat = meshRenderer.material;
+        mat.SetColor("_NGColor",     skeleton.species.youngBarkColor);
+        mat.SetColor("_BarkColor",   skeleton.species.matureBarkColor);
+        mat.SetColor("_NGRootColor", skeleton.species.rootNewGrowthColor);
+        mat.SetInt  ("_BarkType",    skeleton.species.barkType);
+    }
 
     bool isDead = false;
 
@@ -234,6 +257,9 @@ public class TreeMeshBuilder : MonoBehaviour
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
 
+        // Apply species bark colors to the material (no-op if no species assigned).
+        ApplySpeciesColors();
+
         // Refresh collider -- measure separately, it's usually the most expensive part
         colliderTimer.Restart();
         meshCollider.sharedMesh = null;
@@ -332,14 +358,14 @@ public class TreeMeshBuilder : MonoBehaviour
         {
             // Fading dead branch: lerp toward grey as deadSeasons ticks up
             float fade = Mathf.Clamp01(node.deadSeasons / 2f);
-            Color live = GrowthColor(node.radius, node.age, node.isRoot, isExposed);
+            Color live = GrowthColor(node, node.radius, isExposed);
             Color dead = new Color(0.35f, 0.30f, 0.25f);
             baseColor = tipColor = Color.Lerp(live, dead, fade);
         }
         else
         {
-            baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.radius,    node.age, node.isRoot, isExposed);
-            tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node.tipRadius, node.age, node.isRoot, isExposed);
+            baseColor = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node, node.radius,    isExposed);
+            tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node, node.tipRadius, isExposed);
         }
 
 
@@ -479,23 +505,141 @@ public class TreeMeshBuilder : MonoBehaviour
         bool needsCap = !hasRenderedChild || (node.isTrimCutPoint && node.hasWound);
         if (needsCap)
         {
-            int capCenter   = vertices.Count;
             int capTriStart = triangles.Count;
 
-            vertices.Add(node.tipPosition);
-            uvs.Add(new Vector2(0.5f, tipHeight * 0.4f));
-            colors.Add(tipColor);
+            if (node.hasWound && !node.isRoot)
+                AddWoundCap(node, tipRingStart, tipHeight, axisUp, frameRight, tipColor);
+            else
+                AddFlatCap(node.tipPosition, tipRingStart, tipHeight, tipColor);
 
-            for (int i = 0; i < ringSegments; i++)
-            {
-                int r0 = tipRingStart + i;
-                int r1 = tipRingStart + i + 1;
-                triangles.Add(capCenter); triangles.Add(r1); triangles.Add(r0);
-            }
             triRanges.Add((capTriStart, triangles.Count, node));
         }
 
         return tipRingStart;
+    }
+
+    // Cap helpers
+
+    /// <summary>Simple flat fan cap — used for healthy terminal nodes.</summary>
+    void AddFlatCap(Vector3 center, int ringStart, float heightV, Color col)
+    {
+        int capCenter = vertices.Count;
+        vertices.Add(center);
+        uvs.Add(new Vector2(0.5f, heightV * 0.4f));
+        colors.Add(col);
+
+        for (int i = 0; i < ringSegments; i++)
+        {
+            int r0 = ringStart + i, r1 = ringStart + i + 1;
+            triangles.Add(capCenter); triangles.Add(r1); triangles.Add(r0);
+        }
+    }
+
+    /// <summary>
+    /// Wound cap — replaces the flat disc with organic callus geometry:
+    ///
+    ///   1. Callus swell — outer ring vertices pushed outward so the branch lip
+    ///      looks slightly swollen at the cut site.
+    ///   2. Concave face — center depressed inward along -axisUp; depth fades to
+    ///      zero as woundAge / seasonsToHeal approaches 1.
+    ///   3. Callus crescent — once woundAge > 20 % healed, a second inner ring
+    ///      at a smaller radius represents the callus roll closing inward.
+    ///
+    /// Vertex.g (wound intensity) is set high at the exposed face center and
+    /// falls off toward the outer ring so the shader blends heartwood → callus.
+    /// </summary>
+    void AddWoundCap(TreeNode node, int outerRingStart, float heightV,
+                     Vector3 axisUp, Vector3 axisRight, Color baseCol)
+    {
+        float outerR = node.tipRadius;
+
+        // Heal progress 0 = fresh, 1 = fully healed
+        float seasonsToHeal = Mathf.Max(1f, node.woundRadius * skeleton.SeasonsToHealPerUnit);
+        float healProg      = Mathf.Clamp01(node.woundAge / seasonsToHeal);
+
+        // Wound intensity for face vertices — full when fresh, zero when healed
+        float woundIntensity = Mathf.Clamp01(1f - node.woundAge / Mathf.Max(1f, woundFadeSeasons));
+        float pasteB         = node.pasteApplied ? 1f : 0f;
+        float rootBit        = 0f;   // always a branch node here
+
+        Color faceCol = new Color(rootBit, woundIntensity, pasteB, baseCol.a);
+        Color rimCol  = new Color(rootBit, woundIntensity * 0.4f, pasteB, baseCol.a);
+
+        // ── Callus swell: push outer ring vertices outward ────────────────────
+        // We DON'T move the existing ring — instead we add a duplicate swollen ring
+        // just above the tip so the cap triangles see the extra width.
+        float swellAmount  = outerR * 0.12f * (1f - healProg);   // shrinks to zero as healed
+        Vector3 axisFwd    = Vector3.Cross(axisRight, axisUp).normalized;
+        int swellRingStart = vertices.Count;
+
+        for (int i = 0; i <= ringSegments; i++)
+        {
+            float t     = (float)i / ringSegments;
+            float angle = t * Mathf.PI * 2f;
+            Vector3 dir = (axisRight * Mathf.Cos(angle) + axisFwd * Mathf.Sin(angle)).normalized;
+            Vector3 pos = node.tipPosition + dir * (outerR + swellAmount);
+            vertices.Add(pos);
+            uvs.Add(new Vector2(t, heightV * 0.4f));
+            colors.Add(rimCol);
+        }
+
+        // Connect the outer tip ring to the swell ring (a thin band)
+        for (int i = 0; i < ringSegments; i++)
+        {
+            int b0 = outerRingStart + i,  b1 = outerRingStart + i + 1;
+            int s0 = swellRingStart + i,  s1 = swellRingStart + i + 1;
+            triangles.Add(b0); triangles.Add(s0); triangles.Add(b1);
+            triangles.Add(b1); triangles.Add(s0); triangles.Add(s1);
+        }
+
+        // ── Concave face center ───────────────────────────────────────────────
+        float depression  = outerR * 0.35f * (1f - healProg);    // fills in as healed
+        Vector3 faceCenter = node.tipPosition - axisUp * depression;
+
+        // ── Inner callus ring (appears once healing starts) ───────────────────
+        // Radius shrinks inward as callus closes; absent when healProg = 0
+        bool hasInnerRing  = healProg > 0.15f;
+        float innerR       = outerR * (1f - healProg * 0.8f);     // closes to 20 % of outer
+        int innerRingStart = -1;
+
+        if (hasInnerRing)
+        {
+            innerRingStart = vertices.Count;
+            Color innerCol = new Color(rootBit, woundIntensity * 0.2f, pasteB, Mathf.Lerp(baseCol.a, 1f, 0.5f));
+
+            for (int i = 0; i <= ringSegments; i++)
+            {
+                float t     = (float)i / ringSegments;
+                float angle = t * Mathf.PI * 2f;
+                Vector3 dir = (axisRight * Mathf.Cos(angle) + axisFwd * Mathf.Sin(angle)).normalized;
+                Vector3 pos = node.tipPosition + dir * innerR - axisUp * (depression * 0.4f);
+                vertices.Add(pos);
+                uvs.Add(new Vector2(t, heightV * 0.4f));
+                colors.Add(innerCol);
+            }
+
+            // Band from swell ring → inner ring
+            for (int i = 0; i < ringSegments; i++)
+            {
+                int s0 = swellRingStart  + i, s1 = swellRingStart  + i + 1;
+                int n0 = innerRingStart  + i, n1 = innerRingStart  + i + 1;
+                triangles.Add(s0); triangles.Add(n0); triangles.Add(s1);
+                triangles.Add(s1); triangles.Add(n0); triangles.Add(n1);
+            }
+        }
+
+        // ── Face fan to center ────────────────────────────────────────────────
+        int fanBase = hasInnerRing ? innerRingStart : swellRingStart;
+        int centerIdx = vertices.Count;
+        vertices.Add(faceCenter);
+        uvs.Add(new Vector2(0.5f, heightV * 0.4f));
+        colors.Add(faceCol);
+
+        for (int i = 0; i < ringSegments; i++)
+        {
+            int r0 = fanBase + i, r1 = fanBase + i + 1;
+            triangles.Add(centerIdx); triangles.Add(r1); triangles.Add(r0);
+        }
     }
 
     // Ring Generation
@@ -578,15 +722,40 @@ public class TreeMeshBuilder : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns the vertex color for a ring of the given radius.
-    /// alpha = bark blend weight: 0 = fully new growth, 1 = fully bark.
-    /// vertex.r encodes node type for the shader:
-    ///   0 = branch (new growth = green _NGColor)
-    ///   1 = root   (new growth = white _NGRootColor)
+    /// Vertex color encoding (full, used for branch/root geometry):
+    ///   R = isRoot flag     (0 = branch,  1 = root)
+    ///   G = wound intensity (0 = healthy, 1 = fresh wound, fades with woundAge)
+    ///   B = paste applied   (0 = none,    1 = paste sealed)
+    ///   A = bark blend      (0 = new growth, 1 = mature bark)
+    /// </summary>
+    Color GrowthColor(TreeNode node, float radius, bool isExposed)
+    {
+        float fadeDays = (node.isRoot && isExposed && newGrowthFadeDays > 0f)
+            ? newGrowthFadeDays / 3f
+            : newGrowthFadeDays;
+        float radiusT = Mathf.InverseLerp(thinRadius, thickRadius, radius);
+        float ageT    = fadeDays > 0f ? Mathf.Clamp01(node.age / fadeDays) : 1f;
+        float t       = Mathf.Max(radiusT, ageT);
+        float rootBit = node.isRoot ? 1f : 0f;
+
+        float woundG = 0f;
+        float pasteB = 0f;
+        if (!node.isRoot && node.hasWound)
+        {
+            woundG = woundFadeSeasons > 0f
+                ? Mathf.Clamp01(1f - node.woundAge / woundFadeSeasons)
+                : 1f;
+            pasteB = node.pasteApplied ? 1f : 0f;
+        }
+
+        return new Color(rootBit, woundG, pasteB, t);
+    }
+
+    /// <summary>
+    /// Simplified overload for underground / cap geometry that carries no wound data.
     /// </summary>
     Color GrowthColor(float radius, float age, bool isRoot = false, bool isExposed = false)
     {
-        // Exposed roots (above soil) develop bark ~3× faster than buried ones.
         float fadeDays = (isRoot && isExposed && newGrowthFadeDays > 0f)
             ? newGrowthFadeDays / 3f
             : newGrowthFadeDays;
@@ -594,7 +763,7 @@ public class TreeMeshBuilder : MonoBehaviour
         float ageT    = fadeDays > 0f ? Mathf.Clamp01(age / fadeDays) : 1f;
         float t       = Mathf.Max(radiusT, ageT);
         float rootBit = isRoot ? 1f : 0f;
-        return new Color(rootBit, 1f, 1f, t);
+        return new Color(rootBit, 0f, 0f, t);
     }
 
     /// <summary>

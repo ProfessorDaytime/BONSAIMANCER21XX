@@ -30,6 +30,12 @@ public class TreeSpecies : ScriptableObject
     [Tooltip("How many depth levels the tree can grow per year.")]
     public int depthsPerYear = 3;
 
+    [Tooltip("Day of year (1-336) when extension growth begins slowing. Default ~day 150 = late May.")]
+    public int growthSlowDay = 150;
+
+    [Tooltip("Day of year (1-336) when extension growth fully stops. Default ~day 180 = late June.")]
+    public int growthStopDay = 180;
+
     [Tooltip("Fraction of targetLength added to each existing segment per year at depth 0.")]
     public float baseElongation = 0.05f;
 
@@ -172,4 +178,30 @@ public class TreeSpecies : ScriptableObject
     [Tooltip("How much repotting this species tolerates. Higher = less RepotStress damage.\n" +
              "Juniper ≈ 0.8 (repot-hardy)  |  maple ≈ 0.5 (moderate)  |  pine ≈ 0.3 (sensitive)")]
     [Range(0.1f, 1f)] public float repotTolerance = 0.5f;
+
+    // ── Visuals ───────────────────────────────────────────────────────────────
+
+    [Header("Visuals")]
+    [Tooltip("Bark type 1-18 from botanical classification.\n" +
+             "1=Smooth  2=Fine fissures  4=Interlacing ridges  7=Vertical strips\n" +
+             "8=Irregular blocks  9=Large plates  10=Peeling strips  12=Fibrous shreds\n" +
+             "14=Spongy fibrous  16=Horizontal lenticels\n" +
+             "See memory/reference_bark_types.md for full table.")]
+    [Range(1, 18)] public int barkType = 2;
+
+    [Tooltip("Bark color on thin, new-growth twigs (maps to shader _NGColor).\n" +
+             "Deciduous: fresh green.  Pine/juniper: yellow-green.  Deadwood: grey.")]
+    public Color youngBarkColor = new Color(0.42f, 0.62f, 0.25f);
+
+    [Tooltip("Bark color on thick, mature branches (maps to shader _BarkColor).\n" +
+             "Most trees: warm grey-brown.  Cherry: distinctive grey-pink.")]
+    public Color matureBarkColor = new Color(0.45f, 0.38f, 0.30f);
+
+    [Tooltip("New-growth color on exposed roots (maps to shader _NGRootColor).\n" +
+             "Typically pale tan / cream.")]
+    public Color rootNewGrowthColor = new Color(0.82f, 0.75f, 0.58f);
+
+    [Tooltip("Leaf color during spring and summer (non-fall season).\n" +
+             "Maple: bright green.  Pine: dark blue-green.  Wisteria: medium green.")]
+    public Color leafSpringColor = new Color(0.15f, 0.55f, 0.10f);
 }

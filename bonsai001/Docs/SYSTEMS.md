@@ -1,6 +1,6 @@
 # BONSAIMANCER — Systems Reference
 
-Last updated: 2026-04-01
+Last updated: 2026-04-16
 
 A concise technical reference for every implemented game system. Read this
 before touching a system's code — each entry explains the mental model, the
@@ -27,6 +27,8 @@ key data flow, and the things most likely to go wrong.
 15. [Pot-Bound Root Pressure](#15-pot-bound-root-pressure)
 16. [Ishitsuki (Root-over-Rock)](#16-ishitsuki-root-over-rock)
 17. [Pause & Settings Menu](#17-pause--settings-menu)
+18. [Bark Shader System](#18-bark-shader-system)
+19. [Bark Flaker Manager](#19-bark-flaker-manager)
 
 ---
 
@@ -48,6 +50,7 @@ nothing polls `GameManager.state` directly except UI.
 - **Winter skip:** when November arrives the calendar jumps straight to
   February of the next year. This keeps seasons snappy without sitting
   through a dead winter.
+- **`OnMonthChanged`** — `static event Action<int>` fired at end of `SetMonthText` each time the month changes. Drives month-triggered tutorials (e.g. April ramification) without polling.
 
 ### Seasonal growth rate
 `SeasonalGrowthRate` returns a 0–1 multiplier that gates all organic
@@ -84,6 +87,9 @@ from `Idle`), the restore falls back to `LeafFall` to keep the calendar moving.
 
 States are set by UI buttons. `OnGameStateChanged` fires a C# `Action<GameState>`
 event that all interested systems subscribe to on `OnEnable`.
+
+### Speed mode
+`SpeedMode` enum (`Slow`=0.5, `Med`=10, `Fast`=200 game-hrs/real-sec). `ToggleSpeed()` cycles Slow→Med→Fast→Slow. Speed button label: ▶ / ▶▶ / ▶▶▶ with amber/grey/green tints. `IsSlowSpeed` kept as a back-compat property (`=> CurrentSpeed == SpeedMode.Slow`). Auto-slow fires in **April** (`month == 4`) — the pinching window — not June (growth is already complete by then).
 
 ### Gotchas
 - `canTrim`, `canWire`, `canRemoveWire` are static flags set by the UI/tool
@@ -153,6 +159,9 @@ can't un-thicken a trunk).
 - Both honour the inspector weights `inertiaWeight`, `phototropismWeight`,
   `randomWeight`, `branchAngleMin/Max`.
 
+### Phototropism coordinate space
+`SunDirection()` returns `transform.InverseTransformDirection(Vector3.up)` — world up converted to tree-local space. `growDirection` is tree-local, so the phototropism Slerp target must also be local. When the tree is upright this is identical to `Vector3.up`; when tilted on a rock the difference is significant. **Do not return world `Vector3.up` directly** — the Slerp between local inertia and world up produces incorrect growth angles.
+
 ### Key APIs
 | Method | Who calls it |
 |---|---|
@@ -172,6 +181,7 @@ can't un-thicken a trunk).
   They use `isRoot = true` to opt out of the branch depth cap.
 - `RecalculateRadii` is not free — only call it after structural changes
   (spawning, trimming), not every frame.
+- **`RecalculateRootHealthScore` NaN guard:** if all root nodes have `radius == 0` the centre-of-mass calculation divides by `totalRadius == 0` → NaN → `Mathf.RoundToInt(NaN)` = `int.MinValue` = −2147483648. The method early-returns when `count == 0 || totalRadius <= 0f`. The UI additionally guards against NaN/Infinity before displaying the value.
 
 ---
 
@@ -251,6 +261,8 @@ previews the operation before the player commits.
 | `canWire` | Wire | Hover → gold single-node highlight. Click → aim phase. |
 | `canRemoveWire` | Unwire | Hover wired nodes → green. Click → `UnwireNode`. |
 | `canRootWork` | Root | Hover roots → red trim highlight. Click soil plane → plant root. |
+| `canPinch` | Pinch | Hover → lime single-node highlight + GL diamond marker. Click → `PinchNode`. |
+| `canDefoliate` | Defoliate | Hover any non-root node with a leaf cluster → amber highlight. Click → `DefoliateNode`. Note: filter does **not** require `isTerminal` — by June most leaf nodes have branched. |
 
 ### Wire aim state machine
 ```
@@ -270,6 +282,13 @@ hover frame. `BuildSubtreeNode` mirrors the branch mesh builder (without bend
 rings) to produce a slightly enlarged overlay that avoids z-fighting via
 `highlightRadiusBias`. Colour is set per mode on the shared material.
 
+### Pinch tip markers
+`DrawPinchMarkers` is registered to `RenderPipelineManager.endCameraRendering`. When `GameManager.canPinch` is true, it iterates `skeleton.allNodes` and draws a GL octahedron (`DrawGLDiamond`) at each eligible tip's `tipPosition` in world space:
+- **All pinchable tips:** dim lime-green, radius 0.055 m — shows the player where to aim.
+- **Hovered tip** (`hoveredPinchNode`): bright lime-green, radius 0.12 m — confirms what will be pinched.
+
+`hoveredPinchNode` is cleared to `null` at the top of `Update()` each frame and re-set inside `HandlePinchHover` if a node is under the cursor. `DrawGLDiamond` draws a camera-facing 3-axis octahedron (6 vertices, 12 edge pairs) so markers are readable from all angles.
+
 ### Gotchas
 - `WirePhase.Animating` blocks all other interaction until complete.
   Enter-to-skip is the only escape.
@@ -277,6 +296,7 @@ rings) to produce a slightly enlarged overlay that avoids z-fighting via
   only during `WirePhase.Aiming`.
 - Root trim reuses the same `TrimSubtree` highlight colour as branch trim.
   Root nodes are distinguished by `node.isRoot`.
+- `DrawPinchMarkers` / `DrawGraftLines` / `DrawSelectionCircle` are all registered to `endCameraRendering`, not `OnRenderObject` — URP does not invoke `OnRenderObject` on components.
 
 ---
 
@@ -331,6 +351,9 @@ the branch.
 `WireRenderer.Update` calls `UpdateHelix` every frame for each wired node.
 Each wire has its own instantiated `Unlit/Color` material; colour is set via
 `lr.material.color` (safe after first access).
+
+### OnWireSetGold event
+`public event Action OnWireSetGold` on `TreeSkeleton`. Fired the first frame any node's `wireSetProgress` crosses from < 1 to ≥ 1 during the wire accumulation loop. `buttonClicker` subscribes and calls `MaybeShowTooltip("removewire", ...)` — the unwire tutorial fires exactly once, on the first wire that goes gold, regardless of which button the player pressed.
 
 ### Gotchas
 - `wireDaysToSet = 196f` is the Inspector field. This is rate-adjusted days,
@@ -698,16 +721,25 @@ TrimNode() → 3 ancestors get backBudStimulated = true
 StartNewGrowingSeason() → stimulated nodes roll backBudBaseChance × boost
 ```
 
+### Pinching and the bud system
+`PinchNode()` stops tip extension by setting `node.length = node.targetLength` and `node.isGrowing = false`. It does **not** set `node.isTrimmed = true`. This is critical:
+
+- `budSystemActive` is `true` from year 2 onward. When it is set, `StartNewGrowingSeason` only calls `SetBuds()` on nodes that have `hasBud = true`.
+- `SetBuds()` in August only sets buds on non-trimmed nodes.
+- If `isTrimmed = true` were set: the node is excluded from `SetBuds()` → no bud → no spring growth → permanent blockage.
+- With `isTrimmed = false` and `length == targetLength`: the node is included in autumn `SetBuds()`, gets `hasBud = true` in winter, and breaks normally next March. This produces the correct real-world behaviour: pinching stops the current shoot and forces lateral back-buds.
+
 ### Gotchas
 - `backBudStimulated` is consumed (reset) after each spring check — one roll per trim.
 - `subdivisionsLeft > 0` blocks bud-set on sub-segment nodes; only true chain tips get buds.
 - `vigorFactor` scales all lateral chances down as the tree fills `maxBranchNodes`.
+- **Never set `isTrimmed = true` on a pinched node.** Use `length = targetLength` only.
 
 ---
 
 ## 12. Wound System
 
-**Files:** `TreeSkeleton.cs`, `TreeNode.cs`, `TreeInteraction.cs`
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`, `TreeInteraction.cs`, `TreeMeshBuilder.cs`
 
 **Full doc:** `Docs/WoundSystem.md`
 
@@ -717,31 +749,47 @@ drains health (`woundDrainRate` per season) until the player applies cut paste
 or the wound calluses over naturally. Large wounds on heavy branches are a
 real health risk if ignored.
 
+Wound geometry is **embedded directly in the unified tree mesh** via
+`AddWoundCap()` — no separate GameObject or material. The callus ring, inner
+closing ring, and concave center are built procedurally from `woundAge` and
+`healProgress`.
+
 ### Key data
 | Field | Meaning |
 |---|---|
 | `hasWound` | Exposed cut face exists on this node |
 | `woundRadius` | Size of cut (drives visual scale and drain) |
 | `woundAge` | Seasons elapsed; heals when `>= woundRadius × seasonsToHealPerUnit` |
-| `pasteApplied` | Stops health drain immediately |
+| `pasteApplied` | Stops health drain; encodes as `vertex.b = 1` in mesh for shader |
+
+### Vertex color encoding (wound-related channels)
+| Channel | Meaning |
+|---|---|
+| `vertex.r` | `isRoot` flag (unchanged) |
+| `vertex.a` | `barkBlend` twig→mature (unchanged) |
+| `vertex.g` | Wound intensity: `1 − (woundAge / woundFadeSeasons)`, clamped 0–1 |
+| `vertex.b` | Paste mask: `1` if `node.pasteApplied`, else `0` |
 
 ### Flow
 ```
 TrimNode(child)
     → parent.hasWound = true, woundRadius set, woundAge = 0
-    → CreateWoundObject() builds half-torus mesh
+    → CreateWoundObject() creates empty anchor GameObject (_WoundAnchor_N)
+    → meshBuilder.SetDirty() → AddWoundCap() builds callus geometry in unified mesh
 StartNewGrowingSeason()
     → woundAge++ for all wounds
     → ApplyDamage(WoundDrain) if !pasteApplied
-    → Destroy wound object if healed
+    → hasWound = false + anchor destroyed if healed → SetDirty()
 Player clicks wound in Paste mode
-    → ApplyPaste() → pasteApplied = true, mesh tint changes
+    → ApplyPaste() → pasteApplied = true → meshBuilder.SetDirty()
+    → vertex.b flips to 1; shader shows paste tint over wound zone
 ```
 
 ### Gotchas
 - Subdivision cuts use `woundRadius × 0.35` (tiny nip, heals in 1 season by default).
 - Full branch cuts use full `node.radius` — a thick branch unprotected for 20 seasons can kill the node.
 - Paste stops drain but does not speed up healing.
+- The empty `_WoundAnchor_N` GameObject is kept to preserve book-keeping paths (heal loop, undo, `woundObjects` dict) without breaking existing code.
 
 ---
 
@@ -943,3 +991,324 @@ Both stay in sync:
   last active. This is intentional — keeps the most-used control front and centre.
 - If `skeleton` is null on `ButtonClicker`, Growth and Ishitsuki sliders still
   render but their callbacks silently no-op. No error is thrown.
+
+---
+
+## 18. Bark Shader System
+
+**Files:** `Assets/Shaders/BarkVertexColor.shader`, `TreeMeshBuilder.cs`, `TreeSpecies.cs`
+
+### What it does
+A 100% procedural HLSL shader that generates 10 distinct botanical bark
+surface patterns from math alone — no textures. Pattern complexity scales
+with the `_BarkBlend` vertex channel, giving twigs a simple fine-fissure look
+and mature wood the full species bark type. Cel-shaded 3-band lighting with a
+silhouette outline pass.
+
+### Bark types (barkType on TreeSpecies)
+| ID | Pattern | Key species |
+|---|---|---|
+| 1 | Smooth | Ficus |
+| 2 | Fine fissures | Japanese Maple, Wisteria |
+| 4 | Interlacing ridges | Willow, Elm |
+| 7 | Vertical strips | Atlas Cedar |
+| 8 | Irregular blocks | Spruce (2 spp.) |
+| 9 | Large plates | Pine (3 spp.) |
+| 10 | Peeling horizontal strips | Birch |
+| 12 | Fibrous shreds | Juniper, Redwood, J. Cedar |
+| 14 | Spongy fibrous attached | Cypress |
+| 16 | Lenticels | Cherry |
+
+### Vertex color encoding
+| Channel | Shader reads as |
+|---|---|
+| `vertex.r` | `isRoot` — shifts pattern toward root texture |
+| `vertex.a` | `barkBlend` — 0=twig (Type 2) → 1=full species type |
+| `vertex.g` | `woundIntensity` — drives heartwood/cambium/callus zone blend |
+| `vertex.b` | `pasteMask` — overrides wound zone with paste color when 1 |
+
+### Passes
+1. **Outline (SRPDefaultUnlit, Cull Front)** — position inflated by `_OutlineWidth`
+   along world normal.
+2. **ForwardLit** — cel lighting: `NdotL × shadowAttenuation` stepped at
+   `_ShadowThreshold` and `_MidThreshold` into 3 tint bands; additional lights
+   added as additive fill. Wound face: 3-zone blend (heartwood / cambium / callus)
+   modulated by `vertex.g`; paste overrides with `_PasteColor` when `vertex.b > 0.5`.
+3. **ShadowCaster / DepthOnly** — standard passes with matching CBUFFER for SRP
+   Batcher compatibility.
+
+### Material properties set at runtime
+`TreeMeshBuilder.ApplySpeciesColors()` calls:
+- `mat.SetColor("_BarkColor", species.matureBarkColor)`
+- `mat.SetColor("_NGColor", species.youngBarkColor)`
+- `mat.SetColor("_NGRootColor", species.rootNewGrowthColor)`
+- `mat.SetInt("_BarkType", species.barkType)`
+
+### Gotchas
+- All 4 passes must declare an identical CBUFFER for the SRP Batcher to accept
+  the shader. Adding a new property requires updating all 4 CBUFFER blocks.
+- `BuildCurvedQuad` in `BarkFlakerManager` is a placeholder mesh; swap by
+  assigning an artist-modelled prefab to `barkFlakePrefab` in the Inspector.
+
+---
+
+## 19. Bark Flaker Manager
+
+**Files:** `BarkFlakerManager.cs`
+
+### What it does
+Spawns 3D bark-flake GameObjects on trunk and scaffold nodes for peeling-bark
+species (barkType 10 Birch, 12 Juniper/Cedar/Redwood, 14 Cypress). Operates
+identically to `LeafManager` — flakes are parented to the tree transform in
+local space. Flake count per node scales with tree age and stress so older,
+unhealthier trees visibly peel more.
+
+### When flakes spawn
+- Only during `BranchGrow` state (once per year via `lastSpringYear` guard).
+- Only for barkType 10, 12, or 14.
+- Only nodes at `depth <= maxFlakeDepth` (default 3) and `radius >= minFlakeRadius`
+  (default 0.06).
+
+### Count formula
+```
+ageFactor = Clamp01((treeAge - minAgeForFlakes) / ageRange)
+stress    = healthFlakeBoost × (1 − node.health)
+combined  = Clamp01(ageFactor + stress × ageFactor)
+count     = Round(combined × maxFlakesPerNode)
+```
+Default: flakes start appearing after year 4, peak over 25 years, healthy
+trees peel minimally, stressed trees peel at `healthFlakeBoost` (0.6) rate.
+
+### Lifecycle
+- `RefreshFlakes()` removes flakes from trimmed nodes, adds/removes to match
+  target count each spring.
+- `ClearAllFlakes()` is called on tree death or full repot.
+- Fallback mesh (`BuildCurvedQuad`): 3×4 vertex curved quad, 20° bend, pivot
+  at top edge so the flake hangs downward.
+
+### Inspector fields
+| Field | Default | Meaning |
+|---|---|---|
+| `barkFlakePrefab` | null | Artist prefab; null uses built-in curved quad |
+| `maxFlakesPerNode` | 2 | Max flakes per node at peak age+stress |
+| `minAgeForFlakes` | 4 | Years before any flakes appear |
+| `ageRange` | 25 | Years from first flake to max count |
+| `maxFlakeDepth` | 3 | Only trunk/scaffold nodes |
+| `minFlakeRadius` | 0.06 | Skip thin twigs |
+| `healthFlakeBoost` | 0.6 | How much stress amplifies peeling |
+
+---
+
+## 18. Watering System
+
+**Files:** `TreeSkeleton.cs`, `buttonClicker.cs`
+
+Tracks `soilMoisture` (0–1). Drains at `drainRatePerDay × SeasonalGrowthRate` each frame. Below `droughtThreshold`, `Drought` damage is applied to all nodes. Auto-water fires just before threshold on an in-game-day cooldown and pulses the Water button grey for ~0.15 s. `drainRatePerDay` is set per-species (Maple 0.14, Juniper 0.06). Auto-water can be toggled off in the Debug tab.
+
+---
+
+## 19. Save / Load System
+
+**Files:** `SaveManager.cs`, `SaveData.cs`
+
+Full JSON serialization into named slots: `saves/<slotId>/save.json` + `meta.json` + optional `thumb.png`. `SaveMeta` is lightweight (name, species, date, nodeCount) — readable by the Load Menu without deserializing the full tree. `ActiveSlotId` persists to `PlayerPrefs`. Quick-save writes to active slot; prompts for a name if no active slot. Legacy `bonsai_save.json` is migrated to slot layout on first load. Auto-save fires at end of season.
+
+---
+
+## 20. Fertilizer System
+
+**Files:** `TreeSkeleton.cs`, `buttonClicker.cs`
+
+`nutrientReserve` (0–2). Drains 0.4/season. `Fertilize()` adds 0.5, capped at 2, blocked in winter. Growth mult = `Lerp(0.6, 1.4, reserve/2)`. FertilizerBurn on root nodes each spring when `reserve > 1.5`. Nutrient bar on right panel. Auto-fertilize toggle in Debug tab.
+
+---
+
+## 21. Weed System
+
+**Files:** `WeedManager.cs`, `WeedPuller.cs`, `Weed.cs`
+
+RMB click-hold-drag-up. Upward mouse delta accumulates `pullProgress`. Rip chance leaves a stub (`isRipped`, 1.8× force, 60% drain). `Physics.RaycastAll` required to reach weed colliders behind tree mesh. Four types: Grass 40%, Clover 35%, Dandelion 15%, Thistle 10%. Herbicide clears all + sets `aerationPenalty`. Weeds parented to tree GO, auto-cleared on Repot.
+
+---
+
+## 22. Fungus System
+
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`, `Leaf.cs`
+
+`fungalLoad` (0–1) per node. Spread sources each spring: open wounds, `soilMoisture > 0.9`, `health < 0.5`. Infected nodes spread to neighbours at 25% chance. Load > 0.4 → `FungalInfection` damage. Recovery: −0.1/season when no risk. Mycorrhizal: root nodes healthy 3+ seasons → reduces nutrient drain up to 20% by coverage fraction. Fungicide and herbicide kill mycorrhizae. Leaf tint via `MaterialPropertyBlock` driven by `fungalSeverity`.
+
+---
+
+## 23. Species System
+
+**Files:** `TreeSpecies.cs`, `TreeSkeleton.cs`
+
+`TreeSpecies` ScriptableObject. `ApplySpecies()` copies values into existing `TreeSkeleton` fields on Awake. 16 species assets in `Assets/Resources/Species/`. Species name shown in Settings header. Full-screen `SpeciesSelect` overlay at game start; sortable by tag chips; confirms into `TipPause`. `BudType` enum in its own file.
+
+---
+
+## 24. Soil / Substrate System
+
+**Files:** `PotSoil.cs`, `TreeSkeleton.cs`
+
+7 substrates (akadama, pumice, lava rock, organic, sand, kanuma, perlite). Weighted mix → derived `moistureRetention`, `aeration`, `drainage`, `pH`, `compaction`. Organic compacts over time. Species soil mismatch → growth penalty. High moisture + low aeration + overwatering → root rot. `Repot()` resets compaction; too-soon repot applies stress multiplier. 4 presets (Classic, Free-Drain, Moist, Acidic). Soil bars in Repot panel. Entering Repot auto-clears weeds.
+
+---
+
+## 25. Tree Death
+
+**Files:** `TreeSkeleton.cs`, `buttonClicker.cs`
+
+Toggleable (`treeDeathEnabled`, off by default). Death conditions: sustained `soilMoisture <= 0` or `consecutiveCriticalSeasons >= threshold`. `TreeDangerBanner` shown during warning phase. On death → `GameState.TreeDead` + death overlay (Load / Restart). `LastDeathCause` set before transition.
+
+---
+
+## 26. Branch Death & Dieback
+
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`, `TreeMeshBuilder.cs`
+
+`isDead`, `isDeadwood`, `shadedSeasons`, `deadSeasons` on `TreeNode`. `DiebackPass()` each spring: zero-health nodes → `isDead`; interior nodes with no living terminal children for `shadedSeasons >= threshold` → `isDead`. Small dead branches drop after `deadSeasonsToDrop` seasons; large ones → `isDeadwood` (permanent). Dead mesh colour: `Lerp(live, ashenGrey, deadSeasons/2)`.
+
+---
+
+## 27. Branch Weight & Strength
+
+**Files:** `TreeSkeleton.cs`, `TreeNode.cs`
+
+Toggleable (`branchWeightEnabled`, off by default). `BranchWeightPass()` each spring: bottom-up `ComputeLoad()` then `ApplySagAndStress()`. Sag angle accumulates when load/strength exceeds `sagThreshold`; `growDirection` Slerps toward down; `PropagatePositions()` updates descendants. Junction stress damage when ratio exceeds `junctionStressThreshold`. `branchLoad` and `sagAngleDeg` serialized.
+
+---
+
+## 28. Air Layering → New Tree
+
+**Files:** `TreeSkeleton.cs`, `SaveManager.cs`, `buttonClicker.cs`
+
+After `airLayerRootSeasonsToSever` seasons post-unwrap, `isSeverable = true` → `AirLayerSeverBanner` shown. Confirm: wound on cut site, subtree removed, original backed up to `bonsai_original.json`, new `SaveData` built from severed subtree (air layer node = new root, depths recalculated, air roots → normal roots), `LoadFromSaveData` called. `treeOrigin = AirLayer`. `LoadOriginalButton` visible when backup exists.
+
+---
+
+## 29. Named Save / Load Menu
+
+**Files:** `SaveManager.cs`, `buttonClicker.cs`, `ButtonUI.uxml`
+
+Multi-slot named saves. `SaveMeta` readable without full deserialization. `LoadMenu` shown at launch when saves exist. Cards show name, origin badge, species, date, real save time, node count proxy. Per-card: Load | Delete (confirm). Footer: New Game. Quick-save to active slot; Save Name Prompt on first save. `ActiveSlotId` in `PlayerPrefs`. `NewSlotId()` = `yyyyMMdd_HHmmss`.
+
+---
+
+## 30. Growth Season Taper
+
+**Files:** `TreeSpecies.cs`, `TreeSkeleton.cs`, `GameManager.cs`
+
+`growthSlowDay` / `growthStopDay` per species. `dayOfYear = (month-1)×28 + day` (March = month 1). `GrowthSeasonMult()` returns 1 before slow day, 0 at/after stop day, linear taper between. Multiplied into per-node growth delta each frame. `species == null` guard returns 1f. All 16 species assets updated with biology-appropriate windows (Juniper 140/166, Japanese Maple 152/182, Ficus 213/244, etc.).
+
+---
+
+## 31. Root Bark Color Transition
+
+**Files:** `TreeSkeleton.cs`, `TreeMeshBuilder.cs`
+
+Root nodes are now included in the age-accumulation loop (the `isRoot && !isTrainingWire` exclusion was removed). `GrowthColor()` in `TreeMeshBuilder` uses `node.age` to compute vertex alpha (0 = new-growth white/beige via `_NGRootColor`, 1 = fully barked). Exposed roots (`worldPosition.y > rootVisibilityDepth`) use `fadeDays/3` — bark in ~50 days vs ~150 days buried.
+
+---
+
+## 32. Rock Placement & Tree Orient
+
+**Files:** `RockPlacer.cs`, `buttonClicker.cs`
+
+Two-phase Ishitsuki setup. RockPlace: LMB grab/drop rock, mouse follows cursor on horizontal plane, scroll raises/lowers, RMB drag = yaw+pitch rotation, RMB+scroll = roll. TreeOrient: same rotation scheme on `treeTransform`; LMB drag moves tree on camera-relative axes (`ProjectOnPlane`). HUD dims (`opacity 0.25` + `PickingMode.Ignore`) during both states; Confirm/Cancel always visible. Cancel calls `RestorePrePlacementSnapshot()`. Confirm fires `OnRockOrientConfirmed` → drapes training wires.
+
+---
+
+## 33. Input System
+
+**Files:** All input-using scripts
+
+All input uses `com.unity.inputsystem`. Key mappings: `Mouse.current.leftButton.wasPressedThisFrame`, `Mouse.current.delta.ReadValue() * 0.01f` (matches old `GetAxis` sensitivity), `Mouse.current.scroll.ReadValue().y / 120f`. `Mouse.current` / `Keyboard.current` null-checked throughout. EventSystem must use `Input System UI Input Module` — not `Standalone Input Module`.
+
+---
+
+## 35. First-Use Tutorial / Tooltip System
+
+**Files:** `buttonClicker.cs`, `ButtonUI.uxml`, `GameManager.cs`, `TreeSkeleton.cs`
+
+### What it does
+Shows a contextual full-screen tooltip overlay the first time each tool or situation is encountered. Each tooltip fires at most once per install (tracked in `PlayerPrefs`). The overlay pauses the game and must be dismissed with "GOT IT".
+
+### `MaybeShowTooltip(id, title, body)`
+Central method on `buttonClicker`. Guards:
+1. `shownTooltips.Contains(id)` — skips if already shown (in-memory HashSet, populated from `PlayerPrefs` on `OnEnable`).
+2. Adds `id` to the set, writes `PlayerPrefs.SetInt("Tooltip_" + id, 1)`, shows the `TooltipOverlay`, sets title/body labels.
+
+Dismissal via the "GOT IT" button hides the overlay. The game does not need to be in a specific state — the overlay works on top of any state.
+
+### Triggers
+
+| ID | Trigger | File |
+|---|---|---|
+| `trim` | Trim button clicked | `buttonClicker` |
+| `water` | Water button clicked | `buttonClicker` |
+| `wire` | Wire button clicked | `buttonClicker` |
+| `repot` | Root Prune button clicked | `buttonClicker` |
+| `paste` | Paste button clicked | `buttonClicker` |
+| `pinch` | Pinch button clicked | `buttonClicker` |
+| `defoliate` | Defoliate button clicked | `buttonClicker` |
+| `airlayer` | Air Layer button clicked | `buttonClicker` |
+| `fertilize` | Fertilize button clicked (first use) | `buttonClicker` |
+| `herbicide` | Herbicide button clicked (first use) | `buttonClicker` |
+| `removewire` | First wire turns gold (`OnWireSetGold` event) | `buttonClicker` + `TreeSkeleton` |
+| `april_ramification` | Month changes to April (`OnMonthChanged` event) | `buttonClicker` + `GameManager` |
+
+### Gotchas
+- `PlayerPrefs` tooltips persist across sessions. To reset all tooltips for testing: `PlayerPrefs.DeleteAll()` in the console, or delete each `"Tooltip_<id>"` key individually.
+- The overlay has no concept of game state — it can appear mid-animation or mid-season. This is intentional; contextual timing matters more than pausing cleanly.
+- `OnWireSetGold` fires per-skeleton-instance. If you ever support multiple trees, the event subscription in `buttonClicker.OnEnable` must be updated to subscribe to the correct skeleton.
+
+---
+
+## 34. Branch Saw
+
+**Files:** `TreeInteraction.cs`, `TreeSkeleton.cs`
+
+### What it does
+Thick branches require a back-and-forth sawing gesture to remove rather than a single click, making large cuts feel weighty and deliberate.
+
+### Threshold
+`skeleton.sawRadiusThreshold` (default 0.08, Inspector field under Wound System header). When the player clicks a branch in Trim mode and `node.radius >= sawRadiusThreshold` **and** the active tool is `ToolType.Saw`, `StartSawing()` is called instead of `TrimNode()`. Thin branches and all non-Saw tools cut instantly as before.
+
+### Stroke mechanic
+Mouse X movement is tracked frame-to-frame. A **half-stroke** is counted each time the mouse reverses direction after traveling at least `sawMinStrokePx` (default 20 px) in the current direction. `sawTotalHalfStrokes` (default 10) half-strokes = ~5 full back-and-forth strokes to complete the cut.
+
+```
+sawProgress = Clamp01(sawHalfStrokes / sawTotalHalfStrokes)
+```
+
+### Groove mesh
+A dark brown annulus is built at the node base, perpendicular to `growDirection`. The outer radius is `node.radius × 1.12` (slightly proud of the bark). The inner radius lerps from `node.radius × 0.9` → 0 as progress goes 0 → 1, so the groove visually deepens inward as you saw.
+
+The groove is a child `GameObject ("_SawGroove")` rebuilt each frame via `UpdateSawGroove()` and destroyed on complete or cancel.
+
+### Completion & cancel
+- **Complete** (`sawHalfStrokes >= sawTotalHalfStrokes`): groove destroyed, `PlaySFX("Trim")`, `skeleton.TrimNode(node)` — identical path to a normal trim from here.
+- **Cancel** (ESC or RMB): groove destroyed, no tree change, returns to normal trim hover.
+- **Auto-cancel**: if `sawTarget.isTrimmed`, `!GameManager.canTrim`, or the tool is switched mid-saw.
+
+### Interaction blocking
+`isSawing` is checked at the top of `TreeInteraction.Update()`, same as `WirePhase.Animating` — all other hover/click handling is skipped until the saw completes or cancels.
+
+### Inspector fields (`TreeInteraction`)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `sawMinStrokePx` | 20 | Pixels of travel before a reversal counts as a half-stroke |
+| `sawTotalHalfStrokes` | 10 | Half-strokes to complete the cut (~5 full strokes) |
+
+### Inspector field (`TreeSkeleton`)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `sawRadiusThreshold` | 0.08 | Branches at or above this radius require the Saw tool gesture |
+
+### Gotchas
+- SmallClippers and BigClippers always cut instantly regardless of radius — only `ToolType.Saw` triggers the mechanic.
+- The groove mesh is in tree-local space; it correctly follows the branch if the tree lifts (e.g. during root mode, though sawing is blocked there anyway).
+- `sawProgress` is purely cosmetic — the cut is binary (not partial). There is no "halfway sawed" state that persists if you cancel.

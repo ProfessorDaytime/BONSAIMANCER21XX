@@ -80,6 +80,39 @@ public class PotSoil : MonoBehaviour
     [Tooltip("Growing seasons since the last repot.")]
     public int seasonsSinceRepot;
 
+    // ── Pot Size ──────────────────────────────────────────────────────────────
+
+    public enum PotSize { XS, S, M, L, XL, Slab }
+
+    [Header("Pot Size")]
+    [Tooltip("Current pot size. Change via Repot panel; affects rootAreaTransform scale.")]
+    public PotSize potSize = PotSize.M;
+
+    /// <summary>
+    /// Dimensions (width, depth, height) in world units for each pot size.
+    /// Slab is wide but very shallow.
+    /// </summary>
+    static readonly (float w, float d, float h)[] PotDimensions =
+    {
+        (1.2f, 1.0f, 0.6f),   // XS
+        (1.8f, 1.5f, 0.8f),   // S
+        (2.6f, 2.0f, 1.0f),   // M  ← default
+        (3.4f, 2.6f, 1.1f),   // L
+        (4.2f, 3.2f, 1.2f),   // XL
+        (5.0f, 3.8f, 0.5f),   // Slab — wide, very shallow
+    };
+
+    /// <summary>
+    /// Resize the rootAreaTransform to match the chosen pot size.
+    /// Call this after setting potSize, typically during Repot().
+    /// </summary>
+    public void ApplyPotSize(Transform rootAreaTransform)
+    {
+        if (rootAreaTransform == null) return;
+        var (w, d, h) = PotDimensions[(int)potSize];
+        rootAreaTransform.localScale = new Vector3(w, h, d);
+    }
+
     // ── Presets ───────────────────────────────────────────────────────────────
 
     public enum SoilPreset
@@ -257,10 +290,11 @@ public class PotSoil : MonoBehaviour
     }
 
     /// <summary>
-    /// Repot with a new soil preset. Resets degradation and saturation; applies
-    /// root stress damage scaled by the species' repot tolerance.
+    /// Repot with a new soil preset and optional pot size. Resets degradation and
+    /// saturation; applies root stress damage scaled by the species' repot tolerance.
     /// </summary>
-    public void Repot(TreeSkeleton skeleton, SoilPreset newPreset)
+    public void Repot(TreeSkeleton skeleton, SoilPreset newPreset,
+                      PotSize newSize = PotSize.M, bool sizeChanged = false)
     {
         int prevSeasonsSinceRepot = seasonsSinceRepot;  // capture before reset
 
@@ -268,6 +302,14 @@ public class PotSoil : MonoBehaviour
         soilDegradation   = 0f;
         saturationLevel   = 0f;
         seasonsSinceRepot = 0;
+
+        if (sizeChanged)
+        {
+            potSize = newSize;
+            var rootArea = skeleton.GetRootAreaTransform();
+            ApplyPotSize(rootArea);
+            Debug.Log($"[Soil] Pot size → {newSize} | year={GameManager.year}");
+        }
 
         // Repot stress — less damage for tolerant species, worse outside early spring
         float tolerance    = skeleton.species != null ? skeleton.species.repotTolerance : 0.5f;

@@ -10,6 +10,11 @@ seal wounds with cut paste to dramatically reduce the drain. Thin tip cuts
 produce negligible wounds; removing a major branch without paste is a
 meaningful health risk.
 
+Wound geometry is embedded directly in the **unified tree mesh** via
+`AddWoundCap()` in `TreeMeshBuilder`. No separate wound GameObject, material,
+or MeshRenderer is created — the callus grows as part of the same mesh that
+renders the whole tree.
+
 ---
 
 ## Data on TreeNode
@@ -18,9 +23,9 @@ meaningful health risk.
 |---|---|
 | `hasWound` | This node has an exposed cut face |
 | `woundRadius` | Radius of the removed branch at cut time (drives wound size and drain) |
-| `woundFaceNormal` | `growDirection` of the removed branch (used to orient the wound mesh) |
+| `woundFaceNormal` | `growDirection` of the removed branch (used to orient wound geometry) |
 | `woundAge` | Growing seasons elapsed since the cut |
-| `pasteApplied` | Player has sealed this wound; drain drops to zero |
+| `pasteApplied` | Player has sealed this wound; drain drops to zero; vertex.b = 1 |
 
 ---
 
@@ -40,6 +45,11 @@ Initial state: `woundAge = 0`, `pasteApplied = false`.
 
 If the parent node already has a wound, it is replaced by the new one (re-cutting
 a stump resets the wound).
+
+`CreateWoundObject()` is called immediately after setting wound fields — it
+creates an **empty** anchor `GameObject` (`_WoundAnchor_N`) to preserve all
+existing book-keeping paths (heal loop, undo, `woundObjects` dict) without
+needing to restructure them. No mesh or renderer is attached to this object.
 
 ---
 
@@ -69,11 +79,67 @@ seasonsToHeal = Max(1, woundRadius × seasonsToHealPerUnit)
 
 When `woundAge >= seasonsToHeal`:
 - `node.hasWound = false`
-- Wound GameObject destroyed and removed from `woundObjects` dict.
+- Anchor GameObject destroyed and removed from `woundObjects` dict.
+- `meshBuilder.SetDirty()` rebuilds geometry without the wound cap.
 - Health drain stops.
 
 `seasonsToHealPerUnit` default is `20`. A wound of radius `0.05` (thin twig)
 heals in 1 season. A wound of radius `0.5` takes 10 seasons.
+
+---
+
+## Wound Geometry — AddWoundCap
+
+`TreeMeshBuilder.AddWoundCap(node, outerRingStart, heightV, axisUp, axisRight, baseCol)`
+is called instead of `AddFlatCap` whenever `node.hasWound`.
+
+```
+healProgress = Clamp01(woundAge / seasonsToHeal)
+outerR       = node's tip ring radius
+
+1. Callus swell ring
+   pushed outward by outerR × 0.12 × (1 − healProgress)
+   Band: outer tip ring → swell ring
+
+2. Optional inner closing ring (if healProgress > 0.15)
+   radius = outerR × (1 − healProgress × 0.8)
+   Band: swell ring → inner ring
+
+3. Concave center vertex
+   at tipPosition − axisUp × outerR × 0.35 × (1 − healProgress)
+   Fan: inner ring (or swell ring) → center
+```
+
+As `healProgress` goes from 0→1:
+- The swell ring shrinks back to flush.
+- The inner ring opens from nothing to near-full coverage.
+- The concave depression fills in.
+- At `healProgress == 1` the result is effectively flat (wound removed on next
+  dirty rebuild because `hasWound` is now false).
+
+---
+
+## Vertex Color Encoding (Wound Channels)
+
+The bark shader reads four vertex color channels:
+
+| Channel | Meaning |
+|---|---|
+| `vertex.r` | `isRoot` flag (unchanged from prior system) |
+| `vertex.a` | `barkBlend` twig→mature (unchanged) |
+| `vertex.g` | Wound intensity: `1 − (woundAge / woundFadeSeasons)`, clamped 0–1 |
+| `vertex.b` | Paste mask: `1.0` if `node.pasteApplied`, else `0.0` |
+
+`woundFadeSeasons` (default 8) is a `[SerializeField]` on `TreeMeshBuilder` —
+separate from the heal timer so visual fade can differ from mechanical healing.
+
+The shader blends three wound zones based on `vertex.g`:
+- **Heartwood** — dark inner core color (`_WoundHeartColor`)
+- **Cambium** — bright ring at the cut edge (`_WoundCambiumColor`)
+- **Callus** — fleshy outer roll (`_WoundCallusColor`)
+
+When `vertex.b > 0.5` (paste applied), all three zones are overridden by
+`_PasteColor` (default: dark grey-brown paste).
 
 ---
 
@@ -86,33 +152,23 @@ Calls `skeleton.ApplyPaste(node)`.
 **What `ApplyPaste` does:**
 1. Guard: `if (!node.hasWound || node.pasteApplied) return;`
 2. Sets `node.pasteApplied = true`.
-3. Tints the wound GameObject slightly lighter (RGB channels ×1.1–1.15) to
-   give visual feedback that paste has been applied.
+3. Calls `meshBuilder.SetDirty()` — next build encodes `vertex.b = 1` on the
+   wound cap geometry, triggering the paste color override in the shader.
 
 **GameState requirement:** `canPaste` flag must be true. This is set by the UI
 when the Paste button is active.
 
 ---
 
-## Wound Mesh Lifecycle
+## Wound Anchor Lifecycle
 
-**Creation:** `CreateWoundObject(node)` — called immediately after the wound fields
-are set in `TrimNode`.
+`woundObjects` in `TreeSkeleton` is a `Dictionary<int, GameObject>` keyed by
+`node.id`. It stores the empty anchor GameObjects.
 
-Builds a half-torus mesh:
-```
-visR    = Max(node.woundRadius, node.tipRadius) × 1.1   (outer radius)
-minorR  = visR × 0.2                                     (tube radius)
-Verts:   BuildHalfTorusMesh(visR, minorR, 12 segments, 6 rings)
-```
-
-Positioned at: `transform.TransformPoint(node.tipPosition + node.woundFaceNormal × (minorR × 0.5))`
-Oriented with: `Quaternion.FromToRotation(Vector3.up, worldFaceNormal)`
-Material: `woundMaterialOverride` if assigned; otherwise fallback Unlit brown `(0.28, 0.18, 0.10)`.
-Stored in: `Dictionary<int, GameObject> woundObjects` keyed by `node.id`.
+**Creation:** `CreateWoundObject(node)` — called immediately after wound fields are set in `TrimNode`.
 
 **Destruction:**
-- Node trimmed: `RemoveSubtree()` destroys wound object.
+- Node trimmed: `RemoveSubtree()` destroys wound anchor.
 - Wound heals: `StartNewGrowingSeason()` destroys and removes from dict.
 - Subtree removed for any reason: covered by `RemoveSubtree()`.
 
@@ -124,7 +180,12 @@ Stored in: `Dictionary<int, GameObject> woundObjects` keyed by `node.id`.
 |---|---|---|
 | `woundDrainRate` | 0.05 | Health lost per growing season per wounded node (if no paste) |
 | `seasonsToHealPerUnit` | 20 | Growing seasons to heal per unit of `woundRadius` |
-| `woundMaterialOverride` | null | Optional material for wound mesh; defaults to Unlit brown |
+
+## Inspector Fields (TreeMeshBuilder)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `woundFadeSeasons` | 8 | Seasons over which wound vertex.g fades for visual purposes |
 
 ---
 
@@ -144,3 +205,5 @@ Stored in: `Dictionary<int, GameObject> woundObjects` keyed by `node.id`.
 - Multiple wounds on one node: the current implementation replaces rather than
   accumulates. If a branch is cut, allowed to callus, then cut again, the new
   wound starts fresh.
+- The empty `_WoundAnchor_N` anchor GameObject has no renderer. Never assign a
+  MeshFilter or material to it — the wound face lives in the unified tree mesh.

@@ -19,7 +19,7 @@ MonoBehaviour:
   depthsPerYear: 5
   baseElongation: 0.08
   elongationDepthDecay: 0.75
-  branchSegmentLength: 1.2
+  branchSegmentLength: 0.10
   segmentLengthDecay: 0.85
   rootSegmentLength: 0.9
   baseBranchChance: 0.85
@@ -48,4 +48,11 @@ MonoBehaviour:
   preferredAerationScore: 0.28
   soilToleranceRange: 0.20
   soilMismatchPenalty: 0.06
+  growthSlowDay: 161
+  growthStopDay: 196
   repotTolerance: 0.70
+  barkType: 4
+  youngBarkColor: {r: 0.45, g: 0.50, b: 0.28, a: 1}
+  matureBarkColor: {r: 0.42, g: 0.35, b: 0.25, a: 1}
+  rootNewGrowthColor: {r: 0.78, g: 0.72, b: 0.55, a: 1}
+  leafSpringColor: {r: 0.35, g: 0.65, b: 0.15, a: 1}

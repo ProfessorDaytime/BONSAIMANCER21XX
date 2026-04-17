@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Orbits the camera around a target point when the player clicks and drags
@@ -118,7 +119,7 @@ public class CameraOrbit : MonoBehaviour
             ApplyOrbit();
         }
 
-        float scroll = Input.GetAxis("Mouse ScrollWheel");
+        float scroll = Mouse.current != null ? Mouse.current.scroll.ReadValue().y / 120f : 0f;
         // Block zoom when rock is grabbed (scroll = Y lift) or when right-click is
         // held in a rock mode (scroll = roll). Free zoom all other times.
         bool inRockMode = GameManager.Instance != null &&
@@ -126,7 +127,7 @@ public class CameraOrbit : MonoBehaviour
                            GameManager.Instance.state == GameState.TreeOrient);
         bool blockScroll = RockPlacer.RockGrabbed ||
                            RockPlacer.TreeGrabbed ||
-                           (inRockMode && Input.GetMouseButton(1));
+                           (inRockMode && Mouse.current != null && Mouse.current.rightButton.isPressed);
         if (scroll != 0f && !blockScroll)
         {
             radius = Mathf.Clamp(radius - scroll * zoomSpeed * radius, zoomMin, zoomMax);
@@ -134,7 +135,7 @@ public class CameraOrbit : MonoBehaviour
             Debug.Log($"[CameraOrbit] zoom → startRadius={radius:F2} startPanY={panY:F2}");
         }
 
-        if (Input.GetMouseButtonDown(0))
+        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
         {
             bool blocked = false;
 
@@ -161,7 +162,7 @@ public class CameraOrbit : MonoBehaviour
             // table have colliders but should NOT block camera rotation.
             else
             {
-                Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+                Ray ray = Camera.main.ScreenPointToRay((Vector3)Mouse.current.position.ReadValue());
                 if (Physics.Raycast(ray, out RaycastHit hit))
                 {
                     bool isTree = target != null &&
@@ -182,12 +183,12 @@ public class CameraOrbit : MonoBehaviour
             }
         }
 
-        if (Input.GetMouseButtonDown(2)) isPanning  = true;
-        if (Input.GetMouseButtonUp(2))   isPanning  = false;
-        if (Input.GetMouseButtonUp(0) && isDragging) { isDragging = false; Debug.Log($"[Camera] isDragging=false | gameState={GameManager.Instance?.state}"); }
+        if (Mouse.current != null && Mouse.current.middleButton.wasPressedThisFrame)  isPanning = true;
+        if (Mouse.current != null && Mouse.current.middleButton.wasReleasedThisFrame) isPanning = false;
+        if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame && isDragging) { isDragging = false; Debug.Log($"[Camera] isDragging=false | gameState={GameManager.Instance?.state}"); }
 
         // Safety: LMB not held but isDragging somehow stuck — force-clear it.
-        if (isDragging && !Input.GetMouseButton(0))
+        if (isDragging && (Mouse.current == null || !Mouse.current.leftButton.isPressed))
         {
             isDragging = false;
             Debug.LogWarning($"[Camera] isDragging safety-cleared (LMB not held) | gameState={GameManager.Instance?.state}");
@@ -195,7 +196,7 @@ public class CameraOrbit : MonoBehaviour
 
         if (isPanning)
         {
-            float panDelta = Input.GetAxis("Mouse Y");
+            float panDelta = Mouse.current != null ? Mouse.current.delta.ReadValue().y * 0.01f : 0f;
             panY -= panDelta * panSpeed * radius;
             ApplyOrbit();
             // Debug.Log($"[CameraOrbit] pan → startRadius={radius:F2} startPanY={panY:F2}");
@@ -203,8 +204,9 @@ public class CameraOrbit : MonoBehaviour
 
         if (!isDragging) return;
 
-        float dx = Input.GetAxis("Mouse X");
-        float dy = Input.GetAxis("Mouse Y");
+        Vector2 mouseDelta = Mouse.current != null ? Mouse.current.delta.ReadValue() * 0.01f : Vector2.zero;
+        float dx = mouseDelta.x;
+        float dy = mouseDelta.y;
 
         yaw   += dx * sensitivity * 100f * Time.deltaTime;
         pitch -= dy * sensitivity * 100f * Time.deltaTime;   // subtract so dragging up tilts up
@@ -225,7 +227,7 @@ public class CameraOrbit : MonoBehaviour
         // UI Toolkit's panel covers the full screen, so IsPointerOverGameObject() always
         // returns true and cannot be used here. Use RaycastAll + Selectable check instead,
         // which only hits actual interactive UGUI elements (buttons, toggles, sliders).
-        var pointer = new PointerEventData(EventSystem.current) { position = Input.mousePosition };
+        var pointer = new PointerEventData(EventSystem.current) { position = Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero };
         uiHits.Clear();
         EventSystem.current.RaycastAll(pointer, uiHits);
 

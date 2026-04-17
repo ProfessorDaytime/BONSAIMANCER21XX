@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Click-hold-drag mechanic for pulling weeds out of the bonsai pot.
@@ -57,13 +58,13 @@ public class WeedPuller : MonoBehaviour
     void Update()
     {
         // ── Start a new pull ───────────────────────────────────────────────────
-        if (Input.GetMouseButtonDown(1) && heldWeed == null)
+        if (Mouse.current.rightButton.wasPressedThisFrame && heldWeed == null)
         {
             if (WeedManager.Instance == null || cam == null) return;
 
             // RaycastAll so the Bonsai/PlanterTable mesh colliders in front don't
             // block us from reaching the weed's BoxCollider behind them.
-            var ray  = cam.ScreenPointToRay(Input.mousePosition);
+            var ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
             var hits = Physics.RaycastAll(ray);
 
             Weed  foundWeed  = null;
@@ -82,7 +83,7 @@ public class WeedPuller : MonoBehaviour
             {
                 heldWeed     = foundWeed;
                 pullProgress = 0f;
-                lastMouseY   = Input.mousePosition.y;
+                lastMouseY   = Mouse.current.position.ReadValue().y;
                 Debug.Log($"[WeedPuller] Grabbed {foundWeed.name} | " +
                           $"force={foundWeed.forceRequired:F3} rip={foundWeed.ripChance:F2} ripped={foundWeed.isRipped}");
             }
@@ -94,10 +95,10 @@ public class WeedPuller : MonoBehaviour
 
         // Only upward movement counts — downward drag doesn't reduce progress,
         // but it also doesn't help; the player must re-grip by releasing and re-clicking.
-        float dy = Input.mousePosition.y - lastMouseY;
+        float dy = Mouse.current.position.ReadValue().y - lastMouseY;
         if (dy > 0f)
             pullProgress += dy / Screen.height;
-        lastMouseY = Input.mousePosition.y;
+        lastMouseY = Mouse.current.position.ReadValue().y;
 
         // Visually lift the weed proportional to pull progress
         float frac = Mathf.Clamp01(pullProgress / heldWeed.forceRequired);
@@ -122,7 +123,7 @@ public class WeedPuller : MonoBehaviour
         }
 
         // ── Released before threshold → snap back ──────────────────────────────
-        if (Input.GetMouseButtonUp(1))
+        if (Mouse.current.rightButton.wasReleasedThisFrame)
         {
             heldWeed.transform.position = heldWeed.restPosition;
             Debug.Log($"[WeedPuller] Released early — weed snapped back (progress={pullProgress:F3}/{heldWeed.forceRequired:F3}).");

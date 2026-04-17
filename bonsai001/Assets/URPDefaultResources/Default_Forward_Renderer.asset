@@ -12,30 +12,30 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a36a4a7057e5f454ab0bf032da757a3b, type: 3}
   m_Name: CRTRendererFeature
   m_EditorClassIdentifier: Assembly-CSharp::CRTRendererFeature
-  m_Active: 1
+  m_Active: 0
   settings:
     shader: {fileID: 4800000, guid: 0ec63a6913db68a42a7f78650b0df4fe, type: 3}
-    scanlineStrength: 0.078
+    scanlineStrength: 0.01
     scanlineFrequency: 107
     curvature: 0
-    vignette: 0.223
+    vignette: 0.349
     rgbSplit: 0
-    brightness: 1.414
-    maskStrength: 0.16
-    maskScale: 4.53
-    maskType: 0.043
-    bloomStrength: 0.136
-    bloomRadius: 2.1
-    persistence: 0.07
-    horizontalBlur: 0
-    beamWidth: 0
+    brightness: 1
+    maskStrength: 0
+    maskScale: 1
+    maskType: 0
+    bloomStrength: 0.412
+    bloomRadius: 3.53
+    persistence: 0.022
+    horizontalBlur: 1.71
+    beamWidth: 0.573
     interlaceStrength: 0
-    noiseStrength: 0
-    horizontalJitter: 0
-    rollSpeed: 1.36
-    cornerConvergence: 0.01
-    inputGamma: 2.112
-    outputGamma: 1.539
+    noiseStrength: 0.0764
+    horizontalJitter: 0.00049
+    rollSpeed: 1
+    cornerConvergence: 0.00627
+    inputGamma: 1.505
+    outputGamma: 1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -90,4 +90,4 @@ MonoBehaviour:
   m_DepthAttachmentFormat: 0
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
-  m_IntermediateTextureMode: 1
+  m_IntermediateTextureMode: 0

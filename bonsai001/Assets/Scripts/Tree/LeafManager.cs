@@ -286,6 +286,8 @@ public class LeafManager : MonoBehaviour
             leaf.ownerNode    = node;
             leaf.tipOffset    = offset;
             leaf.targetScale  = Vector3.one * seasonLeafScale;
+            if (skeleton.species != null)
+                leaf.springColor = skeleton.species.leafSpringColor;
 
             list.Add(go);
         }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using Debug = UnityEngine.Debug;
 using Random = UnityEngine.Random;
 
@@ -56,6 +57,26 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Health damage to parent node per season when a child exceeds junctionStressThreshold.")]
     [SerializeField] float junctionStressDamage = 0.02f;
 
+    [Header("Winter Pruning")]
+    [Tooltip("Winter cut forced-dormancy skip: cuts made in months 11–2 at or below this depth get regrowthSeasonCount set to 2, skipping winter + giving a slow spring start. 0 = disabled.")]
+    [SerializeField] int winterDormantDepthThreshold = 3;
+
+    [Tooltip("Total trimmed depth in one season that counts as 'heavy pruning' and triggers reserve depletion next spring.")]
+    [SerializeField] int heavyPruneThreshold = 6;
+
+    [Tooltip("Growth multiplier applied for one spring after heavy winter pruning (reserve depletion). Default 0.5 = half speed.")]
+    [SerializeField] float heavyPruneRecoveryScale = 0.5f;
+
+    [Tooltip("Severity ratio (cut depth / SeasonDepthCap) above which regrowth rate is scaled down for the first recovery season.")]
+    [SerializeField] float severeCutSeverityThreshold = 0.8f;
+
+    [Tooltip("Regrowth rate multiplier applied during the first recovery season for a severe cut (severity > threshold).")]
+    [SerializeField] float severeCutRecoveryScale = 0.7f;
+
+    // Runtime winter pruning state
+    int  cutDepthAccumulatedThisSeason;   // resets each spring; tracks heavy pruning
+    bool heavyPruneRecoveryActive;        // true for one spring after a heavy prune season
+
     [Header("Branch Dieback")]
     [Tooltip("When false, branches never die or drop — all dieback checks skipped. Off by default.")]
     [SerializeField] public bool branchDiebackEnabled = false;
@@ -90,7 +111,9 @@ public class TreeSkeleton : MonoBehaviour
 
     // Runtime death tracking
     [HideInInspector] public int  consecutiveCriticalSeasons = 0;
-    [HideInInspector] public bool treeInDanger = false;    // warning state — one season left
+    [HideInInspector] public bool treeInDanger  = false;   // warning state — one season left
+    [HideInInspector] public bool hasLongRoot   = false;   // set by rake mini-game; drives one extra-long root on RegenerateInitialRoots
+    bool wasPotBound = false;                              // tracks first pot-bound trigger for cosmetic surface roots
 
     [Header("Species")]
     [Tooltip("Drag a TreeSpecies ScriptableObject here. On Awake the species values are " +
@@ -199,13 +222,13 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Minimum length for each sub-segment after subdivision. " +
              "Prevents tip segments from becoming too small to wire. " +
              "Actual segment = max(chordLength/N, minSegmentLength).")]
-    [SerializeField] float minSegmentLength = 0.08f;
+    [SerializeField] float minSegmentLength = 0.007f;
 
     [Tooltip("Hard cap on individual branch segment length. " +
              "Long chords are split into however many segments are needed to stay under this length. " +
              "Does not affect total branch length — only adds more wiring/shaping points. " +
              "Set to 0 to disable (use branchSubdivisions count only).")]
-    [SerializeField] float maxSegmentLength = 0.35f;
+    [SerializeField] float maxSegmentLength = 0.03f;
 
     [Header("Bud System")]
     [Tooltip("Prefab spawned at terminal tips each autumn as a visible dormant bud. Assign in Inspector.")]
@@ -364,6 +387,10 @@ public class TreeSkeleton : MonoBehaviour
     [SerializeField] float maxEnergyMultiplier = 1.5f;
 
     [Header("Wound System")]
+    [Tooltip("Branches at or above this radius require the Saw tool's multi-stroke mechanic " +
+             "to remove. Thinner branches can be cut with a single click.")]
+    [SerializeField] public float sawRadiusThreshold = 0.08f;
+
     [Tooltip("Health drained from a wounded node per growing season. Paste stops this drain.")]
     [SerializeField] float woundDrainRate = 0.05f;
 
@@ -543,6 +570,8 @@ public class TreeSkeleton : MonoBehaviour
 
     /// <summary>Fired after a trim, with the list of every node that was removed.</summary>
     public event Action<List<TreeNode>> OnSubtreeTrimmed;
+    /// <summary>Fired the first time any wire on this tree turns gold (set complete).</summary>
+    public event Action OnWireSetGold;
 
     // Tree Data
 
@@ -581,9 +610,13 @@ public class TreeSkeleton : MonoBehaviour
 
     /// <summary>Exposes refinementCap so LeafManager can normalize refinement levels.</summary>
     public float RefinementCap => refinementCap;
+    /// <summary>Exposes wound-heal rate so TreeMeshBuilder can compute callus geometry.</summary>
+    public float SeasonsToHealPerUnit => seasonsToHealPerUnit;
 
     // ── Save / Load accessors (expose private fields for SaveManager) ─────────
     public int   SaveStartYear     { get => startYear;      set => startYear      = value; }
+    /// <summary>Year the tree was planted. -1 before first BranchGrow season.</summary>
+    public int   plantingYear     => startYear;
     public int   SaveStartMonth    { get => startMonth;     set => startMonth     = value; }
     public int   SaveLastGrownYear { get => lastGrownYear;  set => lastGrownYear  = value; }
 
@@ -691,7 +724,9 @@ public class TreeSkeleton : MonoBehaviour
             potSoil.soilDegradation    = data.soilDegradation;
             potSoil.saturationLevel    = data.soilSaturation;
             potSoil.seasonsSinceRepot  = data.soilSeasonsSinceRepot;
+            potSoil.potSize            = (PotSoil.PotSize)data.potSize;
             potSoil.ComputeDerivedProperties();
+            potSoil.ApplyPotSize(rootAreaTransform);
         }
         startYear              = data.startYear;
         startMonth             = data.startMonth;
@@ -884,6 +919,12 @@ public class TreeSkeleton : MonoBehaviour
     [HideInInspector] public Vector3 plantingNormal       = Vector3.up;
     [HideInInspector] public Vector3 plantingSurfacePoint = Vector3.zero;
 
+    // Pre-placement snapshot — captured when entering RockPlace, restored on cancel.
+    Vector3    prePlacementPosition;
+    Quaternion prePlacementRotation;
+    Vector3    prePlacementSurfacePoint;
+    Vector3    prePlacementNormal;
+
     /// <summary>Maximum depth allowed to sprout children this season.</summary>
     int SeasonDepthCap => startYear < 0
         ? depthsPerYear
@@ -901,7 +942,18 @@ public class TreeSkeleton : MonoBehaviour
         while (n != null)
         {
             if (n.isTrimCutPoint)
-                return n.trimCutDepth + n.regrowthSeasonCount * depthsPerYear;
+            {
+                // Suggestion 4: severe cuts (depth ratio > threshold) grow back more slowly
+                // for the first recovery season, scaling the per-season recovery rate down.
+                int dpy = depthsPerYear;
+                if (n.regrowthSeasonCount <= 1 && SeasonDepthCap > 0)
+                {
+                    float severity = (float)n.trimCutDepth / SeasonDepthCap;
+                    if (severity > severeCutSeverityThreshold)
+                        dpy = Mathf.Max(1, Mathf.RoundToInt(depthsPerYear * severeCutRecoveryScale));
+                }
+                return n.trimCutDepth + n.regrowthSeasonCount * dpy;
+            }
             n = n.parent;
         }
         return SeasonDepthCap;
@@ -974,6 +1026,8 @@ public class TreeSkeleton : MonoBehaviour
 
         maxEnergyMultiplier          = species.maxEnergyMultiplier;
 
+        meshBuilder?.ApplySpeciesColors();
+
         Debug.Log($"[Species] Applied '{species.speciesName}' ({species.scientificName})");
     }
 
@@ -1030,12 +1084,19 @@ public class TreeSkeleton : MonoBehaviour
     void Update()
     {
         // Debug: press 1-9 to instantly simulate that many years of growth
-        for (int k = 1; k <= 9; k++)
+        if (Keyboard.current != null)
         {
-            if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + k - 1)))
+            Key[] digitKeys = {
+                Key.Digit1, Key.Digit2, Key.Digit3, Key.Digit4, Key.Digit5,
+                Key.Digit6, Key.Digit7, Key.Digit8, Key.Digit9
+            };
+            for (int k = 0; k < digitKeys.Length; k++)
             {
-                for (int y = 0; y < k; y++) SimulateYear();
-                break;
+                if (Keyboard.current[digitKeys[k]].wasPressedThisFrame)
+                {
+                    for (int y = 0; y <= k; y++) SimulateYear();
+                    break;
+                }
             }
         }
 
@@ -1166,7 +1227,8 @@ public class TreeSkeleton : MonoBehaviour
                              * Mathf.Pow(depthSpeedDecay, node.depth)
                              * healthMult
                              * treeEnergy
-                             * nutrientMult;
+                             * nutrientMult
+                             * GrowthSeasonMult();
 
             // Pot-bound roots near the tray wall grow slower
             if (node.isRoot && node.boundaryPressure >= boundaryPressureThreshold)
@@ -1241,15 +1303,14 @@ public class TreeSkeleton : MonoBehaviour
             }
         }
 
-        // Age accumulation — all non-trimmed, non-root nodes age each growing tick,
+        // Age accumulation — all non-trimmed nodes age each growing tick,
         // not just the ones currently growing. This drives the new-growth-to-bark
         // material fade in TreeMeshBuilder even after a segment stops elongating.
-        // Training wire cable nodes are roots with isGrowing=false permanently, so
-        // they're included here too — otherwise they never brown.
+        // Roots are included so they transition from white → bark over seasons.
+        // Above-ground roots bark faster (handled in GrowthColor via isExposed).
         foreach (var node in allNodes)
         {
             if (node.isTrimmed || node.isGrowing) continue;
-            if (node.isRoot && !node.isTrainingWire) continue;
             node.age += inGameDays * rate;
         }
 
@@ -1262,8 +1323,12 @@ public class TreeSkeleton : MonoBehaviour
 
             if (node.wireSetProgress < 1f)
             {
+                float prev = node.wireSetProgress;
                 node.wireSetProgress = Mathf.Min(1f,
                     node.wireSetProgress + inGameDays * rate / wireDaysToSet);
+                // Fire once when a wire first turns gold
+                if (prev < 1f && node.wireSetProgress >= 1f)
+                    OnWireSetGold?.Invoke();
             }
             else if (node.wireDamageProgress < 1f)
             {
@@ -1326,6 +1391,14 @@ public class TreeSkeleton : MonoBehaviour
             meshBuilder.SetDirty();
         }
 
+        if (state == GameState.RockPlace)
+        {
+            prePlacementPosition     = transform.position;
+            prePlacementRotation     = transform.rotation;
+            prePlacementSurfacePoint = plantingSurfacePoint;
+            prePlacementNormal       = plantingNormal;
+        }
+
         if (state == GameState.RootPrune)
         {
             int rootCount = 0;
@@ -1339,6 +1412,37 @@ public class TreeSkeleton : MonoBehaviour
             lastGrownYear = GameManager.year;
             StartNewGrowingSeason();
         }
+    }
+
+    /// <summary>Taper multiplier (0–1) based on day of year vs species slow/stop window.</summary>
+    float GrowthSeasonMult()
+    {
+        float baseMult = 1f;
+        if (species != null)
+        {
+            int d = GameManager.dayOfYear;
+            if (d >= species.growthStopDay) return 0f;
+            if (d >= species.growthSlowDay)
+                baseMult = 1f - Mathf.InverseLerp(species.growthSlowDay, species.growthStopDay, d);
+        }
+
+        // Suggestion 3: reserve depletion — one spring of reduced growth after heavy pruning.
+        if (heavyPruneRecoveryActive)
+        {
+            heavyPruneRecoveryActive = false; // consume; lasts exactly one growing season
+            return baseMult * heavyPruneRecoveryScale;
+        }
+
+        return baseMult;
+    }
+
+    public void RestorePrePlacementSnapshot()
+    {
+        transform.position   = prePlacementPosition;
+        transform.rotation   = prePlacementRotation;
+        plantingSurfacePoint = prePlacementSurfacePoint;
+        plantingNormal       = prePlacementNormal;
+        meshBuilder.SetDirty();
     }
 
     void StartNewGrowingSeason()
@@ -1403,14 +1507,28 @@ public class TreeSkeleton : MonoBehaviour
         nutrientReserve = Mathf.Max(0f, nutrientReserve - effectiveDrain);
         Debug.Log($"[Fert] Season drain={effectiveDrain:F3} (myco={mycoFraction:P0} bonus) → nutrientReserve={nutrientReserve:F2} | year={GameManager.year}");
 
-        foreach (var node in allNodes)
+        // Suggestion 2: growth window lock — only advance recovery during growing months (Mar–Aug).
+        // Dormant-season ticks don't count toward cut-point recovery.
+        bool isGrowingSeason = GameManager.month >= 3 && GameManager.month <= 8;
+        if (isGrowingSeason)
         {
-            if (!node.isTrimCutPoint) continue;
-            node.regrowthSeasonCount++;
-            if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
-                node.isTrimCutPoint = false;
+            foreach (var node in allNodes)
+            {
+                if (!node.isTrimCutPoint) continue;
+                node.regrowthSeasonCount++;
+                if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
+                    node.isTrimCutPoint = false;
+            }
+            CheckCutCapAbsorption();
         }
-        CheckCutCapAbsorption();
+
+        // Suggestion 3: reserve depletion — heavy pruning this season penalises next spring's growth.
+        if (cutDepthAccumulatedThisSeason >= heavyPruneThreshold)
+        {
+            heavyPruneRecoveryActive = true;
+            Debug.Log($"[Prune] Heavy prune season: cutDepth={cutDepthAccumulatedThisSeason} >= threshold={heavyPruneThreshold}. Growth penalty next spring.");
+        }
+        cutDepthAccumulatedThisSeason = 0;
 
         // Refresh cached tree height and compute spread radius for this season
         cachedTreeHeight = CalculateTreeHeight();
@@ -1597,7 +1715,7 @@ public class TreeSkeleton : MonoBehaviour
             // Also enforce maxSegmentLength: use whichever subdivision count gives shorter segments.
             int   subdivs     = !terminal.isRoot ? SubdivsForChord(chordLength) : 1;
             float childLength = (subdivs > 1) ? chordLength / subdivs : chordLength;
-            childLength = Mathf.Max(childLength, terminal.isRoot ? 0.3f : minSegmentLength);
+            childLength = Mathf.Max(childLength, terminal.isRoot ? 0.025f : minSegmentLength);
 
             float nodeRadius = terminal.isRoot ? rootTerminalRadius : terminalRadius;
 
@@ -1812,6 +1930,12 @@ public class TreeSkeleton : MonoBehaviour
         if (potBoundCount > 0)
             Debug.Log($"[GRoot] Pot-bound terminals={potBoundCount} innerFill={potBoundFillCount} year={GameManager.year}");
 
+        // Pot-bound first trigger: notify RootRakeManager to nudge tree + spawn surface roots
+        bool nowPotBound = IsPotBound();
+        if (nowPotBound && !wasPotBound)
+            GetComponent<RootRakeManager>()?.OnBecamePotBound();
+        wasPotBound = nowPotBound;
+
         // Back-budding: nodes whose tip ancestry was trimmed get a boosted chance
         // to sprout a new lateral from dormant axillary buds.
         // Snapshot allNodes first — CreateNode appends to allNodes during iteration.
@@ -1907,10 +2031,8 @@ public class TreeSkeleton : MonoBehaviour
                     woundObjects.Remove(node.id);
                 }
             }
-            else if (woundObjects.TryGetValue(node.id, out var wGo) && wGo != null)
-            {
-                wGo.transform.localScale = Vector3.one * remaining;
-            }
+            // Wound visuals are now driven by vertex.g (woundAge) in TreeMeshBuilder —
+            // no per-frame scale needed here.
         }
 
         // Trim trauma recovery: all damaged non-root nodes heal a small amount each spring.
@@ -1947,6 +2069,7 @@ public class TreeSkeleton : MonoBehaviour
         }
 
         UpdateAirLayers();
+        AdvanceGrafts();
         RecalculateRootHealthScore();
 
         // Branch weight: compute loads bottom-up, sag directions, apply junction stress
@@ -2219,8 +2342,9 @@ public class TreeSkeleton : MonoBehaviour
         var mb = GetComponent<TreeMeshBuilder>();
         if (mb != null) mb.SetDeadTint(true);
 
-        // Drop all leaves immediately
+        // Drop all leaves and bark flakes immediately
         GetComponent<LeafManager>()?.DropAllLeaves();
+        GetComponent<BarkFlakerManager>()?.ClearAllFlakes();
 
         GameManager.Instance.UpdateGameState(GameState.TreeDead);
     }
@@ -2238,14 +2362,22 @@ public class TreeSkeleton : MonoBehaviour
         lastGrownYear = GameManager.year;
         GameManager.Instance.TextCallFunction();
 
-        foreach (var node in allNodes)
+        // Mirror StartNewGrowingSeason: growing-season guard + reserve depletion flush.
+        bool simIsGrowingSeason = GameManager.month >= 3 && GameManager.month <= 8;
+        if (simIsGrowingSeason)
         {
-            if (!node.isTrimCutPoint) continue;
-            node.regrowthSeasonCount++;
-            if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
-                node.isTrimCutPoint = false;
+            foreach (var node in allNodes)
+            {
+                if (!node.isTrimCutPoint) continue;
+                node.regrowthSeasonCount++;
+                if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
+                    node.isTrimCutPoint = false;
+            }
+            CheckCutCapAbsorption();
         }
-        CheckCutCapAbsorption();
+        if (cutDepthAccumulatedThisSeason >= heavyPruneThreshold)
+            heavyPruneRecoveryActive = true;
+        cutDepthAccumulatedThisSeason = 0;
 
         foreach (var node in allNodes)
         {
@@ -2365,6 +2497,74 @@ public class TreeSkeleton : MonoBehaviour
     }
 
     // Root Planting
+
+    /// <summary>Returns the rootAreaTransform for external systems (e.g. PotSoil sizing).</summary>
+    public Transform GetRootAreaTransform() => rootAreaTransform;
+
+    /// <summary>
+    /// True when at least one non-trimmed root terminal has accumulated enough
+    /// boundary pressure to be considered pot-bound.
+    /// </summary>
+    public bool IsPotBound()
+    {
+        foreach (var n in allNodes)
+            if (n.isRoot && n.isTerminal && !n.isTrimmed && n.boundaryPressure >= boundaryPressureThreshold)
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Plant a fresh evenly-spaced set of root strands from the trunk base.
+    /// Called by RootRakeManager.ConfirmRepot() after discarding the old root graph.
+    /// If withLongRoot is true, an extra pre-grown long root cable is added in a random direction.
+    /// </summary>
+    public void RegenerateInitialRoots(bool withLongRoot)
+    {
+        int count = Mathf.Max(1, initialRootCount);
+        for (int i = 0; i < count; i++)
+        {
+            float   angle   = (float)i / count * Mathf.PI * 2f;
+            Vector3 outward = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+            PlantRoot(outward);
+        }
+
+        if (withLongRoot)
+        {
+            float   angle = Random.Range(0f, Mathf.PI * 2f);
+            Vector3 dir   = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+            PlantLongRoot(dir);
+            hasLongRoot = false;   // consumed
+        }
+
+        RecalculateRadii(root);
+        meshBuilder.SetDirty();
+        Debug.Log($"[Root] RegenerateInitialRoots count={count} withLongRoot={withLongRoot} | year={GameManager.year}");
+    }
+
+    /// <summary>
+    /// Plants a multi-segment pre-grown root cable that starts longer than normal.
+    /// Simulates the long surface root kept by the player during the rake mini-game.
+    /// </summary>
+    public void PlantLongRoot(Vector3 directionLocal)
+    {
+        if (root == null) return;
+        Vector3 dir = (directionLocal + Vector3.down * rootInitialPitch).normalized;
+        float   seg = Mathf.Max(rootSegmentLength * rootSegmentLengthDecay, 0.3f);
+
+        TreeNode prev = root;
+        for (int i = 0; i < 4; i++)
+        {
+            float segLen = seg * Mathf.Max(0.3f, 1f - i * 0.18f);
+            var node = CreateNode(prev.tipPosition, dir, rootTerminalRadius, segLen, prev);
+            node.isRoot = true;
+            node.length = node.targetLength;   // pre-grown
+            prev = node;
+        }
+
+        RecalculateRadii(root);
+        meshBuilder.SetDirty();
+        Debug.Log($"[Root] PlantLongRoot dir={directionLocal} | year={GameManager.year}");
+    }
 
     /// <summary>
     /// Plants a new root strand from the base of the trunk.
@@ -2768,7 +2968,7 @@ public class TreeSkeleton : MonoBehaviour
         // neither the fixed branchSubdivisions count nor maxSegmentLength is exceeded.
         int   nodeSubdivs = !node.isRoot ? SubdivsForChord(childLength) : 1;
         float segLength   = (nodeSubdivs > 1) ? childLength / nodeSubdivs : childLength;
-        segLength        = Mathf.Max(segLength, node.isRoot ? 0.3f : minSegmentLength);
+        segLength        = Mathf.Max(segLength, node.isRoot ? 0.025f : minSegmentLength);
 
         float nodeRadius = node.isRoot ? rootTerminalRadius : terminalRadius;
 
@@ -2922,7 +3122,7 @@ public class TreeSkeleton : MonoBehaviour
         if (maxSector > 0f)
             for (int i = 0; i < sectors; i++) RootHealthSectorCoverage[i] = sectorRadius[i] / maxSector;
 
-        if (count == 0) { RootHealthScore = 0f; return; }
+        if (count == 0 || totalRadius <= 0f) { RootHealthScore = 0f; return; }
 
         // Angular coverage: fraction of the 8 sectors that have any roots
         int coveredSectors = 0;
@@ -2932,7 +3132,7 @@ public class TreeSkeleton : MonoBehaviour
         // Girth: average root radius vs the ideal target radius
         float girthScore = Mathf.Clamp01(totalRadius / count / rootHealthTargetRadius);
 
-        // Balance: centre of mass close to the trunk origin
+        // Balance: centre of mass close to the trunk origin (safe — totalRadius > 0 guaranteed above)
         com /= totalRadius;
         float balanceScore = Mathf.Clamp01(1f - com.magnitude / rootHealthBalanceRadius);
 
@@ -3361,11 +3561,12 @@ public class TreeSkeleton : MonoBehaviour
     }
 
     /// <summary>
-    /// Direction toward the sun. Falls back to Vector3.up.
+    /// Direction toward the sun in tree-local space.
+    /// Converts world up so phototropism works correctly when the tree is tilted on a rock.
     /// </summary>
     Vector3 SunDirection()
     {
-        return Vector3.up;
+        return transform.InverseTransformDirection(Vector3.up);
     }
 
     // Pipe Model
@@ -3599,9 +3800,13 @@ public class TreeSkeleton : MonoBehaviour
             return;
         }
 
-        // Stop growth at current length — soft tissue only, no woody wound
+        // Stop growth at current length — soft tissue only, no woody wound.
+        // Do NOT set isTrimmed: that would exclude this node from autumn SetBuds,
+        // preventing any regrowth next spring. Instead freeze it in place so
+        // StartNewGrowingSeason's mid-chord resume skips it (length == targetLength)
+        // and SetBuds sets hasBud in autumn → bud break next spring → normal branching.
         node.isGrowing = false;
-        node.isTrimmed = true;
+        node.length    = node.targetLength;
 
         // Refinement gain (same rate as a trim cut but scaled by vigor — less effective on strong vigorous growth)
         float refGain = refinementOnTrim / Mathf.Max(0.5f, node.branchVigor);
@@ -3650,9 +3855,18 @@ public class TreeSkeleton : MonoBehaviour
 
         if (parent != null && parent.isTerminal)
         {
-            parent.isTrimCutPoint      = true;
-            parent.trimCutDepth        = parent.depth;
-            parent.regrowthSeasonCount = 0;
+            parent.isTrimCutPoint = true;
+            parent.trimCutDepth   = parent.depth;
+
+            // Winter pruning: deep cuts in dormancy (months 11–2) that exceed the
+            // threshold start with a head-start season count to reflect winter callusing,
+            // but actual recovery is slowed by severity and reserve-depletion effects.
+            int m = GameManager.month;
+            bool isWinterCut = m == 11 || m == 12 || m == 1 || m == 2;
+            if (isWinterCut && winterDormantDepthThreshold > 0 && parent.depth >= winterDormantDepthThreshold)
+                parent.regrowthSeasonCount = 2;
+            else
+                parent.regrowthSeasonCount = 0;
 
             // Vigorous shoots refine slower (more wood per cut = less structural change per trim).
             float refGain = refinementOnTrim / Mathf.Max(0.5f, parent.branchVigor);
@@ -3695,6 +3909,14 @@ public class TreeSkeleton : MonoBehaviour
             // Trim trauma: small health hit on the cut site. Accumulates with repeated cuts;
             // recovers at trimTraumaRecoveryPerSeason each spring.
             ApplyDamage(parent, DamageType.TrimTrauma, trimTraumaDamage);
+        }
+
+        // Winter pruning: accumulate cut depth for heavy-prune reserve-depletion tracking.
+        if (!node.isRoot)
+        {
+            int removedBranchNodes = 0;
+            foreach (var r in removed) if (!r.isRoot) removedBranchNodes++;
+            cutDepthAccumulatedThisSeason += removedBranchNodes;
         }
 
         OnSubtreeTrimmed?.Invoke(removed);
@@ -4657,6 +4879,147 @@ public class TreeSkeleton : MonoBehaviour
         node.health = Mathf.Max(0f, node.health - amount);
     }
 
+    // ── Graft System ──────────────────────────────────────────────────────────
+
+    [Header("Grafting")]
+    [Tooltip("Maximum world-unit distance between source tip and target node for a graft attempt to be valid.")]
+    [SerializeField] float graftMaxDistance = 3f;
+    [Tooltip("Number of growing seasons until a graft fuses. Default 2.")]
+    [SerializeField] int graftSeasonsToFuse = 2;
+
+    /// <summary>All active graft attempts on this tree.</summary>
+    public readonly List<GraftAttempt> graftAttempts = new List<GraftAttempt>();
+
+    /// <summary>Exposed so TreeInteraction can read it for the progress line colour.</summary>
+    public int GraftSeasonsToFuse => graftSeasonsToFuse;
+
+    /// <summary>Source node awaiting a second click to form a graft pair. Null when no graft is pending.</summary>
+    public TreeNode pendingGraftSource;
+
+    public class GraftAttempt
+    {
+        public int  sourceId;
+        public int  targetId;
+        public int  seasonsElapsed;
+        public bool succeeded;
+        public int  bridgeId;    // id of the bridge node created on success (-1 until then)
+
+        public GraftAttempt(int src, int tgt) { sourceId = src; targetId = tgt; bridgeId = -1; }
+    }
+
+    /// <summary>
+    /// Begin a graft attempt. Source must be a living non-root terminal.
+    /// Target must be on a different ancestry chain, within graftMaxDistance.
+    /// Returns null with a reason string on failure.
+    /// </summary>
+    public (bool ok, string reason) TryStartGraft(TreeNode source, TreeNode target)
+    {
+        if (source == null || target == null)
+            return (false, "null node");
+        if (source == target)
+            return (false, "same node");
+        if (source.isRoot || target.isRoot)
+            return (false, "roots cannot be grafted");
+        if (!source.isTerminal)
+            return (false, "source must be a terminal tip");
+        if (source.isTrimmed || target.isTrimmed || source.isDead || target.isDead)
+            return (false, "node is trimmed or dead");
+        if (source.isGraftSource)
+            return (false, "source already has a pending graft");
+
+        // Source and target must not share ancestry (no grafting within the same branch run)
+        TreeNode n = target;
+        while (n != null) { if (n == source) return (false, "target is ancestor of source"); n = n.parent; }
+        n = source;
+        while (n != null) { if (n == target) return (false, "source is ancestor of target"); n = n.parent; }
+
+        // Distance check: tip of source to base of target
+        float dist = Vector3.Distance(
+            transform.TransformPoint(source.tipPosition),
+            transform.TransformPoint(target.worldPosition));
+        if (dist > graftMaxDistance)
+            return (false, $"too far ({dist:F2}m > {graftMaxDistance:F2}m max)");
+
+        source.isGraftSource = true;
+        graftAttempts.Add(new GraftAttempt(source.id, target.id));
+        pendingGraftSource   = null;
+        Debug.Log($"[Graft] Started: source={source.id} → target={target.id} dist={dist:F2}");
+        return (true, "");
+    }
+
+    /// <summary>Cancel the pending source selection (ESC / tool switch).</summary>
+    public void CancelPendingGraft()
+    {
+        pendingGraftSource = null;
+    }
+
+    /// <summary>
+    /// Advance all active grafts by one growing season.
+    /// Called from StartNewGrowingSeason.
+    /// </summary>
+    void AdvanceGrafts()
+    {
+        for (int i = graftAttempts.Count - 1; i >= 0; i--)
+        {
+            var g = graftAttempts[i];
+            if (g.succeeded) continue;
+
+            // Look up live nodes
+            TreeNode src = allNodes.Find(n => n.id == g.sourceId);
+            TreeNode tgt = allNodes.Find(n => n.id == g.targetId);
+
+            // Abort if either node is gone / dead / no longer a terminal
+            if (src == null || tgt == null || src.isTrimmed || tgt.isTrimmed || src.isDead || tgt.isDead)
+            {
+                if (src != null) src.isGraftSource = false;
+                Debug.Log($"[Graft] Attempt {g.sourceId}→{g.targetId} aborted (node gone/dead)");
+                graftAttempts.RemoveAt(i);
+                continue;
+            }
+
+            g.seasonsElapsed++;
+
+            // Bend source tip growDirection toward target each season (halfway per season)
+            Vector3 srcTipWorld = transform.TransformPoint(src.tipPosition);
+            Vector3 tgtWorld    = transform.TransformPoint(tgt.worldPosition);
+            Vector3 toTarget    = (tgtWorld - srcTipWorld).normalized;
+            float   bendFactor  = 0.35f * g.seasonsElapsed;   // 35% per season
+            src.growDirection   = Vector3.Slerp(src.growDirection, toTarget, Mathf.Clamp01(bendFactor)).normalized;
+            meshBuilder.SetDirty();
+
+            if (g.seasonsElapsed < graftSeasonsToFuse) continue;
+
+            // ── Fuse ────────────────────────────────────────────────────────
+            float bridgeLen = Vector3.Distance(
+                transform.TransformPoint(src.tipPosition),
+                transform.TransformPoint(tgt.worldPosition));
+
+            var bridge = new TreeNode(
+                nextId++,
+                src.depth + 1,
+                src.tipPosition,
+                toTarget.magnitude > 0.001f ? transform.InverseTransformDirection(toTarget) : src.growDirection,
+                src.radius * 0.6f,
+                bridgeLen,
+                src);
+            bridge.isGraftBridge = true;
+            bridge.length        = bridgeLen;   // already fully grown
+            bridge.isGrowing     = false;
+            bridge.age           = bridge.targetLength;
+
+            src.children.Add(bridge);
+            allNodes.Add(bridge);
+
+            g.succeeded  = true;
+            g.bridgeId   = bridge.id;
+            src.isGraftSource = false;
+
+            RecalculateRadii(root);
+            meshBuilder.SetDirty();
+            Debug.Log($"[Graft] Fused: source={src.id} → target={tgt.id} | bridge={bridge.id} len={bridgeLen:F2}");
+        }
+    }
+
     // ── Fungal System ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -4768,48 +5131,24 @@ public class TreeSkeleton : MonoBehaviour
 
     void CreateWoundObject(TreeNode node)
     {
-        // Destroy any existing wound object on this node (re-trim case)
+        // The wound is now rendered as part of the unified tree mesh (callus cap geometry
+        // in TreeMeshBuilder) driven by node.hasWound / node.woundAge / node.pasteApplied
+        // via vertex color channels G and B.  We keep a lightweight empty anchor here so
+        // all existing woundObjects book-keeping (heal loop, undo, etc.) stays unchanged.
+
         if (woundObjects.TryGetValue(node.id, out var existing))
         {
-            Destroy(existing);
+            if (existing != null) Destroy(existing);
             woundObjects.Remove(node.id);
         }
 
-        var go = new GameObject($"_Wound_{node.id}");
+        var go = new GameObject($"_WoundAnchor_{node.id}");
         go.transform.SetParent(transform, false);
-
-        var mf = go.AddComponent<MeshFilter>();
-        var mr = go.AddComponent<MeshRenderer>();
-
-        // The major radius must be at least as large as the parent's own tip radius,
-        // otherwise the ring is buried inside the parent branch mesh.
-        // Add a 10% bias to ensure it sits clearly outside the surface.
-        float visR   = Mathf.Max(node.woundRadius, node.tipRadius) * 1.1f;
-        float minorR = visR * 0.2f;
-        mf.mesh = BuildHalfTorusMesh(visR, minorR, 12, 6);
-
-        // Material: use override if assigned; otherwise a plain dark-brown Unlit fallback.
-        // The bark shader (Custom/BarkVertexColor) uses vertex colours and has no _Color
-        // property, so we can't tint it at runtime.
-        if (woundMaterialOverride != null)
-        {
-            mr.sharedMaterial = woundMaterialOverride;
-        }
-        else
-        {
-            var mat = new Material(Shader.Find("Unlit/Color"));
-            mat.color = new Color(0.28f, 0.18f, 0.10f);  // dark bark brown
-            mr.material = mat;
-        }
-
-        // Place at the cut face, pushed slightly forward along the cut direction
-        // so the ring sits proud of the parent's surface rather than buried in it.
-        // Orient so the ring plane is perpendicular to the removed branch's direction.
-        go.transform.localPosition = node.tipPosition + node.woundFaceNormal * (minorR * 0.5f);
-        go.transform.localRotation = Quaternion.FromToRotation(Vector3.up, node.woundFaceNormal);
+        go.transform.localPosition = node.tipPosition;
 
         woundObjects[node.id] = go;
-        Debug.Log($"[Wound] Created wound node={node.id} radius={node.woundRadius:F3}");
+        // Mesh rebuild is already triggered by the trim that calls this.
+        Debug.Log($"[Wound] Wound registered node={node.id} radius={node.woundRadius:F3}");
     }
 
     /// <summary>
@@ -4865,16 +5204,9 @@ public class TreeSkeleton : MonoBehaviour
         if (!node.hasWound || node.pasteApplied) return;
         node.pasteApplied = true;
 
-        // Tint the wound object grey to indicate it's been sealed
-        if (woundObjects.TryGetValue(node.id, out var go) && go != null)
-        {
-            var mr = go.GetComponent<MeshRenderer>();
-            if (mr != null)
-            {
-                Color c = mr.material.color;
-                mr.material.color = new Color(c.r * 1.1f, c.g * 1.15f, c.b * 1.1f, c.a);
-            }
-        }
+        // Paste is now visualised via vertex.b in the unified tree mesh.
+        // Trigger a rebuild so the new vertex data takes effect immediately.
+        meshBuilder.SetDirty();
         Debug.Log($"[Wound] Paste applied node={node.id}");
     }
 

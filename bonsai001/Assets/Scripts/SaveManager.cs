@@ -132,6 +132,7 @@ public class SaveData
     public float soilSaturation;
     public int   soilSeasonsSinceRepot;
     public int   soilPreset;
+    public int   potSize;   // PotSoil.PotSize cast to int
 
     public int   startYear;
     public int   startMonth;
@@ -609,7 +610,8 @@ public static class SaveManager
             soilDegradation       = potSoil?.soilDegradation   ?? 0f,
             soilSaturation        = potSoil?.saturationLevel   ?? 0f,
             soilSeasonsSinceRepot = potSoil?.seasonsSinceRepot ?? 0,
-            soilPreset            = (int)(potSoil?.preset ?? PotSoil.SoilPreset.ClassicBonsai),
+            soilPreset            = (int)(potSoil?.preset   ?? PotSoil.SoilPreset.ClassicBonsai),
+            potSize               = (int)(potSoil?.potSize  ?? PotSoil.PotSize.M),
 
             startYear       = skeleton.SaveStartYear,
             startMonth      = skeleton.SaveStartMonth,

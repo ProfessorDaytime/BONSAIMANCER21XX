@@ -157,6 +157,12 @@ public class TreeNode
     public bool  isMycorrhizal;       // beneficial fungi network on this root node
     public int   healthySeasonsCount; // seasons at health>0.75 and fungalLoad<0.1 (mycorrhizal unlock)
 
+    // ── Grafting ──────────────────────────────────────────────────────────────
+    /// <summary>True while this terminal is the source of a pending approach graft.</summary>
+    public bool isGraftSource;
+    /// <summary>True for the bridge node created when an approach graft succeeds.</summary>
+    public bool isGraftBridge;
+
     // ── Wound ─────────────────────────────────────────────────────────────────
     public bool    hasWound;
     public float   woundRadius;      // radius of the removed branch at the cut point
