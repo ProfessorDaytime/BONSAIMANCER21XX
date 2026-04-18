@@ -68,7 +68,7 @@
         <ui:Button text="Fungicide" display-tooltip-when-elided="true" name="FungicideButton" style="height: 50px; width: 130px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
     </ui:VisualElement>
     <!-- Confirm / Cancel orient — hidden until RockPlace / TreeOrient state; centered bottom row -->
-    <ui:VisualElement name="OrientButtonContainer" style="position: absolute; top: 340px; left: 0; right: 0; flex-direction: row; justify-content: center; align-items: center; display: none;">
+    <ui:VisualElement name="OrientButtonContainer" style="position: absolute; bottom: 25%; left: 0; right: 0; flex-direction: row; justify-content: center; align-items: center; display: none;">
         <ui:Button text="Confirm" display-tooltip-when-elided="true" name="ConfirmOrientButton" style="height: 50px; width: 160px; margin-right: 80px; cursor: initial; background-color: rgba(20,20,20,0.85); color: rgb(180,230,180); border-color: rgb(60,100,60); border-width: 2px; border-radius: 4px;" />
         <ui:Button text="Cancel" display-tooltip-when-elided="true" name="CancelOrientButton" style="height: 50px; width: 160px; cursor: initial; background-color: rgba(20,20,20,0.85); color: rgb(230,160,160); border-color: rgb(100,60,60); border-width: 2px; border-radius: 4px;" />
     </ui:VisualElement>

@@ -137,6 +137,11 @@ public class TreeSkeleton : MonoBehaviour
     [SerializeField] float depthSpeedDecay = 0.85f;
 
     [Header("Segment Lengths")]
+    [Tooltip("Global scale multiplier applied to all branch and root segment lengths. " +
+             "Dial this down to shrink the whole tree without touching species assets. " +
+             "0.15 ≈ realistic bonsai scale; 1.0 = raw species values.")]
+    [SerializeField] [Range(0.05f, 1f)] float globalSegmentScale = 1f;
+
     [Tooltip("Target length of each branch chord. Larger = taller, longer-armed tree.")]
     [SerializeField] float branchSegmentLength = 1.0f;
 
@@ -222,13 +227,13 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Minimum length for each sub-segment after subdivision. " +
              "Prevents tip segments from becoming too small to wire. " +
              "Actual segment = max(chordLength/N, minSegmentLength).")]
-    [SerializeField] float minSegmentLength = 0.007f;
+    [SerializeField] float minSegmentLength = 0.08f;
 
     [Tooltip("Hard cap on individual branch segment length. " +
              "Long chords are split into however many segments are needed to stay under this length. " +
              "Does not affect total branch length — only adds more wiring/shaping points. " +
              "Set to 0 to disable (use branchSubdivisions count only).")]
-    [SerializeField] float maxSegmentLength = 0.03f;
+    [SerializeField] float maxSegmentLength = 0.35f;
 
     [Header("Bud System")]
     [Tooltip("Prefab spawned at terminal tips each autumn as a visible dormant bud. Assign in Inspector.")]
@@ -1203,6 +1208,7 @@ public class TreeSkeleton : MonoBehaviour
                       $"rate={rate:F2} growing={snapshot.Count} " +
                       $"total={allNodes.Count} (branches={branchNodes} roots={rootNodes}) maxDepth={maxNodeDepth} | " +
                       $"growthLoop avg={avgGrowth}ms over {growthFrames} frames");
+
             totalGrowthMs = 0;
             growthFrames  = 0;
         }
@@ -1271,21 +1277,15 @@ public class TreeSkeleton : MonoBehaviour
                 node.isGrowing = false;
                 // Finalize radius and lock minRadius so RecalculateRadii can't collapse
                 // this node to 0 when its new children (starting at radius=0) are summed.
-                float finalR   = node.isRoot ? rootTerminalRadius : terminalRadius;
+                float finalR   = (node.isRoot ? rootTerminalRadius : terminalRadius) * globalSegmentScale;
                 node.radius    = finalR;
                 node.minRadius = finalR;
 
                 // Sub-chain continuation (subdivisionsLeft > 0) uses the same depth as
                 // the parent, so it never consumes the season depth cap. Always allow it.
                 // Real depth+1 branching (subdivisionsLeft == 0) requires belowCap.
-                //
-                // At the depth frontier (belowCap=false, subdivisionsLeft=0): keep the tip
-                // growing all season by forcing one more same-depth extension segment.
-                // Each extension is maxSegmentLength long — no single segment gets long.
-                // The chain stops naturally when September arrives and isGrowing is cleared.
-                if (!belowCap && !node.isRoot && node.subdivisionsLeft == 0)
-                    node.subdivisionsLeft = 1;  // triggers sub-chain path → same-depth extension
-
+                // Depth-frontier tips stop here and become eligible terminals next season
+                // when SeasonDepthCap increases (depthsPerYear new depths per year).
                 bool canSpawn = belowCap || (!node.isRoot && node.subdivisionsLeft > 0);
                 if (canSpawn && !(isIshitsukiMode && node.isTrainingWire))
                     SpawnChildren(node);
@@ -1297,7 +1297,7 @@ public class TreeSkeleton : MonoBehaviour
                 // spreads across the season rather than spiking at spawn time.
                 // Floor at 10% of target so new segments never pop to zero-radius
                 // on their first frame (which causes the visible "shrink" animation).
-                float targetR = node.isRoot ? rootTerminalRadius : terminalRadius;
+                float targetR = (node.isRoot ? rootTerminalRadius : terminalRadius) * globalSegmentScale;
                 float rampedR = targetR * Mathf.Clamp01(node.length / node.targetLength);
                 node.radius = Mathf.Max(rampedR, targetR * 0.1f);
             }
@@ -1447,6 +1447,24 @@ public class TreeSkeleton : MonoBehaviour
 
     void StartNewGrowingSeason()
     {
+        // ── Scale debug (once per year) — filter console by [SCALEDEBUG] ───
+        {
+            // Use transform.position.y as fallback when plantingSurfacePoint hasn't been set
+            float soilY    = (plantingSurfacePoint.y != 0f) ? plantingSurfacePoint.y : transform.position.y;
+            float tallestY = soilY;
+            float longestSeg = 0f;
+            foreach (var n in allNodes)
+            {
+                if (n.isRoot) continue;
+                Vector3 wp = transform.TransformPoint(n.tipPosition);
+                if (wp.y > tallestY)    tallestY    = wp.y;
+                if (n.targetLength > longestSeg) longestSeg = n.targetLength;
+            }
+            Debug.Log($"[SCALEDEBUG] year={GameManager.year} branchSegLen={branchSegmentLength:F4} " +
+                      $"depthCap={SeasonDepthCap} heightAboveSoil={tallestY - soilY:F3} " +
+                      $"longestSeg={longestSeg:F4} nodes={allNodes.Count}");
+        }
+
         // Season tick: undo window expires — the tree has started responding to cuts
         pendingUndo = null;
 
@@ -1691,14 +1709,14 @@ public class TreeSkeleton : MonoBehaviour
             else currentBranchCount++;
         }
 
-        // Vigor: lateral chances scale to zero as the tree approaches the branch node cap.
-        // At 0% capacity, vigorFactor=1 (full chance). At 100% cap, vigorFactor=0 (no laterals).
-        float vigorFactor = Mathf.Clamp01(1f - (float)currentBranchCount / maxBranchNodes);
+        // Vigor: lateral chances scale down as the tree approaches the branch node cap.
+        // Floors at 0.05 so old-wood / back-bud growth never stops completely on a living tree.
+        float vigorFactor = Mathf.Max(0.05f, 1f - (float)currentBranchCount / maxBranchNodes);
         Debug.Log($"[Tree] branchNodes={currentBranchCount}/{maxBranchNodes} vigorFactor={vigorFactor:F2}");
 
         foreach (var terminal in terminals)
         {
-            float baseSegLen  = terminal.isRoot ? rootSegmentLength : branchSegmentLength;
+            float baseSegLen  = (terminal.isRoot ? rootSegmentLength : branchSegmentLength) * globalSegmentScale;
             float decay       = terminal.isRoot ? rootSegmentLengthDecay : segmentLengthDecay;
             float chordLength = baseSegLen * Mathf.Pow(decay, terminal.depth + 1);
 
@@ -1955,7 +1973,7 @@ public class TreeSkeleton : MonoBehaviour
                            * Mathf.Pow(branchChanceDepthDecay, node.depth);
             if (Random.value < chance)
             {
-                float chordLen    = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float chordLen    = branchSegmentLength * globalSegmentScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
                 if (node.refinementLevel > 0f)
                     chordLen *= Mathf.Pow(refinementTaper, node.refinementLevel);
                 int   bbSubdivs   = SubdivsForChord(chordLen);
@@ -1993,7 +2011,7 @@ public class TreeSkeleton : MonoBehaviour
 
                 if (Random.value >= oldWoodBudChance * vigorFactor) continue;
 
-                float chordLen    = branchSegmentLength * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float chordLen    = branchSegmentLength * globalSegmentScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
                 if (node.refinementLevel > 0f)
                     chordLen *= Mathf.Pow(refinementTaper, node.refinementLevel);
                 int   owSubdivs   = SubdivsForChord(chordLen);
@@ -2970,7 +2988,7 @@ public class TreeSkeleton : MonoBehaviour
         float segLength   = (nodeSubdivs > 1) ? childLength / nodeSubdivs : childLength;
         segLength        = Mathf.Max(segLength, node.isRoot ? 0.025f : minSegmentLength);
 
-        float nodeRadius = node.isRoot ? rootTerminalRadius : terminalRadius;
+        float nodeRadius = (node.isRoot ? rootTerminalRadius : terminalRadius) * globalSegmentScale;
 
         // Root soft spread cap: laterals scale to zero at the target radius;
         // continuation itself stops beyond 1.3× the target radius.
@@ -3147,10 +3165,11 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     int SubdivsForChord(float chordLength)
     {
-        int n = branchSubdivisions;
+        // When maxSegmentLength is set, use it exclusively — branchSubdivisions as a floor
+        // creates dozens of micro-segments on short scaled chords (the "sausage" problem).
         if (maxSegmentLength > 0f)
-            n = Mathf.Max(n, Mathf.CeilToInt(chordLength / maxSegmentLength));
-        return Mathf.Max(1, n);
+            return Mathf.Max(1, Mathf.CeilToInt(chordLength / maxSegmentLength));
+        return Mathf.Max(1, branchSubdivisions);
     }
 
     /// <summary>
@@ -3781,7 +3800,10 @@ public class TreeSkeleton : MonoBehaviour
         // Stored on treeEnergy and used as a multiplier next spring.
         var lm = GetComponent<LeafManager>();
         if (lm != null)
+        {
             treeEnergy = lm.ComputeTreeEnergy(allNodes, Mathf.Clamp(maxEnergyMultiplier, 1f, 3f));
+            treeEnergy = Mathf.Max(0.4f, treeEnergy);  // floor: leafless trees still grow at base rate
+        }
         Debug.Log($"[Bud] Buds set | terminal={termCount} lateral={latCount} treeEnergy={treeEnergy:F2} year={GameManager.year}");
     }
 
@@ -4042,14 +4064,19 @@ public class TreeSkeleton : MonoBehaviour
         foreach (var (node, wasStimulated) in u.ancestorStates)
             node.backBudStimulated = wasStimulated;
 
-        // Re-spawn leaves on restored terminal branch nodes
-        var leafManager = GetComponent<LeafManager>();
-        if (leafManager != null)
+        // Re-spawn leaves on restored terminal branch nodes only during leaf season.
+        // If undo fires in winter (time skipped past August while window was open),
+        // skip the spawn — the nodes will get leaves naturally next spring.
+        if (GameManager.SeasonalGrowthRate > 0f)
         {
-            var terminals = new List<TreeNode>();
-            foreach (var n in u.subtreeNodes)
-                if (!n.isRoot && n.isTerminal) terminals.Add(n);
-            leafManager.ForceSpawnLeaves(terminals);
+            var leafManager = GetComponent<LeafManager>();
+            if (leafManager != null)
+            {
+                var terminals = new List<TreeNode>();
+                foreach (var n in u.subtreeNodes)
+                    if (!n.isRoot && n.isTerminal) terminals.Add(n);
+                leafManager.ForceSpawnLeaves(terminals);
+            }
         }
 
         RecalculateRadii(root);

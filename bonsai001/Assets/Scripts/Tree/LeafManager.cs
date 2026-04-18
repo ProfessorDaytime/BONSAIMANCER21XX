@@ -314,11 +314,12 @@ public class LeafManager : MonoBehaviour
             if (node.isRoot || node.isTrimmed || !node.isTerminal) continue;
             if (node.depth < minLeafDepth)    continue;
             if (node.subdivisionsLeft > 0)    continue;
+            if (!node.hasLeaves)              continue;  // new-season terminals haven't leafed out yet
 
-            potential += leavesPerNode * baseLeafScale * baseLeafScale;
+            potential += leavesPerNode;
 
             if (nodeLeaves.TryGetValue(node.id, out var leaves))
-                actual += leaves.Count * seasonLeafScale * seasonLeafScale * Mathf.Clamp01(node.health);
+                actual += leaves.Count * Mathf.Clamp01(node.health);
         }
 
         if (potential <= 0f) return 1f;  // seedling with no leaves yet — grow at default rate

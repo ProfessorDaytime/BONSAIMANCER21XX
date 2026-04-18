@@ -6,7 +6,8 @@
       "Bash(grep -v \"//\")",
       "Bash(grep -rL \"barkType\" \"s:/Game Dev/Bonsai2026/BONSAIMANCER21XX/bonsai001/Assets/Scripts/Tree/Species/\"*.asset)",
       "Bash(grep -h \"branchSegmentLength\\\\|baseElongation\\\\|segmentLengthDecay\" \"s:/Game Dev/Bonsai2026/BONSAIMANCER21XX/bonsai001/Assets/Scripts/Tree/Species/\"*.asset)",
-      "Bash(grep -h \"rootSegmentLength\\\\|branchSegmentLength\" \"s:/Game Dev/Bonsai2026/BONSAIMANCER21XX/bonsai001/Assets/Scripts/Tree/Species/\"*.asset)"
+      "Bash(grep -h \"rootSegmentLength\\\\|branchSegmentLength\" \"s:/Game Dev/Bonsai2026/BONSAIMANCER21XX/bonsai001/Assets/Scripts/Tree/Species/\"*.asset)",
+      "Bash(grep -E \"branchSegmentLength|rootSegmentLength\" \"s:/Game Dev/Bonsai2026/BONSAIMANCER21XX/bonsai001/Assets/Scripts/Tree/Species/\"*.asset)"
     ]
   }
 }
