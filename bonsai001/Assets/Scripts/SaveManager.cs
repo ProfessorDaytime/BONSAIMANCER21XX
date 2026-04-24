@@ -99,6 +99,15 @@ public class SaveNode
 }
 
 [System.Serializable]
+public class SaveFusionBond
+{
+    public int  nodeIdA;
+    public int  nodeIdB;
+    public int  seasonsElapsed;
+    public bool isComplete;
+    public int  bridgeId;
+}
+
 public class SaveData
 {
     // Tree nodes
@@ -133,6 +142,7 @@ public class SaveData
     public int   soilSeasonsSinceRepot;
     public int   soilPreset;
     public int   potSize;   // PotSoil.PotSize cast to int
+    public int   rockSize;  // RockPlacer.RockSize cast to int; 1=M default
 
     public int   startYear;
     public int   startMonth;
@@ -148,6 +158,12 @@ public class SaveData
     public int    treeOrigin;   // TreeOrigin cast to int
     public string speciesName;
     public string saveTimestamp;
+
+    // Scheduled care events
+    public List<ScheduledEvent> scheduledEvents = new List<ScheduledEvent>();
+
+    // Sibling fusion bonds
+    public List<SaveFusionBond> fusionBonds = new List<SaveFusionBond>();
 }
 
 /// <summary>
@@ -174,6 +190,9 @@ public class SaveMeta
 
 public static class SaveManager
 {
+    /// <summary>Fired after any successful save. Payload is a short display string, e.g. "Autosaved" or "Saved".</summary>
+    public static event System.Action<string> OnSaved;
+
     // ── Paths ─────────────────────────────────────────────────────────────────
 
     /// <summary>Root folder that contains one sub-folder per save slot.</summary>
@@ -338,7 +357,8 @@ public static class SaveManager
     /// Sets <see cref="ActiveSlotId"/> to this slot.
     /// </summary>
     public static void SaveSlot(string slotId, TreeSkeleton skeleton,
-                                LeafManager leafManager, SaveMeta meta)
+                                LeafManager leafManager, SaveMeta meta,
+                                string toastMessage = "Saved")
     {
         if (skeleton == null || skeleton.root == null)
         {
@@ -359,6 +379,7 @@ public static class SaveManager
 
         ActiveSlotId = slotId;
         Debug.Log($"[Save] Saved slot={slotId} name='{meta.saveName}' nodes={data.nodes.Count}");
+        OnSaved?.Invoke(toastMessage);
     }
 
     // ── Autosave ──────────────────────────────────────────────────────────────
@@ -389,12 +410,12 @@ public static class SaveManager
                 treeAge           = GameManager.year - skeleton.SaveStartYear,
                 avgHealth         = CalcAvgHealth(skeleton),
             };
-            SaveSlot(slotId, skeleton, leafManager, meta);
+            SaveSlot(slotId, skeleton, leafManager, meta, "Autosaved");
             Debug.Log($"[Save] AutoSave created new slot '{name}' id={slotId}");
             return;
         }
 
-        Save(skeleton, leafManager);
+        Save(skeleton, leafManager, "Autosaved");
     }
 
     // ── Quick-save (to active slot) ───────────────────────────────────────────
@@ -403,7 +424,8 @@ public static class SaveManager
     /// Quick-saves to the current active slot.
     /// Returns false (does nothing) if no active slot is set — caller must prompt for a name.
     /// </summary>
-    public static bool Save(TreeSkeleton skeleton, LeafManager leafManager = null)
+    public static bool Save(TreeSkeleton skeleton, LeafManager leafManager = null,
+                            string toastMessage = "Saved")
     {
         string slotId = ActiveSlotId;
         if (string.IsNullOrEmpty(slotId))
@@ -443,7 +465,7 @@ public static class SaveManager
         if (string.IsNullOrEmpty(meta.saveName))
             meta.saveName = skeleton.SpeciesName + " " + GameManager.year;
 
-        SaveSlot(slotId, skeleton, leafManager, meta);
+        SaveSlot(slotId, skeleton, leafManager, meta, toastMessage);
         return true;
     }
 
@@ -475,6 +497,10 @@ public static class SaveManager
         GameManager.day       = data.day;
         GameManager.hour      = data.hour;
         GameManager.waterings = data.waterings;
+
+        GameManager.schedule.Clear();
+        if (data.scheduledEvents != null)
+            GameManager.schedule.AddRange(data.scheduledEvents);
 
         skeleton.LoadFromSaveData(data, leafManager);
         skeleton.treeOrigin = (TreeOrigin)data.treeOrigin;
@@ -612,6 +638,7 @@ public static class SaveManager
             soilSeasonsSinceRepot = potSoil?.seasonsSinceRepot ?? 0,
             soilPreset            = (int)(potSoil?.preset   ?? PotSoil.SoilPreset.ClassicBonsai),
             potSize               = (int)(potSoil?.potSize  ?? PotSoil.PotSize.M),
+            rockSize              = (int)(UnityEngine.Object.FindFirstObjectByType<RockPlacer>()?.rockSize ?? RockPlacer.RockSize.M),
 
             startYear       = skeleton.SaveStartYear,
             startMonth      = skeleton.SaveStartMonth,
@@ -624,10 +651,22 @@ public static class SaveManager
             planPX = skeleton.plantingSurfacePoint.x,
             planPY = skeleton.plantingSurfacePoint.y,
             planPZ = skeleton.plantingSurfacePoint.z,
+
+            scheduledEvents = new List<ScheduledEvent>(GameManager.schedule),
         };
 
         foreach (var node in skeleton.allNodes)
             data.nodes.Add(SerializeNode(node));
+
+        foreach (var fb in skeleton.fusionBonds)
+            data.fusionBonds.Add(new SaveFusionBond
+            {
+                nodeIdA        = fb.nodeIdA,
+                nodeIdB        = fb.nodeIdB,
+                seasonsElapsed = fb.seasonsElapsed,
+                isComplete     = fb.isComplete,
+                bridgeId       = fb.bridgeId,
+            });
 
         return data;
     }

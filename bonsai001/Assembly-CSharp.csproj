@@ -41,12 +41,14 @@
     <Analyzer Include="C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Tools\BuildPipeline\Unity.SourceGenerators\Unity.UIToolkit.SourceGenerator.dll" />
   </ItemGroup>
   <ItemGroup>
+     <Compile Include="Assets\Scripts\FullscreenPrompt.cs" />
      <Compile Include="Assets\Scripts\ChangeColor.cs" />
      <Compile Include="Assets\Scripts\Tree\NodeHealth.cs" />
      <Compile Include="Assets\Scripts\ProceduralCone.cs" />
      <Compile Include="Assets\Scripts\CameraOrbit.cs" />
      <Compile Include="Assets\Scripts\AudioManager.cs" />
      <Compile Include="Assets\Scripts\Old Proc Meshes\scr_ProceduralMesh.cs" />
+     <Compile Include="Assets\Scripts\PlayModeManager.cs" />
      <Compile Include="Assets\Shader\CameraFilterPack_TV_ARCADE.cs" />
      <Compile Include="Assets\Scripts\ToolTip.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT003.cs" />
@@ -65,6 +67,7 @@
      <Compile Include="Assets\Scripts\RockPlacer.cs" />
      <Compile Include="Assets\Scripts\Tree\LeafManager.cs" />
      <Compile Include="Assets\Scripts\CRTRendererFeature.cs" />
+     <Compile Include="Assets\Scripts\AutoRunManager.cs" />
      <Compile Include="Assets\Scripts\CubeMeshData.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeSkeleton.cs" />
      <Compile Include="Assets\Scripts\ScaleDebugger.cs" />

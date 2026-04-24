@@ -51,7 +51,7 @@ public class TreeInteraction : MonoBehaviour
 
     // ── Highlight state ───────────────────────────────────────────────────────
 
-    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste, AirLayer, Pinch, Defoliate, GraftSource, GraftTarget }
+    enum HighlightMode { None, TrimSubtree, SingleGold, SingleGreen, WireRun, Paste, AirLayer, Pinch, Defoliate, GraftSource, GraftTarget, PromoteHover }
 
     TreeNode        highlightedNode;
     HighlightMode   highlightMode = HighlightMode.None;
@@ -120,6 +120,20 @@ public class TreeInteraction : MonoBehaviour
     // ── Pinch tip markers ─────────────────────────────────────────────────────
     // Hovered pinchable node, updated each frame in HandlePinchHover.
     TreeNode hoveredPinchNode;
+
+    // ── Promotion Advisor state ───────────────────────────────────────────────
+    TreeNode hoveredPromoteNode;
+    TreeNode lockedPromoteTarget;
+    List<(TreeNode node, float score)> promotionScores = new List<(TreeNode, float)>();
+
+    static readonly Color ColPromoteTarget  = new Color(0.2f,  0.9f,  1.0f, 1.0f);
+    static readonly Color ColPromoteTrim    = new Color(0.9f,  0.15f, 0.15f, 1.0f);
+    static readonly Color ColPromotePinch   = new Color(0.55f, 1.0f,  0.15f, 1.0f);
+    static readonly Color ColPromoteReduce  = new Color(0.9f,  0.65f, 0.1f,  1.0f);
+    static readonly Color ColPromoteNeutral = new Color(0.35f, 0.35f, 0.35f, 0.45f);
+
+    public TreeNode LockedPromoteTarget => lockedPromoteTarget;
+    public System.Collections.Generic.IReadOnlyList<(TreeNode node, float score)> PromotionScores => promotionScores;
 
     // ── Selection diagnostics ─────────────────────────────────────────────────
     struct FailedClick
@@ -211,12 +225,14 @@ public class TreeInteraction : MonoBehaviour
         RenderPipelineManager.endCameraRendering += DrawSelectionCircle;
         RenderPipelineManager.endCameraRendering += DrawGraftLines;
         RenderPipelineManager.endCameraRendering += DrawPinchMarkers;
+        RenderPipelineManager.endCameraRendering += DrawPromotionOverlays;
     }
     void OnDisable()
     {
         RenderPipelineManager.endCameraRendering -= DrawSelectionCircle;
         RenderPipelineManager.endCameraRendering -= DrawGraftLines;
         RenderPipelineManager.endCameraRendering -= DrawPinchMarkers;
+        RenderPipelineManager.endCameraRendering -= DrawPromotionOverlays;
     }
 
     // Draws a screen-space circle at the cursor after URP finishes rendering the camera.
@@ -407,8 +423,16 @@ public class TreeInteraction : MonoBehaviour
         if (!GameManager.canGraft && skeleton.pendingGraftSource != null)
             skeleton.CancelPendingGraft();
 
+        // Clear promotion target if tool was switched away
+        if (!GameManager.canPromote && lockedPromoteTarget != null)
+        {
+            lockedPromoteTarget = null;
+            promotionScores.Clear();
+        }
+
         UpdateSelectionCursor();
-        hoveredPinchNode = null;  // reset every frame; HandlePinchHover will re-set if active
+        hoveredPinchNode   = null;
+        hoveredPromoteNode = null;
 
         // Wire animation blocks all other interaction until complete
         if (wirePhase == WirePhase.Animating)
@@ -457,6 +481,8 @@ public class TreeInteraction : MonoBehaviour
             HandleDefoliateHover();
         else if (GameManager.canGraft)
             HandleGraftHover();
+        else if (GameManager.canPromote)
+            HandlePromoteHover();
         else
             SetHighlight(null, HighlightMode.None);
     }
@@ -1237,6 +1263,128 @@ public class TreeInteraction : MonoBehaviour
         GL.Vertex(nx); GL.Vertex(nz);
     }
 
+    // ── Promotion Advisor ─────────────────────────────────────────────────────
+
+    void HandlePromoteHover()
+    {
+        // ESC or RMB clears the locked target
+        if ((Keyboard.current?.escapeKey.wasPressedThisFrame ?? false) ||
+            Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            lockedPromoteTarget = null;
+            promotionScores.Clear();
+            SetHighlight(null, HighlightMode.None);
+            return;
+        }
+
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        TreeNode node = PickNode(ray, out _, n => n.isTerminal && !n.isRoot && !n.isTrimmed && !n.isDead);
+        hoveredPromoteNode = node;
+
+        if (lockedPromoteTarget == null)
+        {
+            // Phase 1: hover + click to lock
+            if (node != null)
+            {
+                SetHighlight(node, HighlightMode.PromoteHover);
+                if (Mouse.current.leftButton.wasPressedThisFrame)
+                {
+                    lockedPromoteTarget = node;
+                    RebuildPromotionScores();
+                    SetHighlight(null, HighlightMode.None);
+                }
+            }
+            else
+                SetHighlight(null, HighlightMode.None);
+        }
+        else
+        {
+            // Phase 2: target locked — click a different tip to switch target
+            if (node != null && node != lockedPromoteTarget && Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                lockedPromoteTarget = node;
+                RebuildPromotionScores();
+            }
+            SetHighlight(null, HighlightMode.None);
+        }
+    }
+
+    void RebuildPromotionScores()
+    {
+        promotionScores.Clear();
+        if (lockedPromoteTarget == null || skeleton == null) return;
+        foreach (var n in skeleton.allNodes)
+        {
+            float s = skeleton.PromotionScore(n, lockedPromoteTarget);
+            if (s >= 0f) promotionScores.Add((n, s));
+        }
+        promotionScores.Sort((a, b) => b.score.CompareTo(a.score));
+    }
+
+    void DrawPromotionOverlays(ScriptableRenderContext ctx, Camera camera)
+    {
+        if (camera != cam || glCircleMat == null) return;
+        if (!GameManager.canPromote || skeleton == null || skeleton.allNodes == null) return;
+
+        glCircleMat.SetPass(0);
+        GL.PushMatrix();
+        GL.LoadProjectionMatrix(camera.projectionMatrix);
+        GL.modelview = camera.worldToCameraMatrix;
+        GL.Begin(GL.LINES);
+
+        // Locked target: large cyan circle
+        if (lockedPromoteTarget != null)
+        {
+            GL.Color(ColPromoteTarget);
+            DrawGLCircleWorld(transform.TransformPoint(lockedPromoteTarget.tipPosition), 0.18f, camera);
+        }
+
+        // Hover candidate (phase 1): dimmer cyan diamond
+        if (lockedPromoteTarget == null && hoveredPromoteNode != null)
+        {
+            GL.Color(new Color(0.2f, 0.9f, 1.0f, 0.75f));
+            DrawGLDiamond(transform.TransformPoint(hoveredPromoteNode.tipPosition), 0.14f, camera);
+        }
+
+        // All candidates when target is locked
+        if (lockedPromoteTarget != null)
+        {
+            int rank = 0;
+            foreach (var (node, score) in promotionScores)
+            {
+                string action = TreeSkeleton.PromotionAction(node, score);
+                Color col = action == "Remove" ? ColPromoteTrim
+                          : action == "Pinch"  ? ColPromotePinch
+                          : action == "Reduce" ? ColPromoteReduce
+                          :                      ColPromoteNeutral;
+                float r   = rank < 5 ? Mathf.Lerp(0.065f, 0.11f, score) : 0.035f;
+                col.a     = rank < 5 ? Mathf.Lerp(0.5f,   1.0f,  score) : 0.25f;
+                GL.Color(col);
+                Vector3 wp = transform.TransformPoint(node.isTerminal ? node.tipPosition : node.worldPosition);
+                DrawGLDiamond(wp, r, camera);
+                rank++;
+            }
+        }
+
+        GL.End();
+        GL.PopMatrix();
+    }
+
+    // Draws a camera-facing circle in world space. Assumes GL.Begin(GL.LINES) is active.
+    static void DrawGLCircleWorld(Vector3 center, float r, Camera cam)
+    {
+        const int segs = 24;
+        Vector3 rt = cam.transform.right * r;
+        Vector3 up = cam.transform.up    * r;
+        for (int i = 0; i < segs; i++)
+        {
+            float a1 = (float)i       / segs * Mathf.PI * 2f;
+            float a2 = (float)(i + 1) / segs * Mathf.PI * 2f;
+            GL.Vertex(center + Mathf.Cos(a1) * rt + Mathf.Sin(a1) * up);
+            GL.Vertex(center + Mathf.Cos(a2) * rt + Mathf.Sin(a2) * up);
+        }
+    }
+
     // ── Defoliate ─────────────────────────────────────────────────────────────
 
     void HandleDefoliateHover()
@@ -1342,8 +1490,9 @@ public class TreeInteraction : MonoBehaviour
             case HighlightMode.AirLayer:    highlightMat.color = ColAirLayer;   break;
             case HighlightMode.Pinch:       highlightMat.color = ColPinch;      break;
             case HighlightMode.Defoliate:   highlightMat.color = ColDefoliate;  break;
-            case HighlightMode.GraftSource: highlightMat.color = ColGraft;      break;
-            case HighlightMode.GraftTarget: highlightMat.color = ColGraftTgt;   break;
+            case HighlightMode.GraftSource:  highlightMat.color = ColGraft;        break;
+            case HighlightMode.GraftTarget:  highlightMat.color = ColGraftTgt;     break;
+            case HighlightMode.PromoteHover: highlightMat.color = ColPromoteTarget; break;
         }
 
         RebuildHighlightMesh(node, singleNode: mode != HighlightMode.TrimSubtree);

@@ -327,7 +327,7 @@ public class TreeSkeleton : MonoBehaviour
     public float droughtDaysAccumulated = 0f;
 
     /// <summary>When true, waters automatically just before drought threshold is reached.</summary>
-    public bool autoWaterEnabled = true;
+    public bool autoWaterEnabled = false;
 
     /// <summary>Set to true for one frame when auto-water fires. buttonClicker reads and clears this to flash the water button.</summary>
     [HideInInspector] public bool autoWaterJustFired = false;
@@ -588,7 +588,9 @@ public class TreeSkeleton : MonoBehaviour
     int   lastGrownYear   = -1;
     int   startYear       = -1;
     int   startMonth      = -1;
-    float cachedTreeHeight = 1f;  // updated each spring; used for root spread radius
+    float cachedTreeHeight = 1f;  // updated each spring and on trim; used for root spread radius
+    /// <summary>Height of the tallest non-root tip above the tree's local origin. Updated each spring and on every trim.</summary>
+    public float CachedTreeHeight => cachedTreeHeight;
     int   lastRecalcDay   = -1;   // tracks last in-game day RecalculateRadii was run mid-season
 
     // ── Leaf energy ───────────────────────────────────────────────────────────
@@ -733,6 +735,12 @@ public class TreeSkeleton : MonoBehaviour
             potSoil.ComputeDerivedProperties();
             potSoil.ApplyPotSize(rootAreaTransform);
         }
+        var rockPlacer = UnityEngine.Object.FindFirstObjectByType<RockPlacer>();
+        if (rockPlacer != null)
+        {
+            rockPlacer.rockSize = (RockPlacer.RockSize)data.rockSize;
+            rockPlacer.ApplyRockSize();
+        }
         startYear              = data.startYear;
         startMonth             = data.startMonth;
         lastGrownYear          = data.lastGrownYear;
@@ -814,6 +822,19 @@ public class TreeSkeleton : MonoBehaviour
         // Pass 3: re-spawn wound objects
         foreach (var node in allNodes)
             if (node.hasWound) CreateWoundObject(node);
+
+        // Pass 3b: restore fusion bonds
+        fusionBonds.Clear();
+        if (data.fusionBonds != null)
+        {
+            foreach (var sf in data.fusionBonds)
+                fusionBonds.Add(new FusionBond(sf.nodeIdA, sf.nodeIdB)
+                {
+                    seasonsElapsed = sf.seasonsElapsed,
+                    isComplete     = sf.isComplete,
+                    bridgeId       = sf.bridgeId,
+                });
+        }
 
         // Rebuild the mesh
         RecalculateRadii(root);
@@ -1135,6 +1156,27 @@ public class TreeSkeleton : MonoBehaviour
         // Keep air layer root bases anchored to parent tip as the trunk grows.
         UpdateAirLayerRootPositions();
 
+        // In-game time for this frame — used by auto-care and growth.
+        float inGameDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
+
+        // Auto-care: runs regardless of grow state (dormancy, leaf fall, TimeGo, etc.)
+        // Only requires root to exist so we don't fire before the tree is initialised.
+        if (root != null)
+        {
+            autoWaterCooldownDays += inGameDays;
+            if (autoWaterEnabled && soilMoisture < 0.5f && autoWaterCooldownDays >= 1.0f)
+            {
+                Water();
+                autoWaterJustFired    = true;
+                autoWaterCooldownDays = 0f;
+            }
+            if (autoFertilizeEnabled && nutrientReserve < 0.6f)
+            {
+                if (Fertilize())
+                    autoFertilizeJustFired = true;
+            }
+        }
+
         if (!isGrowing || root == null) return;
 
         float rate = GameManager.SeasonalGrowthRate;
@@ -1142,9 +1184,6 @@ public class TreeSkeleton : MonoBehaviour
 
         bool structureChanged = false;
         bool anyGrew          = false;
-
-        // TIMESCALE/24f converts real seconds to in-game days
-        float inGameDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
 
         // Soil moisture drain — modified by PotSoil water retention if present
         var potSoil = GetComponent<PotSoil>();
@@ -1163,23 +1202,6 @@ public class TreeSkeleton : MonoBehaviour
                 KillTree("drought");
                 return;
             }
-        }
-
-        // Auto-water: refill just before drought threshold is crossed
-        // Cooldown prevents rapid-fire at high TIMESCALE (each flash = one in-game day minimum)
-        autoWaterCooldownDays += inGameDays;
-        if (autoWaterEnabled && soilMoisture < droughtThreshold + 0.05f && autoWaterCooldownDays >= 1.0f)
-        {
-            Water();
-            autoWaterJustFired = true;
-            autoWaterCooldownDays = 0f;
-        }
-
-        // Auto-fertilize: top up before reserve runs dry (fires at most once per in-game day)
-        if (autoFertilizeEnabled && nutrientReserve < 0.2f)
-        {
-            Fertilize();
-            autoFertilizeJustFired = true;
         }
 
         // Snapshot growing nodes -- we may add new ones during this loop
@@ -1350,7 +1372,11 @@ public class TreeSkeleton : MonoBehaviour
         if (structureChanged || newDay)
         {
             RecalculateRadii(root);
-            if (newDay) lastRecalcDay = GameManager.day;
+            if (newDay)
+            {
+                lastRecalcDay  = GameManager.day;
+                cachedTreeHeight = CalculateTreeHeight();  // keep cinematic zoom current during spring
+            }
         }
 
         if (anyGrew || structureChanged)
@@ -2088,6 +2114,8 @@ public class TreeSkeleton : MonoBehaviour
 
         UpdateAirLayers();
         AdvanceGrafts();
+        DetectNewFusions();
+        AdvanceFusions();
         RecalculateRootHealthScore();
 
         // Branch weight: compute loads bottom-up, sag directions, apply junction stress
@@ -2351,7 +2379,9 @@ public class TreeSkeleton : MonoBehaviour
 
     public void KillTree(string cause)
     {
-        if (GameManager.Instance.state == GameState.TreeDead) return;   // already dead
+        var _ks = GameManager.Instance.state;
+        if (_ks == GameState.TreeDead || _ks == GameState.SpeciesSelect ||
+            _ks == GameState.LoadMenu  || _ks == GameState.Menu) return;
 
         LastDeathCause = cause;
         Debug.Log($"[Death] Tree is dead. Cause: {cause} | year={GameManager.year}");
@@ -2447,6 +2477,27 @@ public class TreeSkeleton : MonoBehaviour
         meshBuilder.SetDirty();
     }
 
+    // ── Restart ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Destroys all tree visuals and clears node state so that the next Water
+    /// event (when root == null) triggers a fresh InitTree(). Call from the
+    /// dead-tree restart button before transitioning to SpeciesSelect.
+    /// </summary>
+    public void ClearForRestart()
+    {
+        foreach (var go in budObjects.Values)    if (go != null) Destroy(go);
+        budObjects.Clear();
+        foreach (var go in lateralBudObjects)    if (go != null) Destroy(go);
+        lateralBudObjects.Clear();
+        foreach (var go in woundObjects.Values)  if (go != null) Destroy(go);
+        woundObjects.Clear();
+        if (seedObject != null) { Destroy(seedObject); seedObject = null; }
+        allNodes.Clear();
+        root = null;
+        meshBuilder?.SetDirty();
+    }
+
     // Initialisation
 
     void InitTree()
@@ -2464,9 +2515,12 @@ public class TreeSkeleton : MonoBehaviour
         woundObjects.Clear();
 
         allNodes.Clear();
-        nextId     = 0;
-        startYear  = GameManager.year;
-        startMonth = GameManager.month;
+        nextId        = 0;
+        startYear     = GameManager.year;
+        startMonth    = GameManager.month;
+        lastGrownYear = GameManager.year - 1;  // ensure OnGameStateChanged(BranchGrow) fires StartNewGrowingSeason
+
+        if (species != null) ApplySpecies();
 
         // Create the seed visual -- an elongated sphere at the soil surface.
         // It disappears once the sprout grows past seedHideLength.
@@ -2478,12 +2532,13 @@ public class TreeSkeleton : MonoBehaviour
         seedObject.transform.localScale    = new Vector3(0.06f, 0.10f, 0.06f);
         // Remove the collider so it doesn't interfere with tree raycasts
         Destroy(seedObject.GetComponent<Collider>());
-        // Give it a warm brown seed colour
+        // Use the same material as the trunk so it matches the bark shader.
         var seedRenderer = seedObject.GetComponent<Renderer>();
         if (seedRenderer != null)
         {
-            seedRenderer.material       = new Material(Shader.Find("Standard"));
-            seedRenderer.material.color = new Color(0.45f, 0.28f, 0.10f);
+            var treeRend = meshBuilder?.GetComponent<MeshRenderer>();
+            if (treeRend != null)
+                seedRenderer.sharedMaterial = treeRend.sharedMaterial;
         }
 
         // The first trunk node starts at zero length and grows upward.
@@ -3944,6 +3999,7 @@ public class TreeSkeleton : MonoBehaviour
         OnSubtreeTrimmed?.Invoke(removed);
         RecalculateRadii(root);
         meshBuilder.SetDirty();
+        cachedTreeHeight = CalculateTreeHeight();  // keep cinematic camera zoom current
     }
 
     // ── Trim undo data ────────────────────────────────────────────────────────
@@ -4020,6 +4076,60 @@ public class TreeSkeleton : MonoBehaviour
         foreach (var child in node.children)
             CollectSubtreeNodes(child, result);
     }
+
+    // ── Branch Promotion Advisor ──────────────────────────────────────────────
+
+    bool IsAncestorOf(TreeNode ancestor, TreeNode node)
+    {
+        var cur = node.parent;
+        while (cur != null)
+        {
+            if (cur == ancestor) return true;
+            cur = cur.parent;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Scores how much removing/reducing <paramref name="candidate"/> would benefit
+    /// <paramref name="target"/>. Returns 0–1 (higher = remove first), or -1 if ineligible.
+    /// </summary>
+    public float PromotionScore(TreeNode candidate, TreeNode target)
+    {
+        if (candidate == target) return -1f;
+        if (candidate.isRoot || candidate.isTrimmed || candidate.isDead) return -1f;
+        if (IsAncestorOf(candidate, target)) return -1f;
+
+        // Apical dominance: shallower nodes suppress deeper ones more.
+        float depthFactor  = 1f - Mathf.Clamp01((candidate.depth - 1) / 5f);
+        // Radius: thicker = more resource draw.
+        float radiusFactor = Mathf.Clamp01(candidate.radius / 0.25f);
+        // Vigor: high-vigor = dominant drain.
+        float vigorFactor  = Mathf.Clamp01((candidate.branchVigor - 0.2f) / 1.8f);
+        // Directional competition: growing toward the target's light cone.
+        float dirFactor = 0f;
+        Vector3 toTarget = target.tipPosition - candidate.worldPosition;
+        if (toTarget.sqrMagnitude > 0.0001f)
+            dirFactor = Mathf.Clamp01((Vector3.Dot(candidate.growDirection.normalized, toTarget.normalized) + 1f) * 0.5f);
+
+        return Mathf.Clamp01(depthFactor * 0.35f + radiusFactor * 0.25f + vigorFactor * 0.20f + dirFactor * 0.20f);
+    }
+
+    /// <summary>Returns "Remove", "Trim back", or "Pinch" based on score and node type.</summary>
+    public static string PromotionAction(TreeNode candidate, float score)
+    {
+        if (score > 0.65f) return "Remove";
+        if (score > 0.35f) return candidate.isTerminal ? "Pinch" : "Trim back";
+        return "Trim back";
+    }
+
+    /// <summary>Returns the ideal season string for the recommended action.</summary>
+    public static string BestPromotionSeason(TreeNode candidate, string action) => action switch
+    {
+        "Remove"    => "Late Winter (Jan–Feb)",
+        "Pinch"     => "Spring (Apr–May)",
+        _           => "Summer (Jun–Jul)",
+    };
 
     /// <summary>
     /// Restores the last trim if called within the undo window (default 5 seconds).
@@ -4914,6 +5024,28 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Number of growing seasons until a graft fuses. Default 2.")]
     [SerializeField] int graftSeasonsToFuse = 2;
 
+    // ── Sibling Branch Fusion ─────────────────────────────────────────────────
+
+    [Header("Sibling Fusion")]
+    [Tooltip("Seasons for sibling tips touching to fully fuse into one unit. Default 4.")]
+    [SerializeField] int fusionSeasonsToFuse = 4;
+    [Tooltip("Detection threshold: fuse when tip-to-tip distance < (rA+rB) × this multiplier. Default 2.5.")]
+    [SerializeField] float fusionTipProximityMult = 2.5f;
+
+    /// <summary>All active and completed sibling fusion bonds on this tree.</summary>
+    public readonly List<FusionBond> fusionBonds = new List<FusionBond>();
+
+    public class FusionBond
+    {
+        public int  nodeIdA;
+        public int  nodeIdB;
+        public int  seasonsElapsed;
+        public bool isComplete;
+        public int  bridgeId;    // id of the bridge node created on success (-1 until then)
+
+        public FusionBond(int a, int b) { nodeIdA = a; nodeIdB = b; bridgeId = -1; }
+    }
+
     /// <summary>All active graft attempts on this tree.</summary>
     public readonly List<GraftAttempt> graftAttempts = new List<GraftAttempt>();
 
@@ -5044,6 +5176,125 @@ public class TreeSkeleton : MonoBehaviour
             RecalculateRadii(root);
             meshBuilder.SetDirty();
             Debug.Log($"[Graft] Fused: source={src.id} → target={tgt.id} | bridge={bridge.id} len={bridgeLen:F2}");
+        }
+    }
+
+    // ── Sibling Branch Fusion ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Scan all non-root terminal siblings each spring. When two tips from the same
+    /// parent are close enough they are registered as a new FusionBond.
+    /// Called from StartNewGrowingSeason after all new growth is spawned.
+    /// </summary>
+    void DetectNewFusions()
+    {
+        // Build a per-parent list of living terminal branches
+        var byParent = new Dictionary<int, List<TreeNode>>();
+        foreach (var n in allNodes)
+        {
+            if (n.isRoot || n.isTrimmed || n.isDead || !n.isTerminal) continue;
+            if (n.parent == null) continue;
+
+            if (!byParent.TryGetValue(n.parent.id, out var list))
+            {
+                list = new List<TreeNode>();
+                byParent[n.parent.id] = list;
+            }
+            list.Add(n);
+        }
+
+        foreach (var kv in byParent)
+        {
+            var siblings = kv.Value;
+            for (int i = 0; i < siblings.Count - 1; i++)
+            {
+                for (int j = i + 1; j < siblings.Count; j++)
+                {
+                    var a = siblings[i];
+                    var b = siblings[j];
+
+                    // Skip if either node is already in any bond
+                    bool alreadyBonded = fusionBonds.Exists(fb =>
+                        fb.nodeIdA == a.id || fb.nodeIdB == a.id ||
+                        fb.nodeIdA == b.id || fb.nodeIdB == b.id);
+                    if (alreadyBonded) continue;
+
+                    float threshold = (a.radius + b.radius) * fusionTipProximityMult;
+                    float dist = Vector3.Distance(
+                        transform.TransformPoint(a.tipPosition),
+                        transform.TransformPoint(b.tipPosition));
+                    if (dist <= threshold)
+                    {
+                        fusionBonds.Add(new FusionBond(a.id, b.id));
+                        Debug.Log($"[Fusion] New bond: {a.id}↔{b.id} dist={dist:F3} threshold={threshold:F3}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Advance all pending fusion bonds by one season. When seasonsElapsed reaches
+    /// fusionSeasonsToFuse, a bridge node is created between the two tips.
+    /// Called from StartNewGrowingSeason after DetectNewFusions.
+    /// </summary>
+    void AdvanceFusions()
+    {
+        for (int i = fusionBonds.Count - 1; i >= 0; i--)
+        {
+            var fb = fusionBonds[i];
+            if (fb.isComplete) continue;
+
+            TreeNode a = allNodes.Find(n => n.id == fb.nodeIdA);
+            TreeNode b = allNodes.Find(n => n.id == fb.nodeIdB);
+
+            if (a == null || b == null || a.isTrimmed || b.isTrimmed || a.isDead || b.isDead)
+            {
+                Debug.Log($"[Fusion] Bond {fb.nodeIdA}↔{fb.nodeIdB} aborted (node gone/dead/trimmed)");
+                fusionBonds.RemoveAt(i);
+                continue;
+            }
+
+            fb.seasonsElapsed++;
+
+            if (fb.seasonsElapsed < fusionSeasonsToFuse) continue;
+
+            // ── Create bridge node ───────────────────────────────────────────
+            Vector3 tipAWorld = transform.TransformPoint(a.tipPosition);
+            Vector3 tipBWorld = transform.TransformPoint(b.tipPosition);
+            float   bridgeLen = Vector3.Distance(tipAWorld, tipBWorld);
+
+            if (bridgeLen < 0.001f)
+            {
+                fusionBonds.RemoveAt(i);
+                continue;
+            }
+
+            Vector3 bridgeDirLocal = transform.InverseTransformDirection(
+                (tipBWorld - tipAWorld).normalized);
+
+            var bridge = new TreeNode(
+                nextId++,
+                a.depth + 1,
+                a.tipPosition,
+                bridgeDirLocal,
+                Mathf.Min(a.radius, b.radius) * 0.65f,
+                bridgeLen,
+                a);
+            bridge.isGraftBridge = true;
+            bridge.length        = bridgeLen;
+            bridge.isGrowing     = false;
+            bridge.age           = bridge.targetLength;
+
+            a.children.Add(bridge);
+            allNodes.Add(bridge);
+
+            fb.isComplete = true;
+            fb.bridgeId   = bridge.id;
+
+            RecalculateRadii(root);
+            meshBuilder.SetDirty();
+            Debug.Log($"[Fusion] Complete: {a.id}↔{b.id} bridge={bridge.id} len={bridgeLen:F3}");
         }
     }
 

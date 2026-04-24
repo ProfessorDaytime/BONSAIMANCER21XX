@@ -17,6 +17,7 @@ Shader "Custom/BarkVertexColor"
     Properties
     {
         [Header(Species Bark Colors)]
+        [MainColor]
         _BarkColor        ("Mature Bark Color",   Color)      = (0.45,0.38,0.30,1)
         _NGColor          ("Young Bark (branch)", Color)      = (0.42,0.62,0.25,1)
         _NGRootColor      ("Young Bark (root)",   Color)      = (0.82,0.75,0.58,1)
@@ -31,6 +32,16 @@ Shader "Custom/BarkVertexColor"
         _WoundCambiumColor ("Cambium Ring",     Color) = (0.55,0.72,0.30,1)
         _WoundCallusColor  ("Callus Color",     Color) = (0.52,0.38,0.24,1)
         _PasteColor        ("Cut Paste Color",  Color) = (0.22,0.20,0.18,1)
+
+        [Header(Bark Textures)]
+        [NoScaleOffset] _BarkTexA     ("Young Bark Texture (optional)", 2D) = "white" {}
+        [NoScaleOffset] _BarkTexB     ("Mature Bark Texture (optional)", 2D) = "white" {}
+        _UseTextures      ("Use Textures (0=proc, 1=tex)", Float) = 0
+        _TexelRes         ("Texel Resolution (e.g. 64)", Float) = 64
+        _BarkNoiseMode    ("Noise Mode (0=scatter, 1=cellular)", Range(0,1)) = 0
+
+        [Header(Debug)]
+        [Toggle] _ForceMatureBark ("Force Mature Bark (test on primitives)", Float) = 0
 
         [Header(Cel Shading)]
         _ShadowThreshold  ("Shadow Threshold",  Range(0,1)) = 0.20
@@ -81,12 +92,16 @@ Shader "Custom/BarkVertexColor"
                 float4 _WoundCambiumColor;
                 float4 _WoundCallusColor;
                 float4 _PasteColor;
+                float  _UseTextures;
+                float  _TexelRes;
+                float  _BarkNoiseMode;
                 float  _ShadowThreshold;
                 float  _MidThreshold;
                 float4 _ShadowTint;
                 float4 _MidTint;
                 float  _OutlineWidth;
                 float4 _OutlineColor;
+                float  _ForceMatureBark;
             CBUFFER_END
 
             struct OAttr
@@ -153,13 +168,20 @@ Shader "Custom/BarkVertexColor"
                 float4 _WoundCambiumColor;
                 float4 _WoundCallusColor;
                 float4 _PasteColor;
+                float  _UseTextures;
+                float  _TexelRes;
+                float  _BarkNoiseMode;
                 float  _ShadowThreshold;
                 float  _MidThreshold;
                 float4 _ShadowTint;
                 float4 _MidTint;
                 float  _OutlineWidth;
                 float4 _OutlineColor;
+                float  _ForceMatureBark;
             CBUFFER_END
+
+            TEXTURE2D(_BarkTexA); SAMPLER(sampler_BarkTexA);
+            TEXTURE2D(_BarkTexB); SAMPLER(sampler_BarkTexB);
 
             struct Attributes
             {
@@ -358,10 +380,11 @@ Shader "Custom/BarkVertexColor"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
                 // ── Decode vertex channels ───────────────────────────────────
-                half isRoot    = IN.color.r;          // 0=branch, 1=root
-                half woundMask = saturate(IN.color.g); // 0=healthy, 1=fresh wound
-                half pasteMask = saturate(IN.color.b); // 0=none, 1=paste
-                half blend     = saturate(IN.color.a); // 0=new growth, 1=mature bark
+                // _ForceMatureBark overrides vertex data so primitives show clean bark.
+                half isRoot    = _ForceMatureBark > 0.5h ? 0.0h : IN.color.r;
+                half woundMask = _ForceMatureBark > 0.5h ? 0.0h : saturate(IN.color.g);
+                half pasteMask = _ForceMatureBark > 0.5h ? 0.0h : saturate(IN.color.b);
+                half blend     = _ForceMatureBark > 0.5h ? 1.0h : saturate(IN.color.a);
 
                 // ── Bark pattern — layered ───────────────────────────────────
                 // Young: always Type 2 fine fissures; mature: species type.
@@ -376,6 +399,42 @@ Shader "Custom/BarkVertexColor"
 
                 // Grooves darken the color — pattern=1 is ridges, pattern=0 is groove
                 albedo *= lerp(1.0 - _BarkGrooveDepth, 1.0, pattern);
+
+                // ── Optional pixel-art texture tier blend ────────────────────
+                // When _UseTextures is enabled, each texel flips from young→mature
+                // texture via a hard noise threshold driven by vertex alpha (blend).
+                // No blending — every texel is 100% one tier or the other.
+                if (_UseTextures > 0.5)
+                {
+                    // Snap UV to nearest texel so noise aligns to pixel boundaries.
+                    float2 tUV = floor(IN.uv * _TexelRes) / _TexelRes;
+
+                    // ── Scatter mode (0): per-texel independent random ────────
+                    float scatter = frac(sin(dot(tUV, float2(127.1h, 311.7h))) * 43758.5453h);
+
+                    // ── Cellular mode (1): Voronoi cell distance ──────────────
+                    float2 cellUV = tUV * 4.0;
+                    float2 cellFloor = floor(cellUV);
+                    float  minD = 1.0;
+                    for (int dy2 = -1; dy2 <= 1; dy2++)
+                    for (int dx2 = -1; dx2 <= 1; dx2++)
+                    {
+                        float2 nb2 = cellFloor + float2(dx2, dy2);
+                        float2 pt  = nb2 + frac(sin(nb2 * float2(127.1h, 311.7h)) * 43758.5h);
+                        minD = min(minD, length(cellUV - pt));
+                    }
+
+                    float noiseVal = lerp(scatter, saturate(minD), _BarkNoiseMode);
+
+                    // Hard threshold: flip texel to mature (B) when noise < blend.
+                    half4 texSample = noiseVal < blend
+                        ? SAMPLE_TEXTURE2D(_BarkTexB, sampler_BarkTexB, IN.uv)
+                        : SAMPLE_TEXTURE2D(_BarkTexA, sampler_BarkTexA, IN.uv);
+
+                    // Replace procedural albedo with texture sample.
+                    // Multiply by groove pattern so bark geometry still reads.
+                    albedo = texSample.rgb * lerp(1.0 - _BarkGrooveDepth, 1.0, pattern);
+                }
 
                 // ── Wound layer ──────────────────────────────────────────────
                 // Three zones driven by woundMask value:
@@ -395,7 +454,10 @@ Shader "Custom/BarkVertexColor"
                 }
 
                 // ── Paste override ───────────────────────────────────────────
-                albedo = lerp(albedo, _PasteColor.rgb, pasteMask);
+                // Hard threshold: prevents smooth-interpolated edge fragments from
+                // tinting adjacent bark with the paste color.
+                if (pasteMask > 0.5h)
+                    albedo = _PasteColor.rgb;
 
                 // ── Dead-wood check (passed in when isDead, vertex alpha pushed to 1
                 //    and vertex.g overridden — handled via albedo already being grey) ──
@@ -466,12 +528,16 @@ Shader "Custom/BarkVertexColor"
                 float4 _WoundCambiumColor;
                 float4 _WoundCallusColor;
                 float4 _PasteColor;
+                float  _UseTextures;
+                float  _TexelRes;
+                float  _BarkNoiseMode;
                 float  _ShadowThreshold;
                 float  _MidThreshold;
                 float4 _ShadowTint;
                 float4 _MidTint;
                 float  _OutlineWidth;
                 float4 _OutlineColor;
+                float  _ForceMatureBark;
             CBUFFER_END
 
             float3 _LightDirection;
@@ -520,12 +586,16 @@ Shader "Custom/BarkVertexColor"
                 float4 _WoundCambiumColor;
                 float4 _WoundCallusColor;
                 float4 _PasteColor;
+                float  _UseTextures;
+                float  _TexelRes;
+                float  _BarkNoiseMode;
                 float  _ShadowThreshold;
                 float  _MidThreshold;
                 float4 _ShadowTint;
                 float4 _MidTint;
                 float  _OutlineWidth;
                 float4 _OutlineColor;
+                float  _ForceMatureBark;
             CBUFFER_END
 
             struct DepthAttr { float4 posOS : POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };

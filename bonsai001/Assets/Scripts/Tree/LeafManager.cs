@@ -24,6 +24,9 @@ public class LeafManager : MonoBehaviour
     [Tooltip("How many leaves per terminal node.")]
     [SerializeField] [Range(2, 10)] int leavesPerNode = 5;
 
+    [Tooltip("Random ± range around leavesPerNode. e.g. 2 → Random(5-2, 5+2+1).")]
+    [SerializeField] [Range(0, 5)] int leavesPerNodeRange = 0;
+
     [Tooltip("Radius of the random scatter cluster around the node tip.")]
     [SerializeField] float clusterRadius = 0.18f;
 
@@ -262,14 +265,40 @@ public class LeafManager : MonoBehaviour
 
     void SpawnCluster(TreeNode node)
     {
-        var list = new List<GameObject>(leavesPerNode);
+        int count = leavesPerNodeRange > 0
+            ? Random.Range(leavesPerNode - leavesPerNodeRange, leavesPerNode + leavesPerNodeRange + 1)
+            : leavesPerNode;
+        count = Mathf.Max(1, count);
+        var list = new List<GameObject>(count);
 
-        for (int i = 0; i < leavesPerNode; i++)
+        // Build a world-space perpendicular basis from the branch direction so we can
+        // spread leaves outward from the branch axis with the stem origin on the branch.
+        Vector3 branchWorldDir = skeleton.transform.TransformDirection(node.growDirection).normalized;
+        Vector3 perp = Vector3.Cross(branchWorldDir, Vector3.up);
+        if (perp.sqrMagnitude < 0.01f) perp = Vector3.Cross(branchWorldDir, Vector3.right);
+        perp.Normalize();
+
+        for (int i = 0; i < count; i++)
         {
-            // Random scatter offset in skeleton-local space, stored so Leaf.Update()
-            // can reapply it each frame and track the node when wire-bending moves it.
-            Vector3    offset   = Random.insideUnitSphere * clusterRadius;
-            Quaternion rot      = Random.rotation;
+            // Place the stem origin ON the branch: scatter back along the segment
+            // (0–80% of its length from tip) with only a tiny perpendicular wobble.
+            float backFraction   = Random.Range(0f, 0.8f);
+            Vector3 backOffset   = -node.growDirection * (backFraction * Mathf.Min(node.length, node.targetLength));
+            Vector3 sideJitter   = Random.insideUnitSphere * clusterRadius * 0.1f;
+            sideJitter          -= Vector3.Project(sideJitter, node.growDirection);  // keep perpendicular only
+            Vector3 offset       = backOffset + sideJitter;
+
+            // Orient leaf outward from branch: random azimuth around branch axis,
+            // high elevation (mostly perpendicular) so leaves spread sideways, then
+            // blend toward Vector3.down to simulate gravity droop.
+            float   azimuth   = Random.Range(0f, 360f);
+            float   elevation = Random.Range(55f, 88f);
+            Vector3 outPerp   = Quaternion.AngleAxis(azimuth, branchWorldDir) * perp;
+            Vector3 outDir    = Quaternion.AngleAxis(-elevation, Vector3.Cross(branchWorldDir, outPerp).normalized) * branchWorldDir;
+            float   droop     = Random.Range(0.15f, 0.55f);
+            outDir            = Vector3.Lerp(outDir, Vector3.down, droop).normalized;
+            Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up)
+                                * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
 
             var go = Instantiate(leafPrefab, skeleton.transform);
             go.transform.localPosition = node.tipPosition + offset;
@@ -288,6 +317,11 @@ public class LeafManager : MonoBehaviour
             leaf.targetScale  = Vector3.one * seasonLeafScale;
             if (skeleton.species != null)
                 leaf.springColor = skeleton.species.leafSpringColor;
+
+            leaf.ApplyDeformation(
+                twistDeg:     Random.Range(-28f, 28f),
+                curlFraction: Random.Range(0.05f, 0.30f)
+            );
 
             list.Add(go);
         }
@@ -316,10 +350,9 @@ public class LeafManager : MonoBehaviour
             if (node.subdivisionsLeft > 0)    continue;
             if (!node.hasLeaves)              continue;  // new-season terminals haven't leafed out yet
 
-            potential += leavesPerNode;
-
-            if (nodeLeaves.TryGetValue(node.id, out var leaves))
-                actual += leaves.Count * Mathf.Clamp01(node.health);
+            if (!nodeLeaves.TryGetValue(node.id, out var leaves)) continue;
+            potential += leaves.Count;
+            actual    += leaves.Count * Mathf.Clamp01(node.health);
         }
 
         if (potential <= 0f) return 1f;  // seedling with no leaves yet — grow at default rate

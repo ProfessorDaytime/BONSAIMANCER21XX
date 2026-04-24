@@ -66,6 +66,7 @@ public class ButtonClicker : MonoBehaviour
     Button pasteButton;
     Button airLayerButton;
     Button graftButton;
+    Button promoteButton;
     Button placeRockButton;
     Button confirmOrientButton;
     Button cancelOrientButton;
@@ -75,6 +76,63 @@ public class ButtonClicker : MonoBehaviour
     VisualElement rootHealthPanel;
     Label         rootHealthScoreLabel;
     VisualElement rootHealthSectors;
+
+    Label         debugStateLabel;
+    bool          debugStateVisible = false;
+
+    // ── Calendar ──────────────────────────────────────────────────────────────
+    Button        calendarButton;
+    VisualElement calendarOverlay;
+    Label         calMonthYearLabel;
+    Button        calPrevMonth, calNextMonth, calCloseButton;
+    VisualElement calGrid;
+    VisualElement calMonthView, calDayView, calEventView;
+    // Day detail
+    Label         calDayTitleLabel;
+    VisualElement calDayEventList;
+    Button        calAddWaterButton, calAddFertButton;
+    // Event detail
+    Label         calEventTitleLabel;
+    VisualElement calRepeatOptions;
+    Toggle        calRepeatToggle;
+    Label         calRepeatNLabel;
+    Button        calRepeatNDec, calRepeatNInc;
+    VisualElement calFertTypeRow;
+    Button        calDayBackButton, calEventBackButton;
+    Button        calEventConfirmButton, calEventCancelButton;
+    // State
+    int           calViewMonth, calViewYear;
+    int           calSelectedDay;
+    ScheduledEventType calEditType;
+    ScheduledEventAmount calEditAmount = ScheduledEventAmount.Light;
+    int           calEditFertType = 0;
+    TimeOfDay     calEditTimeOfDay = TimeOfDay.Morning;
+    Season        calEditSeason = Season.AllYear;
+    RepeatMode    calEditRepeat = RepeatMode.Once;
+    int           calEditRepeatN = 1;
+
+    // Calendar tab strip
+    Button        calTabSchedule, calTabModes, calTabSpeed;
+    VisualElement calScheduleTab, calModesTab, calSpeedTab;
+
+    // Modes tab
+    VisualElement calModeChips, calRulesList, calAddRulePanel, calModeSettings;
+    Button        calAddRuleButton, calModeResetButton, calRuleConfirmButton, calRuleCancelButton;
+    Toggle        calModeAutoWater, calModeAutoFert, calModeIdleOrbit, calRuleIdleToggle;
+    UnityEngine.UIElements.IntegerField calModeOrbitDelay;
+    UnityEngine.UIElements.DropdownField calRuleTriggerDropdown;
+    VisualElement calRuleParamRow, calRuleSpeedChips;
+    Slider        calRuleParamSlider;
+    Label         calRuleParamLabel, calRuleParamValueLabel;
+    UnityEngine.UIElements.FloatField calRuleIdleReal, calRuleIdleDays;
+    GameManager.SpeedMode calEditRuleSpeed = GameManager.SpeedMode.Slow;
+    VisualElement calModeSpeedChips;
+
+    // Speed tab
+    Slider calSpeedSlowSlider, calSpeedMedSlider, calSpeedFastSlider;
+    Label  calSpeedSlowValue, calSpeedMedValue, calSpeedFastValue;
+    Label  calSpeedSlowHint,  calSpeedMedHint,  calSpeedFastHint;
+    Button calSpeedResetButton;
 
     // ── Moisture bar ─────────────────────────────────────────────────────────
     VisualElement moistureBarFill;
@@ -106,6 +164,10 @@ public class ButtonClicker : MonoBehaviour
     Label         potSizeLabel;
     PotSoil.PotSize pendingPotSize = PotSoil.PotSize.M;
 
+    // ── Rock size selection ───────────────────────────────────────────────────
+    VisualElement rockSizePanel;
+    Button        rockSizeSButton, rockSizeMButton, rockSizeLButton, rockSizeXLButton;
+
     // ── Root Rake mini-game ───────────────────────────────────────────────────
     VisualElement rootRakePanel;
     Label         rakeStatusLabel;
@@ -120,6 +182,11 @@ public class ButtonClicker : MonoBehaviour
     // IDs of tooltips already shown — persisted in PlayerPrefs.
     static HashSet<string> shownTooltips;
     const string TooltipPrefsKey = "ShownTooltips_v1";
+    // ID of the tooltip currently on screen — saved to PlayerPrefs only when dismissed.
+    string pendingTooltipId;
+    // Seasonal care tips repeat every year — track which season was last shown this session.
+    // When true, dismissing the current tooltip opens the calendar instead of resuming.
+    bool pendingCalendarAfterTip;
 
     // ── Undo indicator ───────────────────────────────────────────────────────
     Label         undoLabel;
@@ -133,8 +200,11 @@ public class ButtonClicker : MonoBehaviour
     Button        uiToggleButton;
 
     // ── Tree stats panel ──────────────────────────────────────────────────────
-    Button        statsToggleButton;   // kept for back-compat query; unused after refactor
     VisualElement treeStatsPanel;
+    VisualElement promotionAdvisorPanel;
+    Label         promotionTargetLabel;
+    VisualElement promotionListContainer;
+    TreeInteraction treeInteraction;
     Label         statMoisture;
     Label         statNutrients;
     Label         statAvgHealth;
@@ -161,9 +231,10 @@ public class ButtonClicker : MonoBehaviour
     VisualElement tabContentDebug;
 
     // Debug tab controls
-    Toggle        toggleAutoWater;
-    Toggle        toggleAutoFertilize;
     Toggle        toggleScaleCubes;
+
+    // Set to true to re-enable first-use tooltips across the whole UI.
+    public static bool tooltipsEnabled = false;
 
     // Sliders + value labels
     Slider sliderTimescale;      Label labelTimescale;
@@ -174,6 +245,10 @@ public class ButtonClicker : MonoBehaviour
     Button loadOriginalButton;
     Label  saveStatusLabel;
     float  saveStatusClearTime = 0f;
+    Label  saveToastLabel;
+    float  saveToastFadeEndTime = 0f;
+    const float TOAST_HOLD = 2f;
+    const float TOAST_FADE = 0.4f;
     Slider sliderGrowSpeed;      Label labelGrowSpeed;
     Slider sliderSpringLaterals; Label labelSpringLaterals;
     Slider sliderDepthDecay;     Label labelDepthDecay;
@@ -211,7 +286,165 @@ public class ButtonClicker : MonoBehaviour
         pasteButton         = root.Q("PasteButton")         as Button;
         airLayerButton      = root.Q("AirLayerButton")      as Button;
         graftButton         = root.Q("GraftButton")         as Button;
+        promoteButton       = root.Q("PromoteButton")       as Button;
+        promotionAdvisorPanel  = root.Q("PromotionAdvisorPanel");
+        promotionTargetLabel   = root.Q("PromotionTargetLabel")   as Label;
+        promotionListContainer = root.Q("PromotionListContainer");
+        treeInteraction = skeleton != null ? skeleton.GetComponent<TreeInteraction>() : null;
         placeRockButton     = root.Q("PlaceRockButton")     as Button;
+        debugStateLabel     = root.Q("DebugStateLabel")     as Label;
+
+        // Calendar
+        calendarButton      = root.Q("CalendarButton")      as Button;
+        calendarOverlay     = root.Q("CalendarOverlay");
+        calMonthYearLabel   = root.Q("CalMonthYearLabel")   as Label;
+        calPrevMonth        = root.Q("CalPrevMonth")        as Button;
+        calNextMonth        = root.Q("CalNextMonth")        as Button;
+        calCloseButton      = root.Q("CalCloseButton")      as Button;
+        calGrid             = root.Q("CalGrid");
+        calMonthView        = root.Q("CalMonthView");
+        calDayView          = root.Q("CalDayView");
+        calEventView        = root.Q("CalEventView");
+        calDayTitleLabel    = root.Q("CalDayTitleLabel")    as Label;
+        calDayEventList     = root.Q("CalDayEventList");
+        calAddWaterButton   = root.Q("CalAddWaterButton")   as Button;
+        calAddFertButton    = root.Q("CalAddFertButton")    as Button;
+        calEventTitleLabel  = root.Q("CalEventTitleLabel")  as Label;
+        calRepeatToggle     = root.Q("CalRepeatToggle")     as Toggle;
+        calRepeatOptions    = root.Q("CalRepeatOptions");
+        calRepeatNLabel     = root.Q("CalRepeatNLabel")     as Label;
+        calRepeatNDec       = root.Q("CalRepeatNDec")       as Button;
+        calRepeatNInc       = root.Q("CalRepeatNInc")       as Button;
+        calFertTypeRow          = root.Q("CalFertTypeRow");
+        calDayBackButton        = root.Q("CalDayBackButton")        as Button;
+        calEventBackButton      = root.Q("CalEventBackButton")      as Button;
+        calEventConfirmButton   = root.Q("CalEventConfirmButton")   as Button;
+        calEventCancelButton    = root.Q("CalEventCancelButton")    as Button;
+
+        // Calendar tabs
+        calTabSchedule  = root.Q("CalTabSchedule")  as Button;
+        calTabModes     = root.Q("CalTabModes")     as Button;
+        calTabSpeed     = root.Q("CalTabSpeed")     as Button;
+        calScheduleTab  = root.Q("CalScheduleTab");
+        calModesTab     = root.Q("CalModesTab");
+        calSpeedTab     = root.Q("CalSpeedTab");
+
+        // Modes tab
+        calModeChips        = root.Q("CalModeChips");
+        calModeSettings     = root.Q("CalModeSettings");
+        calModeSpeedChips   = root.Q("CalModeSpeedChips");
+        calModeAutoWater    = root.Q("CalModeAutoWater")    as Toggle;
+        calModeAutoFert     = root.Q("CalModeAutoFert")     as Toggle;
+        calModeIdleOrbit    = root.Q("CalModeIdleOrbit")    as Toggle;
+        calModeOrbitDelay   = root.Q("CalModeOrbitDelay")   as UnityEngine.UIElements.IntegerField;
+        calRulesList        = root.Q("CalRulesList");
+        calAddRuleButton    = root.Q("CalAddRuleButton")    as Button;
+        calAddRulePanel     = root.Q("CalAddRulePanel");
+        calModeResetButton  = root.Q("CalModeResetButton")  as Button;
+        calRuleTriggerDropdown  = root.Q("CalRuleTriggerDropdown")  as UnityEngine.UIElements.DropdownField;
+        calRuleParamRow         = root.Q("CalRuleParamRow");
+        calRuleParamSlider      = root.Q("CalRuleParamSlider")      as Slider;
+        calRuleParamLabel       = root.Q("CalRuleParamLabel")       as Label;
+        calRuleParamValueLabel  = root.Q("CalRuleParamValueLabel")  as Label;
+        calRuleSpeedChips       = root.Q("CalRuleSpeedChips");
+        calRuleIdleToggle       = root.Q("CalRuleIdleToggle")       as Toggle;
+        calRuleIdleReal         = root.Q("CalRuleIdleReal")         as UnityEngine.UIElements.FloatField;
+        calRuleIdleDays         = root.Q("CalRuleIdleDays")         as UnityEngine.UIElements.FloatField;
+        calRuleConfirmButton    = root.Q("CalRuleConfirmButton")    as Button;
+        calRuleCancelButton     = root.Q("CalRuleCancelButton")     as Button;
+
+        // Speed tab
+        calSpeedSlowSlider  = root.Q("CalSpeedSlowSlider")  as Slider;
+        calSpeedMedSlider   = root.Q("CalSpeedMedSlider")   as Slider;
+        calSpeedFastSlider  = root.Q("CalSpeedFastSlider")  as Slider;
+        calSpeedSlowValue   = root.Q("CalSpeedSlowValue")   as Label;
+        calSpeedMedValue    = root.Q("CalSpeedMedValue")    as Label;
+        calSpeedFastValue   = root.Q("CalSpeedFastValue")   as Label;
+        calSpeedSlowHint    = root.Q("CalSpeedSlowHint")    as Label;
+        calSpeedMedHint     = root.Q("CalSpeedMedHint")     as Label;
+        calSpeedFastHint    = root.Q("CalSpeedFastHint")    as Label;
+        calSpeedResetButton = root.Q("CalSpeedResetButton") as Button;
+
+        calendarButton?.RegisterCallback<ClickEvent>(_ => OpenCalendar());
+        calCloseButton?.RegisterCallback<ClickEvent>(_ => CloseCalendar());
+        calPrevMonth?.RegisterCallback<ClickEvent>(_ => { calViewMonth--; if (calViewMonth < 1) { calViewMonth = 12; calViewYear--; } BuildCalendarGrid(); });
+        calNextMonth?.RegisterCallback<ClickEvent>(_ => { calViewMonth++; if (calViewMonth > 12) { calViewMonth = 1; calViewYear++; } BuildCalendarGrid(); });
+        calDayBackButton?.RegisterCallback<ClickEvent>(_ => CalShowView(calMonthView));
+        calAddWaterButton?.RegisterCallback<ClickEvent>(_ => OpenEventDetail(ScheduledEventType.Water));
+        calAddFertButton?.RegisterCallback<ClickEvent>(_ => OpenEventDetail(ScheduledEventType.Fertilize));
+        calEventBackButton?.RegisterCallback<ClickEvent>(_ => CalShowView(calDayView));
+        calRepeatToggle?.RegisterValueChangedCallback(evt => { if (calRepeatOptions != null) calRepeatOptions.style.display = evt.newValue ? DisplayStyle.Flex : DisplayStyle.None; });
+
+        WireCalendarChips();
+
+        calEventConfirmButton?.RegisterCallback<ClickEvent>(_ => ConfirmCalendarEvent());
+        calEventCancelButton?.RegisterCallback<ClickEvent>(_ => CalShowView(calDayView));
+
+        // Calendar tab strip
+        calTabSchedule?.RegisterCallback<ClickEvent>(_ => SwitchCalTab(0));
+        calTabModes?.RegisterCallback<ClickEvent>(_ =>    SwitchCalTab(1));
+        calTabSpeed?.RegisterCallback<ClickEvent>(_ =>    SwitchCalTab(2));
+
+        // Modes tab wiring
+        calModeAutoWater?.RegisterValueChangedCallback(evt  => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.autoWater    = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
+        calModeAutoFert?.RegisterValueChangedCallback(evt   => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.autoFertilize = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
+        calModeIdleOrbit?.RegisterValueChangedCallback(evt  => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.idleOrbit    = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
+        calModeOrbitDelay?.RegisterValueChangedCallback(evt => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.idleOrbitDelaySecs = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
+        calAddRuleButton?.RegisterCallback<ClickEvent>(_ =>    { if (calAddRulePanel != null) calAddRulePanel.style.display = DisplayStyle.Flex; });
+        calRuleCancelButton?.RegisterCallback<ClickEvent>(_ => { if (calAddRulePanel != null) calAddRulePanel.style.display = DisplayStyle.None; });
+        calRuleConfirmButton?.RegisterCallback<ClickEvent>(_ => ConfirmAddRule());
+        calModeResetButton?.RegisterCallback<ClickEvent>(_ =>  { PlayModeManager.Instance?.ResetBuiltInModes(); RefreshModesTab(); });
+
+        // Rule trigger dropdown choices
+        if (calRuleTriggerDropdown != null)
+        {
+            calRuleTriggerDropdown.choices = new System.Collections.Generic.List<string>
+            {
+                "Month", "Season",
+                "Moisture below", "Health below", "Nutrient below",
+                "Fungal load above", "Weed count above",
+                "Wire set gold", "Tree in danger"
+            };
+            calRuleTriggerDropdown.index = 0;
+            calRuleTriggerDropdown.RegisterValueChangedCallback(_ => RefreshRuleParamRow());
+        }
+        if (calRuleParamSlider != null)
+            calRuleParamSlider.RegisterValueChangedCallback(evt =>
+            {
+                if (calRuleParamValueLabel != null)
+                    calRuleParamValueLabel.text = FormatRuleParam(calRuleTriggerDropdown?.index ?? 0, evt.newValue);
+            });
+
+        // Rule speed chips
+        WireChipGroup(calRuleSpeedChips, new[]{"CalRuleSpeedSlow","CalRuleSpeedMed","CalRuleSpeedFast"}, root, i =>
+        {
+            calEditRuleSpeed = i == 0 ? GameManager.SpeedMode.Slow : i == 1 ? GameManager.SpeedMode.Med : GameManager.SpeedMode.Fast;
+        });
+
+        // Mode default speed chips
+        WireChipGroup(calModeSpeedChips, new[]{"CalModeSpeedSlow","CalModeSpeedMed","CalModeSpeedFast"}, root, i =>
+        {
+            var m = PlayModeManager.Instance?.ActiveMode;
+            if (m == null) return;
+            m.defaultSpeed = i == 0 ? GameManager.SpeedMode.Slow : i == 1 ? GameManager.SpeedMode.Med : GameManager.SpeedMode.Fast;
+            PlayModeManager.Instance.SaveModes();
+        });
+
+        // Speed tab wiring
+        if (calSpeedSlowSlider != null) calSpeedSlowSlider.RegisterValueChangedCallback(evt => OnSpeedSliderChanged());
+        if (calSpeedMedSlider  != null) calSpeedMedSlider.RegisterValueChangedCallback(evt  => OnSpeedSliderChanged());
+        if (calSpeedFastSlider != null) calSpeedFastSlider.RegisterValueChangedCallback(evt => OnSpeedSliderChanged());
+        calSpeedResetButton?.RegisterCallback<ClickEvent>(_ =>
+        {
+            GameManager.TIMESCALE_SLOW = 0.5f;
+            GameManager.TIMESCALE_MED  = 10f;
+            GameManager.TIMESCALE_FAST = 200f;
+            GameManager.SaveTimescalePrefs();
+            if (calSpeedSlowSlider != null) calSpeedSlowSlider.SetValueWithoutNotify(0.5f);
+            if (calSpeedMedSlider  != null) calSpeedMedSlider.SetValueWithoutNotify(10f);
+            if (calSpeedFastSlider != null) calSpeedFastSlider.SetValueWithoutNotify(200f);
+            RefreshSpeedTab();
+        });
         confirmOrientButton    = root.Q("ConfirmOrientButton")    as Button;
         cancelOrientButton     = root.Q("CancelOrientButton")     as Button;
         orientButtonContainer  = root.Q("OrientButtonContainer");
@@ -241,6 +474,11 @@ public class ButtonClicker : MonoBehaviour
         potSizeXLButton       = root.Q("PotSizeXLButton")      as Button;
         potSizeSlabButton     = root.Q("PotSizeSlabButton")    as Button;
         potSizeLabel          = root.Q("PotSizeLabel")          as Label;
+        rockSizePanel         = root.Q("RockSizePanel");
+        rockSizeSButton       = root.Q("RockSizeSButton")      as Button;
+        rockSizeMButton       = root.Q("RockSizeMButton")      as Button;
+        rockSizeLButton       = root.Q("RockSizeLButton")      as Button;
+        rockSizeXLButton      = root.Q("RockSizeXLButton")     as Button;
 
         rootRakePanel        = root.Q("RootRakePanel");
         rakeStatusLabel      = root.Q("RakeStatusLabel")       as Label;
@@ -261,6 +499,9 @@ public class ButtonClicker : MonoBehaviour
             if (!string.IsNullOrEmpty(saved))
                 foreach (var id in saved.Split(','))
                     if (!string.IsNullOrEmpty(id)) shownTooltips.Add(id);
+            // Scrub any weed_first IDs burned by the old save-on-show bug.
+            if (shownTooltips.RemoveWhere(id => id.StartsWith("weed_first")) > 0)
+                SaveShownTooltips();
         }
 
         rootHealthPanel      = root.Q("RootHealthPanel");
@@ -345,7 +586,7 @@ public class ButtonClicker : MonoBehaviour
 
         // ── HUD cycle toggle + stats panel ──────────────────────────────────
         uiToggleButton   = root.Q("UIToggleButton")    as Button;
-        statsToggleButton = null;   // removed from UXML; was StatsToggleButton
+
         treeStatsPanel   = root.Q("TreeStatsPanel");
         statMoisture     = root.Q("StatMoisture")      as Label;
         statNutrients    = root.Q("StatNutrients")     as Label;
@@ -365,8 +606,6 @@ public class ButtonClicker : MonoBehaviour
         tabContentIshitsuki = root.Q("TabContentIshitsuki");
         tabContentDebug     = root.Q("TabContentDebug");
 
-        toggleAutoWater     = root.Q("ToggleAutoWater")     as Toggle;
-        toggleAutoFertilize = root.Q("ToggleAutoFertilize") as Toggle;
         toggleScaleCubes    = root.Q("ToggleScaleCubes")    as Toggle;
 
         saveButton           = root.Q("SaveButton")           as Button;
@@ -379,6 +618,7 @@ public class ButtonClicker : MonoBehaviour
             GameManager.Instance.UpdateGameState(GameState.LoadMenu);
         });
         saveStatusLabel      = root.Q("SaveStatusLabel")      as Label;
+        saveToastLabel       = root.Q("SaveToastLabel")       as Label;
 
         sliderTimescale      = root.Q("SliderTimescale")      as Slider;
         labelTimescale       = root.Q("LabelTimescale")       as Label;
@@ -410,6 +650,7 @@ public class ButtonClicker : MonoBehaviour
         pasteButton?.RegisterCallback<ClickEvent>(OnPasteButtonClick);
         airLayerButton?.RegisterCallback<ClickEvent>(OnAirLayerButtonClick);
         graftButton?.RegisterCallback<ClickEvent>(_ => OnGraftButtonClick());
+        promoteButton?.RegisterCallback<ClickEvent>(_ => OnPromoteButtonClick());
         placeRockButton?.RegisterCallback<ClickEvent>(OnPlaceRockButtonClick);
         confirmOrientButton?.RegisterCallback<ClickEvent>(OnConfirmOrientButtonClick);
         cancelOrientButton?.RegisterCallback<ClickEvent>(_ => OnCancelOrientButtonClick());
@@ -452,17 +693,19 @@ public class ButtonClicker : MonoBehaviour
         potSizeXLButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.XL));
         potSizeSlabButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.Slab));
 
+        rockSizeSButton?.RegisterCallback<ClickEvent>(_ => SelectRockSize(RockPlacer.RockSize.S));
+        rockSizeMButton?.RegisterCallback<ClickEvent>(_ => SelectRockSize(RockPlacer.RockSize.M));
+        rockSizeLButton?.RegisterCallback<ClickEvent>(_ => SelectRockSize(RockPlacer.RockSize.L));
+        rockSizeXLButton?.RegisterCallback<ClickEvent>(_ => SelectRockSize(RockPlacer.RockSize.XL));
+
         confirmRepotButton?.RegisterCallback<ClickEvent>(_ => OnConfirmRepotClick());
         cancelRakeButton?.RegisterCallback<ClickEvent>(_ => OnCancelRakeClick());
 
-        tooltipDismissButton?.RegisterCallback<ClickEvent>(_ => GameManager.Instance?.ExitTipPause());
-
-        toggleAutoWater?.RegisterValueChangedCallback(evt => {
-            if (skeleton != null) skeleton.autoWaterEnabled = evt.newValue;
-        });
-
-        toggleAutoFertilize?.RegisterValueChangedCallback(evt => {
-            if (skeleton != null) skeleton.autoFertilizeEnabled = evt.newValue;
+        tooltipDismissButton?.RegisterCallback<ClickEvent>(_ =>
+        {
+            MarkPendingTooltipSeen();
+            GameManager.Instance?.ExitTipPause();
+            if (pendingCalendarAfterTip) { pendingCalendarAfterTip = false; OpenCalendar(); }
         });
 
         toggleScaleCubes?.RegisterValueChangedCallback(evt => {
@@ -528,9 +771,11 @@ public class ButtonClicker : MonoBehaviour
             if (labelMinCableAngle != null) labelMinCableAngle.text = Mathf.RoundToInt(evt.newValue) + "°";
         });
 
-        GameManager.OnGameStateChanged += OnGameStateChanged;
-        GameManager.OnMonthChanged     += OnMonthChanged;
+        GameManager.OnGameStateChanged   += OnGameStateChanged;
+        GameManager.OnMonthChanged       += OnMonthChanged;
         if (skeleton != null) skeleton.OnWireSetGold += OnWireSetGold;
+        WeedManager.OnFirstWeedSpawned   += OnFirstWeedSpawned;
+        SaveManager.OnSaved              += ShowSaveToast;
 
         // Sync overlay visibility to whatever state was set before OnEnable ran
         var initState = GameManager.Instance?.state ?? GameState.SpeciesSelect;
@@ -553,23 +798,55 @@ public class ButtonClicker : MonoBehaviour
 
     void OnDisable()
     {
-        GameManager.OnGameStateChanged -= OnGameStateChanged;
-        GameManager.OnMonthChanged     -= OnMonthChanged;
+        GameManager.OnGameStateChanged   -= OnGameStateChanged;
+        GameManager.OnMonthChanged       -= OnMonthChanged;
         if (skeleton != null) skeleton.OnWireSetGold -= OnWireSetGold;
+        WeedManager.OnFirstWeedSpawned   -= OnFirstWeedSpawned;
+        SaveManager.OnSaved              -= ShowSaveToast;
     }
 
     void Update()
     {
+        if (Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
+        {
+            debugStateVisible = !debugStateVisible;
+            if (debugStateLabel != null)
+                debugStateLabel.style.display = debugStateVisible ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        if (debugStateVisible && debugStateLabel != null)
+            debugStateLabel.text = GameManager.Instance != null ? GameManager.Instance.state.ToString() : "—";
+
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
             var s = GameManager.Instance?.state ?? GameState.Idle;
-            if (s == GameState.LoadMenu && loadMenuHasBack)
+            if (s == GameState.CalendarOpen)
+                CloseCalendar();
+            else if (s == GameState.LoadMenu && loadMenuHasBack)
                 OnLoadMenuBack();
             else if (s == GameState.TipPause && !string.IsNullOrEmpty(GameManager.TooltipTitle))
-                GameManager.Instance.ExitTipPause();  // dismiss first-use tooltip with ESC
+            {
+                MarkPendingTooltipSeen();
+                GameManager.Instance.ExitTipPause();
+                if (pendingCalendarAfterTip) { pendingCalendarAfterTip = false; OpenCalendar(); }
+            }
             else if (s != GameState.LoadMenu && s != GameState.SpeciesSelect &&
                      s != GameState.TipPause && s != GameState.TreeDead && s != GameState.AirLayerSever)
                 TogglePauseMenu();
+        }
+
+        // Save toast fade
+        if (saveToastLabel != null && saveToastFadeEndTime > 0f)
+        {
+            float t = saveToastFadeEndTime - Time.realtimeSinceStartup;
+            if (t <= 0f)
+            {
+                saveToastLabel.style.display = DisplayStyle.None;
+                saveToastLabel.style.opacity = 0f;
+                saveToastFadeEndTime = 0f;
+            }
+            else if (t < TOAST_FADE)
+                saveToastLabel.style.opacity = new StyleFloat(t / TOAST_FADE);
         }
 
         // Trim undo
@@ -657,6 +934,10 @@ public class ButtonClicker : MonoBehaviour
                     RefreshPotSizeButtons();
                 }
 
+                // Sync rock size chips to the current rock
+                var placer = FindFirstObjectByType<RockPlacer>();
+                if (placer != null) RefreshRockSizeButtons(placer.rockSize);
+
                 float deg = potSoil.soilDegradation;
                 float sat = potSoil.saturationLevel;
 
@@ -702,6 +983,14 @@ public class ButtonClicker : MonoBehaviour
         // Stats panel: refresh every frame while open
         if (uiToggleState == UIToggleState.Stats)
             RefreshStatsPanel();
+
+        // Promotion advisor panel: show while promote tool is active and a target is locked
+        if (promotionAdvisorPanel != null)
+        {
+            bool hasTarget = GameManager.canPromote && treeInteraction != null && treeInteraction.LockedPromoteTarget != null;
+            promotionAdvisorPanel.style.display = hasTarget ? DisplayStyle.Flex : DisplayStyle.None;
+            if (hasTarget) RefreshPromotionPanel();
+        }
 
         // Speed toggle button: keep in sync with GameManager (catches auto-slow in January)
         RefreshSpeedToggleButton();
@@ -752,12 +1041,26 @@ public class ButtonClicker : MonoBehaviour
     /// Show a first-use tooltip for the given id if it hasn't been shown before.
     /// Call this AFTER the underlying action so the tool is already active when the tip appears.
     /// </summary>
-    void MaybeShowTooltip(string id, string title, string body)
+    bool MaybeShowTooltip(string id, string title, string body)
     {
-        if (shownTooltips == null || shownTooltips.Contains(id)) return;
-        shownTooltips.Add(id);
+        if (!tooltipsEnabled) return false;
+        if (shownTooltips == null || shownTooltips.Contains(id)) return false;
+        if (GameManager.Instance == null) return false;
+        // Don't clobber an active tooltip — ShowTooltip would return early anyway,
+        // and setting pendingTooltipId here would cause the wrong ID to be burned
+        // when the visible tooltip is dismissed.
+        if (GameManager.Instance.state == GameState.TipPause) return false;
+        pendingTooltipId = id;
+        GameManager.Instance.ShowTooltip(title, body);
+        return true;
+    }
+
+    void MarkPendingTooltipSeen()
+    {
+        if (string.IsNullOrEmpty(pendingTooltipId)) return;
+        shownTooltips?.Add(pendingTooltipId);
         SaveShownTooltips();
-        GameManager.Instance?.ShowTooltip(title, body);
+        pendingTooltipId = null;
     }
 
     void SaveShownTooltips()
@@ -844,7 +1147,7 @@ public class ButtonClicker : MonoBehaviour
         Set(wireButton); Set(removeWireButton);
 
         // Right-column tool buttons (absolute-positioned; only the ones not context-controlled)
-        Set(pasteButton); Set(rootPruneButton); Set(airLayerButton); Set(graftButton);
+        Set(pasteButton); Set(rootPruneButton); Set(airLayerButton); Set(graftButton); Set(promoteButton);
 
         // Right-column action buttons
         Set(fertilizeButton); Set(herbicideButton); Set(fungicideButton);
@@ -1071,16 +1374,113 @@ public class ButtonClicker : MonoBehaviour
                 "• Trim = any time on hardened wood. For structure — removing whole branches.\n\n" +
                 "Heavy trimming in January forced energy back into the old wood. Now those backbuds are extending. Pinch them before they run — don't let any one shoot dominate.");
         }
+
+        // One-time moisture tutorial: fires the first time moisture drops below 50%.
+        if (skeleton != null && skeleton.soilMoisture < 0.5f)
+        {
+            MaybeShowTooltip("moisture_low_v1",
+                "Soil Getting Dry — Use the Calendar",
+                "Your soil moisture has dropped below 50%. The tree will stress if it falls much further.\n\n" +
+                "WATERING GUIDE (spring):\n" +
+                "• Water when moisture drops below 40–50%.\n" +
+                "• In spring, that's roughly every 3–5 days.\n" +
+                "• Aim to keep moisture in the 50–80% range.\n" +
+                "• Amount setting: Medium.\n\n" +
+                "FERTILIZING GUIDE (spring):\n" +
+                "• Fertilize once every 3–4 weeks during active growth.\n" +
+                "• Spring is the most important feeding window — buds are pushing and roots are hungry.\n" +
+                "• Use a balanced or nitrogen-forward feed. Don't over-fertilize: too much nitrogen grows weak, oversized leaves.\n" +
+                "• Amount setting: Light to Medium.\n\n" +
+                "USE THE CALENDAR:\n" +
+                "Open the calendar (📅 button) to schedule automatic watering and fertilizing. Set a watering event to repeat every 4 days and a fertilizer event every 3 weeks — then you won't have to think about it.");
+        }
+
+        // Seasonal care tips — show only the first time each season is entered (ever).
+        if (month == 3 || month == 6 || month == 9 || month == 12)
+        {
+            string seasonId, seasonTitle, seasonBody;
+            switch (month)
+            {
+                case 3:
+                    seasonId    = "season_spring";
+                    seasonTitle = "Spring Care";
+                    seasonBody  =
+                        "Spring is the most active growth period. The tree is hungry and thirsty.\n\n" +
+                        "WATERING: Water every 3–5 days. Keep moisture in the 50–80% range. " +
+                        "The soil should dry slightly between waterings — never let it stay soggy.\n" +
+                        "Amount setting: Medium.\n\n" +
+                        "FERTILIZING: Feed every 3–4 weeks with a balanced or nitrogen-forward fertilizer. " +
+                        "This fuels new shoots and root expansion. Don't skip spring feeding.\n" +
+                        "Amount setting: Light to Medium.";
+                    break;
+                case 6:
+                    seasonId    = "season_summer";
+                    seasonTitle = "Summer Care";
+                    seasonBody  =
+                        "Heat accelerates evaporation. The tree may need water more often now.\n\n" +
+                        "WATERING: Check moisture every 2–3 days. In hot weather the pot can dry out fast — " +
+                        "increase your calendar schedule if moisture is dropping below 40% regularly.\n" +
+                        "Amount setting: Medium to Heavy if drying fast.\n\n" +
+                        "FERTILIZING: Reduce to a half-strength dose or switch to a low-nitrogen feed. " +
+                        "Heavy feeding in peak summer pushes soft growth that burns easily.\n" +
+                        "Amount setting: Light.";
+                    break;
+                case 9:
+                    seasonId    = "season_autumn";
+                    seasonTitle = "Autumn Care";
+                    seasonBody  =
+                        "Growth is slowing. The tree is hardening off and moving energy to the roots.\n\n" +
+                        "WATERING: Reduce frequency. Water every 5–7 days or when moisture drops below 40%. " +
+                        "Cooler temps mean slower evaporation — over-watering in autumn encourages root rot.\n" +
+                        "Amount setting: Light.\n\n" +
+                        "FERTILIZING: One last feed with a low-nitrogen, high-phosphorus fertilizer. " +
+                        "This strengthens roots and wood rather than pushing soft leafy growth. " +
+                        "Stop fertilizing entirely by late October.\n" +
+                        "Amount setting: Light.";
+                    break;
+                default: // 12
+                    seasonId    = "season_winter";
+                    seasonTitle = "Winter Care";
+                    seasonBody  =
+                        "The tree is dormant. Metabolism is at its lowest — it barely needs anything.\n\n" +
+                        "WATERING: Water sparingly — only when moisture drops below 30%. " +
+                        "Cold wet soil is the most common cause of winter root rot. " +
+                        "Check every 1–2 weeks; most species only need water once a week or less.\n" +
+                        "Amount setting: Light.\n\n" +
+                        "FERTILIZING: Do not fertilize in winter. The tree cannot process nutrients while dormant — " +
+                        "salts will build up in the soil and burn roots. Resume feeding when buds start to swell in early spring.";
+                    break;
+            }
+
+            if (MaybeShowTooltip(seasonId, seasonTitle, seasonBody))
+                pendingCalendarAfterTip = true;
+        }
     }
 
     // ── Button swap logic ────────────────────────────────────────────────────
 
+    static bool IsNormalGameplayState(GameState s) =>
+        s == GameState.Idle      || s == GameState.BranchGrow ||
+        s == GameState.TimeGo    || s == GameState.LeafGrow   ||
+        s == GameState.LeafFall  || s == GameState.Pruning    ||
+        s == GameState.Shaping   || s == GameState.Wiring;
+
     void OnGameStateChanged(GameState state)
     {
+        // Each time the game settles into a normal gameplay state, check for weeds.
+        // MaybeShowTooltip's shownTooltips guard ensures the tooltip only ever shows once.
+        if (IsNormalGameplayState(state) &&
+            WeedManager.Instance != null && WeedManager.Instance.ActiveWeedCount > 0)
+            OnFirstWeedSpawned();
+
         // First-use tooltip overlay: visible in TipPause when a tooltip title is set.
+        // Use the ACTUAL current state, not the event arg — a nested UpdateGameState(TipPause)
+        // call (e.g. from a weed spawn) may have already advanced the state before this
+        // listener fires, and we must not hide the overlay based on a stale event arg.
         if (tooltipOverlay != null)
         {
-            bool showTip = state == GameState.TipPause && !string.IsNullOrEmpty(GameManager.TooltipTitle);
+            var actualState = GameManager.Instance != null ? GameManager.Instance.state : state;
+            bool showTip = actualState == GameState.TipPause && !string.IsNullOrEmpty(GameManager.TooltipTitle);
             tooltipOverlay.style.display = showTip ? DisplayStyle.Flex : DisplayStyle.None;
             if (showTip)
             {
@@ -1148,7 +1548,7 @@ public class ButtonClicker : MonoBehaviour
             trimButton, waterButton, pinchButton, defoliateButton, defoliateAllButton,
             wireButton, removeWireButton, rootPruneButton, quickWinterButton,
             pasteButton, fertilizeButton, herbicideButton, fungicideButton,
-            airLayerButton, graftButton, placeRockButton,
+            airLayerButton, graftButton, promoteButton, placeRockButton,
             repotClassicButton, repotFreeDrainButton, repotMoistButton, repotAcidicButton,
         };
         foreach (var btn in toolButtons)
@@ -1161,14 +1561,28 @@ public class ButtonClicker : MonoBehaviour
         // Air Layer / Place Rock slot visibility (only when not in placement)
         if (!inPlacement)
         {
-            if (airLayerButton  != null) airLayerButton.style.display  = inRootLift  ? DisplayStyle.None : DisplayStyle.Flex;
-            if (graftButton     != null) graftButton.style.display     = inRootLift  ? DisplayStyle.None : DisplayStyle.Flex;
+            bool showTools = uiToggleState == UIToggleState.Tools;
+            if (airLayerButton  != null) airLayerButton.style.display  = (inRootLift || !showTools) ? DisplayStyle.None : DisplayStyle.Flex;
+            if (graftButton     != null) graftButton.style.display     = (inRootLift || !showTools) ? DisplayStyle.None : DisplayStyle.Flex;
+            if (promoteButton   != null) promoteButton.style.display   = (inRootLift || !showTools) ? DisplayStyle.None : DisplayStyle.Flex;
             if (placeRockButton != null) placeRockButton.style.display = inRootPrune ? DisplayStyle.Flex : DisplayStyle.None;
+            if (rockSizePanel   != null) rockSizePanel.style.display   = inRootPrune ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         // Confirm / Cancel orient buttons — visible only during rock placement / tree orient
         if (orientButtonContainer != null)
             orientButtonContainer.style.display = inPlacement ? DisplayStyle.Flex : DisplayStyle.None;
+    }
+
+    // ── Save toast ────────────────────────────────────────────────────────────
+
+    void ShowSaveToast(string message)
+    {
+        if (saveToastLabel == null) return;
+        saveToastLabel.text                = message;
+        saveToastLabel.style.display       = DisplayStyle.Flex;
+        saveToastLabel.style.opacity       = new StyleFloat(1f);
+        saveToastFadeEndTime               = Time.realtimeSinceStartup + TOAST_HOLD + TOAST_FADE;
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────────
@@ -1662,6 +2076,36 @@ public class ButtonClicker : MonoBehaviour
             "Check the soil surface after each watering. A layer of fine moss over the soil surface is the best long-term weed suppressor.");
     }
 
+    void SelectRockSize(RockPlacer.RockSize size)
+    {
+        var placer = FindFirstObjectByType<RockPlacer>();
+        if (placer == null) return;
+        placer.rockSize = size;
+        placer.ApplyRockSize();
+        RefreshRockSizeButtons(size);
+    }
+
+    void RefreshRockSizeButtons(RockPlacer.RockSize active)
+    {
+        var chips = new[] {
+            (rockSizeSButton,  RockPlacer.RockSize.S),
+            (rockSizeMButton,  RockPlacer.RockSize.M),
+            (rockSizeLButton,  RockPlacer.RockSize.L),
+            (rockSizeXLButton, RockPlacer.RockSize.XL),
+        };
+        foreach (var (btn, sz) in chips)
+        {
+            if (btn == null) continue;
+            bool isActive = sz == active;
+            btn.style.backgroundColor = isActive
+                ? new UnityEngine.UIElements.StyleColor(new Color(0.40f, 0.55f, 0.35f))
+                : new UnityEngine.UIElements.StyleColor(new Color(0.25f, 0.25f, 0.25f));
+            btn.style.color = isActive
+                ? new UnityEngine.UIElements.StyleColor(new Color(0.90f, 0.70f, 0.07f))
+                : new UnityEngine.UIElements.StyleColor(new Color(0.78f, 0.78f, 0.78f));
+        }
+    }
+
     void SelectPotSize(PotSoil.PotSize size)
     {
         pendingPotSize = size;
@@ -1740,10 +2184,17 @@ public class ButtonClicker : MonoBehaviour
         Time.timeScale = 1f;
         if (skeleton != null)
         {
+            // Remove dead tree mesh and all node state so InitTree fires fresh on next Water.
+            skeleton.ClearForRestart();
             skeleton.GetComponent<TreeMeshBuilder>()?.SetDeadTint(false);
-            skeleton.treeInDanger = false;
+            skeleton.treeInDanger              = false;
             skeleton.consecutiveCriticalSeasons = 0;
+            // Reset drought state so KillTree can't re-fire before species is chosen.
+            skeleton.soilMoisture              = 0.5f;
+            skeleton.droughtDaysAccumulated    = 0f;
         }
+        // Reset waterings so the first Water click re-enters the new-tree InitTree path.
+        GameManager.waterings = -1;
         // Clear active slot so the new tree won't overwrite the dead tree's save.
         SaveManager.ActiveSlotId = null;
         GameManager.Instance.UpdateGameState(GameState.SpeciesSelect);
@@ -1781,6 +2232,16 @@ public class ButtonClicker : MonoBehaviour
         MaybeShowTooltip("water",
             "Watering",
             "Keep soil moisture in the healthy range (shown on the moisture bar). Too dry and the tree stresses; too wet and roots rot.\n\nTip: water less in winter when the tree is dormant — cold wet soil encourages root rot.");
+    }
+
+    void OnFirstWeedSpawned()
+    {
+        Debug.Log($"[WeedTip] OnFirstWeedSpawned — state={GameManager.Instance?.state} activeWeeds={WeedManager.Instance?.ActiveWeedCount}");
+        MaybeShowTooltip("weed_first",
+            "Weeds Appeared!",
+            "Weeds compete with your tree for water and nutrients — remove them promptly.\n\n" +
+            "Click and drag a weed upward to pull it out. Pull slowly and steadily: yanking too hard rips the stem and leaves the root behind, making it harder to fully remove.\n\n" +
+            "Herbicide button: kills all weeds instantly but damages beneficial soil fungi and dries out the soil. Use it as a last resort when weeds are out of control, not as routine maintenance.");
     }
 
     public void OnWireButtonClick(ClickEvent evt)
@@ -1876,6 +2337,64 @@ public class ButtonClicker : MonoBehaviour
             "Select a living branch tip as the source, then click a nearby node on a different branch as the target.\n\n" +
             "Over 2 growing seasons the source tip will grow toward the target and fuse, creating a living bridge between the two branches.\n\n" +
             "Tip: keep both nodes healthy during the fusion period — if either dies, the graft fails.");
+    }
+
+    void OnPromoteButtonClick()
+    {
+        ToolManager.Instance.SelectTool(ToolType.Promote);
+        MaybeShowTooltip("promote",
+            "Branch Promotion Advisor",
+            "Click any terminal branch tip to set it as your promotion target.\n\n" +
+            "The advisor scores all competing branches and marks them:\n" +
+            "  Cyan circle  — your target tip\n" +
+            "  Red diamond  — Remove (strongest competitor)\n" +
+            "  Gold diamond — Trim back (shorten, don't remove)\n" +
+            "  Lime diamond — Pinch (mild tip suppression)\n\n" +
+            "Click a different tip to change the target. Right-click or ESC to clear.");
+    }
+
+    void RefreshPromotionPanel()
+    {
+        if (treeInteraction == null || promotionListContainer == null) return;
+        var target = treeInteraction.LockedPromoteTarget;
+        var scores = treeInteraction.PromotionScores;
+        if (target == null) return;
+
+        if (promotionTargetLabel != null)
+            promotionTargetLabel.text = $"Target: branch #{target.id}  (depth {target.depth})";
+
+        promotionListContainer.Clear();
+        int shown = 0;
+        foreach (var (node, score) in scores)
+        {
+            if (shown >= 8) break;
+            string action = TreeSkeleton.PromotionAction(node, score);
+            string season = TreeSkeleton.BestPromotionSeason(node, action);
+            UnityEngine.Color rowColor = action == "Remove"    ? new UnityEngine.Color(0.9f, 0.35f, 0.35f)
+                                       : action == "Pinch"     ? new UnityEngine.Color(0.55f, 1.0f, 0.15f)
+                                       : /* Trim back */         new UnityEngine.Color(0.9f, 0.65f, 0.1f);
+            var row = new UnityEngine.UIElements.VisualElement();
+            row.style.flexDirection  = UnityEngine.UIElements.FlexDirection.Row;
+            row.style.justifyContent = UnityEngine.UIElements.Justify.SpaceBetween;
+            row.style.marginBottom   = 3;
+            var lbl = new UnityEngine.UIElements.Label($"{action}  #{node.id}  d{node.depth}  {score:F2}");
+            lbl.style.color    = new UnityEngine.UIElements.StyleColor(rowColor);
+            lbl.style.fontSize = 10;
+            var seasonLbl = new UnityEngine.UIElements.Label(season);
+            seasonLbl.style.color    = new UnityEngine.UIElements.StyleColor(new UnityEngine.Color(0.6f, 0.6f, 0.6f));
+            seasonLbl.style.fontSize = 9;
+            row.Add(lbl);
+            row.Add(seasonLbl);
+            promotionListContainer.Add(row);
+            shown++;
+        }
+        if (shown == 0)
+        {
+            var empty = new UnityEngine.UIElements.Label("No competing branches found.");
+            empty.style.color    = new UnityEngine.UIElements.StyleColor(new UnityEngine.Color(0.5f, 0.5f, 0.5f));
+            empty.style.fontSize = 10;
+            promotionListContainer.Add(empty);
+        }
     }
 
     void OnSeverConfirmClick()
@@ -2214,6 +2733,667 @@ public class ButtonClicker : MonoBehaviour
         return score > 0.58f ? new Color(0.55f, 0.85f, 0.55f) :   // green  — beginner
                score > 0.38f ? new Color(0.88f, 0.72f, 0.28f) :   // amber  — moderate
                                new Color(0.88f, 0.38f, 0.38f);    // red    — expert
+    }
+
+    // ── Calendar ──────────────────────────────────────────────────────────────
+
+    static readonly string[] MonthNames =
+        { "", "January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December" };
+
+    // ── Calendar tab switching ────────────────────────────────────────────────
+
+    void SwitchCalTab(int tab)
+    {
+        if (calScheduleTab != null) calScheduleTab.style.display = tab == 0 ? DisplayStyle.Flex : DisplayStyle.None;
+        if (calModesTab    != null) calModesTab.style.display    = tab == 1 ? DisplayStyle.Flex : DisplayStyle.None;
+        if (calSpeedTab    != null) calSpeedTab.style.display    = tab == 2 ? DisplayStyle.Flex : DisplayStyle.None;
+
+        SetCalTabActive(calTabSchedule, tab == 0);
+        SetCalTabActive(calTabModes,    tab == 1);
+        SetCalTabActive(calTabSpeed,    tab == 2);
+
+        // Also hide prev/next month buttons outside schedule tab
+        var showNav = tab == 0;
+        if (calPrevMonth != null) calPrevMonth.style.display = showNav ? DisplayStyle.Flex : DisplayStyle.None;
+        if (calNextMonth != null) calNextMonth.style.display = showNav ? DisplayStyle.Flex : DisplayStyle.None;
+
+        if (tab == 1) RefreshModesTab();
+        if (tab == 2) RefreshSpeedTab();
+    }
+
+    void SetCalTabActive(Button btn, bool active)
+    {
+        if (btn == null) return;
+        btn.style.backgroundColor = active
+            ? new StyleColor(new UnityEngine.Color(60/255f, 80/255f, 40/255f))
+            : new StyleColor(new UnityEngine.Color(30/255f, 30/255f, 30/255f));
+        btn.style.color = active
+            ? new StyleColor(new UnityEngine.Color(220/255f, 220/255f, 160/255f))
+            : new StyleColor(new UnityEngine.Color(140/255f, 140/255f, 140/255f));
+    }
+
+    // ── Modes tab ─────────────────────────────────────────────────────────────
+
+    void RefreshModesTab()
+    {
+        var pm = PlayModeManager.Instance;
+        if (pm == null || calModeChips == null) return;
+
+        // Rebuild mode chips
+        calModeChips.Clear();
+        for (int i = 0; i < pm.modes.Count; i++)
+        {
+            int idx = i;
+            var mode = pm.modes[i];
+            bool active = idx == pm.activeModeIndex;
+            var btn = new Button(() => { pm.SetActiveMode(idx); RefreshModesTab(); }) { text = mode.name };
+            btn.style.height = 28;
+            btn.style.paddingLeft  = btn.style.paddingRight = 10;
+            btn.style.marginRight  = 4;
+            btn.style.marginBottom = 4;
+            btn.style.borderTopLeftRadius = btn.style.borderTopRightRadius =
+            btn.style.borderBottomLeftRadius = btn.style.borderBottomRightRadius = 4;
+            btn.style.borderTopWidth = btn.style.borderBottomWidth =
+            btn.style.borderLeftWidth = btn.style.borderRightWidth = 0;
+            btn.style.backgroundColor = active
+                ? new StyleColor(new UnityEngine.Color(229/255f, 179/255f, 16/255f))
+                : new StyleColor(new UnityEngine.Color(40/255f, 40/255f, 40/255f));
+            btn.style.color = active
+                ? new StyleColor(new UnityEngine.Color(10/255f, 10/255f, 10/255f))
+                : new StyleColor(new UnityEngine.Color(160/255f, 160/255f, 160/255f));
+            btn.style.fontSize = 11;
+            calModeChips.Add(btn);
+        }
+
+        // Populate mode settings from active mode
+        var m = pm.ActiveMode;
+        if (m == null) return;
+
+        if (calModeAutoWater  != null) calModeAutoWater.SetValueWithoutNotify(m.autoWater);
+        if (calModeAutoFert   != null) calModeAutoFert.SetValueWithoutNotify(m.autoFertilize);
+        if (calModeIdleOrbit  != null) calModeIdleOrbit.SetValueWithoutNotify(m.idleOrbit);
+        if (calModeOrbitDelay != null) calModeOrbitDelay.SetValueWithoutNotify((int)m.idleOrbitDelaySecs);
+
+        // Default speed chips
+        SetChipActive(calModeSpeedChips, "CalModeSpeedSlow", m.defaultSpeed == GameManager.SpeedMode.Slow);
+        SetChipActive(calModeSpeedChips, "CalModeSpeedMed",  m.defaultSpeed == GameManager.SpeedMode.Med);
+        SetChipActive(calModeSpeedChips, "CalModeSpeedFast", m.defaultSpeed == GameManager.SpeedMode.Fast);
+
+        // Rebuild rules list
+        if (calRulesList != null)
+        {
+            calRulesList.Clear();
+            for (int i = 0; i < m.rules.Count; i++)
+            {
+                int rIdx = i;
+                var rule = m.rules[i];
+                var row = BuildRuleRow(rule, () => { m.rules.RemoveAt(rIdx); pm.SaveModes(); RefreshModesTab(); });
+                calRulesList.Add(row);
+            }
+        }
+
+        // Hide add-rule panel
+        if (calAddRulePanel != null) calAddRulePanel.style.display = DisplayStyle.None;
+    }
+
+    VisualElement BuildRuleRow(SpeedRule rule, System.Action onDelete)
+    {
+        var row = new VisualElement();
+        row.style.flexDirection = FlexDirection.Row;
+        row.style.alignItems    = Align.Center;
+        row.style.marginBottom  = 4;
+
+        var toggle = new Toggle { value = rule.enabled };
+        toggle.style.marginRight = 6;
+        toggle.RegisterValueChangedCallback(evt => { rule.enabled = evt.newValue; PlayModeManager.Instance?.SaveModes(); });
+        row.Add(toggle);
+
+        string triggerStr = FormatTrigger(rule);
+        string speedStr   = rule.targetSpeed == GameManager.SpeedMode.Slow ? "→ Slow" :
+                            rule.targetSpeed == GameManager.SpeedMode.Med  ? "→ Med"  : "→ Fast";
+        string idleStr    = rule.idleResumeEnabled ? $" (idle {rule.idleResumeRealSeconds}s/{rule.idleResumeInGameDays}d)" : "";
+
+        var lbl = new Label($"{triggerStr}  {speedStr}{idleStr}");
+        lbl.style.flexGrow = 1;
+        lbl.style.fontSize = 10;
+        lbl.style.color    = new StyleColor(new UnityEngine.Color(180/255f, 200/255f, 180/255f));
+        lbl.style.overflow = Overflow.Hidden;
+        row.Add(lbl);
+
+        var del = new Button(onDelete) { text = "✕" };
+        del.style.width  = 22; del.style.height = 22;
+        del.style.fontSize = 10;
+        del.style.borderTopWidth = del.style.borderBottomWidth =
+        del.style.borderLeftWidth = del.style.borderRightWidth = 0;
+        del.style.borderTopLeftRadius = del.style.borderTopRightRadius =
+        del.style.borderBottomLeftRadius = del.style.borderBottomRightRadius = 3;
+        del.style.backgroundColor = new StyleColor(new UnityEngine.Color(60/255f, 20/255f, 20/255f));
+        del.style.color = new StyleColor(new UnityEngine.Color(200/255f, 100/255f, 100/255f));
+        del.style.paddingTop = del.style.paddingBottom =
+        del.style.paddingLeft = del.style.paddingRight = new StyleLength(0f);
+        row.Add(del);
+
+        return row;
+    }
+
+    string FormatTrigger(SpeedRule rule)
+    {
+        return rule.trigger switch
+        {
+            SpeedRuleTrigger.Month           => $"Month = {MonthNames[(int)rule.triggerParam]}",
+            SpeedRuleTrigger.Season          => $"Season = {(Season)(int)rule.triggerParam}",
+            SpeedRuleTrigger.MoistureBelow   => $"Moisture < {rule.triggerParam:P0}",
+            SpeedRuleTrigger.HealthBelow     => $"Health < {rule.triggerParam:P0}",
+            SpeedRuleTrigger.NutrientBelow   => $"Nutrient < {rule.triggerParam:F1}",
+            SpeedRuleTrigger.FungalLoadAbove => $"Fungal > {rule.triggerParam:P0}",
+            SpeedRuleTrigger.WeedCountAbove  => $"Weeds > {(int)rule.triggerParam}",
+            SpeedRuleTrigger.WireSetGold     => "Wire set gold",
+            SpeedRuleTrigger.TreeInDanger    => "Tree in danger",
+            _ => rule.trigger.ToString()
+        };
+    }
+
+    void RefreshRuleParamRow()
+    {
+        if (calRuleTriggerDropdown == null || calRuleParamRow == null) return;
+        int idx = calRuleTriggerDropdown.index;
+        // Triggers that need a param: 0=Month, 1=Season, 2-6=numeric, 7-8=no param
+        bool needsParam = idx <= 6;
+        calRuleParamRow.style.display = needsParam ? DisplayStyle.Flex : DisplayStyle.None;
+        if (!needsParam) return;
+
+        switch (idx)
+        {
+            case 0: // Month
+                if (calRuleParamLabel     != null) calRuleParamLabel.text = "Month:";
+                if (calRuleParamSlider    != null) { calRuleParamSlider.lowValue = 1; calRuleParamSlider.highValue = 12; calRuleParamSlider.SetValueWithoutNotify(1); }
+                if (calRuleParamValueLabel != null) calRuleParamValueLabel.text = MonthNames[1];
+                break;
+            case 1: // Season
+                if (calRuleParamLabel     != null) calRuleParamLabel.text = "Season:";
+                if (calRuleParamSlider    != null) { calRuleParamSlider.lowValue = 0; calRuleParamSlider.highValue = 3; calRuleParamSlider.SetValueWithoutNotify(0); }
+                if (calRuleParamValueLabel != null) calRuleParamValueLabel.text = "Spring";
+                break;
+            case 2: case 3: // Moisture/Health 0–1
+                if (calRuleParamLabel     != null) calRuleParamLabel.text = "Threshold:";
+                if (calRuleParamSlider    != null) { calRuleParamSlider.lowValue = 0; calRuleParamSlider.highValue = 1; calRuleParamSlider.SetValueWithoutNotify(0.3f); }
+                if (calRuleParamValueLabel != null) calRuleParamValueLabel.text = "30%";
+                break;
+            case 4: // Nutrient 0–2
+                if (calRuleParamLabel     != null) calRuleParamLabel.text = "Below:";
+                if (calRuleParamSlider    != null) { calRuleParamSlider.lowValue = 0; calRuleParamSlider.highValue = 2; calRuleParamSlider.SetValueWithoutNotify(0.5f); }
+                if (calRuleParamValueLabel != null) calRuleParamValueLabel.text = "0.5";
+                break;
+            case 5: // Fungal 0–1
+                if (calRuleParamLabel     != null) calRuleParamLabel.text = "Above:";
+                if (calRuleParamSlider    != null) { calRuleParamSlider.lowValue = 0; calRuleParamSlider.highValue = 1; calRuleParamSlider.SetValueWithoutNotify(0.4f); }
+                if (calRuleParamValueLabel != null) calRuleParamValueLabel.text = "40%";
+                break;
+            case 6: // Weed count
+                if (calRuleParamLabel     != null) calRuleParamLabel.text = "Count >:";
+                if (calRuleParamSlider    != null) { calRuleParamSlider.lowValue = 0; calRuleParamSlider.highValue = 10; calRuleParamSlider.SetValueWithoutNotify(0); }
+                if (calRuleParamValueLabel != null) calRuleParamValueLabel.text = "0";
+                break;
+        }
+    }
+
+    string FormatRuleParam(int triggerIdx, float val)
+    {
+        return triggerIdx switch
+        {
+            0 => MonthNames[Mathf.Clamp(Mathf.RoundToInt(val), 1, 12)],
+            1 => ((Season)Mathf.RoundToInt(val)).ToString(),
+            2 => $"{val:P0}",
+            3 => $"{val:P0}",
+            4 => $"{val:F1}",
+            5 => $"{val:P0}",
+            6 => $"{Mathf.RoundToInt(val)}",
+            _ => val.ToString("F2")
+        };
+    }
+
+    void ConfirmAddRule()
+    {
+        var pm = PlayModeManager.Instance;
+        var m  = pm?.ActiveMode;
+        if (m == null) return;
+
+        int  triggerIdx = calRuleTriggerDropdown?.index ?? 0;
+        float param     = calRuleParamSlider?.value ?? 0f;
+        if (triggerIdx == 0) param = Mathf.RoundToInt(param);   // month int
+        if (triggerIdx == 1) param = Mathf.RoundToInt(param);   // season enum int
+
+        var rule = new SpeedRule
+        {
+            enabled             = true,
+            trigger             = (SpeedRuleTrigger)triggerIdx,
+            triggerParam        = param,
+            targetSpeed         = calEditRuleSpeed,
+            idleResumeEnabled   = calRuleIdleToggle?.value ?? false,
+            idleResumeRealSeconds = calRuleIdleReal?.value ?? 0f,
+            idleResumeInGameDays  = calRuleIdleDays?.value ?? 0f,
+        };
+
+        m.rules.Add(rule);
+        pm.SaveModes();
+        if (calAddRulePanel != null) calAddRulePanel.style.display = DisplayStyle.None;
+        RefreshModesTab();
+    }
+
+    // ── Speed tab ─────────────────────────────────────────────────────────────
+
+    void RefreshSpeedTab()
+    {
+        if (calSpeedSlowSlider != null) calSpeedSlowSlider.SetValueWithoutNotify(GameManager.TIMESCALE_SLOW);
+        if (calSpeedMedSlider  != null) calSpeedMedSlider.SetValueWithoutNotify(GameManager.TIMESCALE_MED);
+        if (calSpeedFastSlider != null) calSpeedFastSlider.SetValueWithoutNotify(GameManager.TIMESCALE_FAST);
+        UpdateSpeedHints();
+    }
+
+    void OnSpeedSliderChanged()
+    {
+        float s = calSpeedSlowSlider?.value ?? GameManager.TIMESCALE_SLOW;
+        float m = calSpeedMedSlider?.value  ?? GameManager.TIMESCALE_MED;
+        float f = calSpeedFastSlider?.value ?? GameManager.TIMESCALE_FAST;
+
+        // Enforce Slow < Med < Fast with small gaps
+        s = Mathf.Min(s, m - 0.1f);
+        m = Mathf.Clamp(m, s + 0.1f, f - 1f);
+        f = Mathf.Max(f, m + 1f);
+
+        GameManager.TIMESCALE_SLOW = s;
+        GameManager.TIMESCALE_MED  = m;
+        GameManager.TIMESCALE_FAST = f;
+        GameManager.SaveTimescalePrefs();
+
+        // Sync current TIMESCALE if mode matches
+        GameManager.Instance?.SetSpeedMode(GameManager.CurrentSpeed);
+
+        UpdateSpeedHints();
+    }
+
+    void UpdateSpeedHints()
+    {
+        if (calSpeedSlowValue != null) calSpeedSlowValue.text = $"{GameManager.TIMESCALE_SLOW:F1}×";
+        if (calSpeedMedValue  != null) calSpeedMedValue.text  = $"{GameManager.TIMESCALE_MED:F1}×";
+        if (calSpeedFastValue != null) calSpeedFastValue.text = $"{GameManager.TIMESCALE_FAST:F0}×";
+        if (calSpeedSlowHint  != null) calSpeedSlowHint.text  = FormatDayDuration(GameManager.TIMESCALE_SLOW);
+        if (calSpeedMedHint   != null) calSpeedMedHint.text   = FormatDayDuration(GameManager.TIMESCALE_MED);
+        if (calSpeedFastHint  != null) calSpeedFastHint.text  = FormatDayDuration(GameManager.TIMESCALE_FAST);
+    }
+
+    static string FormatDayDuration(float timescale)
+    {
+        float secs = 24f / timescale;
+        if (secs >= 60f)  return $"1 in-game day = {secs / 60f:F1} real minutes";
+        if (secs >= 1f)   return $"1 in-game day = {secs:F0} real seconds";
+        // Faster than 1 day per second — invert so we never show "0 real seconds"
+        float daysPerSec = timescale / 24f;
+        return $"{daysPerSec:F1} in-game days = 1 real second";
+    }
+
+    // ── Chip helpers ──────────────────────────────────────────────────────────
+
+    void SetChipActive(VisualElement container, string name, bool active)
+    {
+        if (container == null) return;
+        var btn = container.Q<Button>(name);
+        if (btn == null) return;
+        btn.style.backgroundColor = active
+            ? new StyleColor(new UnityEngine.Color(229/255f, 179/255f, 16/255f))
+            : new StyleColor(new UnityEngine.Color(40/255f, 40/255f, 40/255f));
+        btn.style.color = active
+            ? new StyleColor(new UnityEngine.Color(10/255f, 10/255f, 10/255f))
+            : new StyleColor(new UnityEngine.Color(160/255f, 160/255f, 160/255f));
+    }
+
+    void WireChipGroup(VisualElement container, string[] names, VisualElement root, System.Action<int> onSelect)
+    {
+        if (container == null) return;
+        for (int i = 0; i < names.Length; i++)
+        {
+            int idx  = i;
+            var btn  = root.Q<Button>(names[idx]);
+            if (btn == null) continue;
+            btn.RegisterCallback<ClickEvent>(_ =>
+            {
+                for (int j = 0; j < names.Length; j++)
+                    SetChipActive(container, names[j], j == idx);
+                onSelect(idx);
+            });
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    void OpenCalendar()
+    {
+        if (calendarOverlay == null) return;
+        ToolManager.Instance?.ClearTool();
+        calViewMonth = GameManager.month;
+        calViewYear  = GameManager.year;
+        BuildCalendarGrid();
+        CalShowView(calMonthView);
+        SwitchCalTab(0);   // always open on Schedule tab
+        calendarOverlay.style.display = DisplayStyle.Flex;
+        GameManager.Instance?.UpdateGameState(GameState.CalendarOpen);
+
+        MaybeShowTooltip("calendar_schedule_v3",
+            "Care Scheduling",
+            "Use the calendar to set up a watering and fertilizing routine.\n\n" +
+            "Watering: Ficus prefer soil that dries slightly between waterings. " +
+            "In spring and summer, water every 1–2 days. In autumn, every 2–3 days. " +
+            "In winter, water sparingly — every 4–5 days is usually enough.\n\n" +
+            "Fertilizing: Feed every 1–2 weeks during the growing season (spring–summer) " +
+            "with a balanced fertilizer. Switch to low-nitrogen in late summer to harden " +
+            "growth. Do not fertilize in winter — the tree is dormant and can't use it.\n\n" +
+            "Tap any day to schedule an event. Tick 'Repeating' to set it on a cycle, " +
+            "and pick a season so it only fires when appropriate.");
+    }
+
+    void CloseCalendar()
+    {
+        if (calendarOverlay == null) return;
+        calendarOverlay.style.display = DisplayStyle.None;
+        var gm = GameManager.Instance;
+        if (gm != null)
+        {
+            // State may have drifted from CalendarOpen (e.g. TreeInteraction transiently
+            // set Wiring while the calendar was open), so check both.
+            if (gm.state == GameState.CalendarOpen || gm.state == GameState.Wiring ||
+                gm.state == GameState.Shaping || gm.state == GameState.Pruning)
+                gm.UpdateGameState(gm.StateForMonth(GameManager.month));
+            // Always restore — CalendarOpen froze time and nothing else restores it.
+            Time.timeScale = 1f;
+            // Return to medium speed; PlayModeManager will re-evaluate rules next frame.
+            gm.SetSpeedMode(GameManager.SpeedMode.Med);
+        }
+    }
+
+    void CalShowView(VisualElement view)
+    {
+        if (calMonthView != null) calMonthView.style.display = DisplayStyle.None;
+        if (calDayView   != null) calDayView.style.display   = DisplayStyle.None;
+        if (calEventView != null) calEventView.style.display = DisplayStyle.None;
+        if (view != null) view.style.display = DisplayStyle.Flex;
+    }
+
+    void BuildCalendarGrid()
+    {
+        if (calGrid == null || calMonthYearLabel == null) return;
+        calGrid.Clear();
+        calMonthYearLabel.text = $"{MonthNames[calViewMonth]} {calViewYear}";
+
+        int daysInMonth = GameManager.DaysInMonth(calViewMonth, calViewYear);
+        // Day of week for the 1st (0=Mon … 6=Sun using ISO)
+        int firstDow = ((int)new System.DateTime(calViewYear, calViewMonth, 1).DayOfWeek + 6) % 7;
+
+        // Empty cells before the 1st
+        for (int i = 0; i < firstDow; i++)
+            calGrid.Add(MakeDayCell(-1, false, false, false));
+
+        for (int d = 1; d <= daysInMonth; d++)
+        {
+            int dayCapture = d;
+            bool isToday  = calViewMonth == GameManager.month && calViewYear == GameManager.year && d == GameManager.day;
+            bool hasWater = GameManager.schedule.Exists(e => e.type == ScheduledEventType.Water    && GameManager.EventFiresOnDate(e, calViewMonth, d, calViewYear));
+            bool hasFert  = GameManager.schedule.Exists(e => e.type == ScheduledEventType.Fertilize && GameManager.EventFiresOnDate(e, calViewMonth, d, calViewYear));
+            var cell = MakeDayCell(d, isToday, hasWater, hasFert);
+            cell.RegisterCallback<ClickEvent>(_ => OpenDayDetail(dayCapture));
+            calGrid.Add(cell);
+        }
+    }
+
+    VisualElement MakeDayCell(int day, bool isToday, bool hasWater, bool hasFert)
+    {
+        var cell = new VisualElement();
+        cell.style.width  = new StyleLength(new Length(100f / 7f, LengthUnit.Percent));
+        cell.style.height = 46;
+        cell.style.alignItems     = Align.Center;
+        cell.style.justifyContent = Justify.Center;
+        cell.style.borderTopLeftRadius     = new StyleLength(4);
+        cell.style.borderTopRightRadius    = new StyleLength(4);
+        cell.style.borderBottomLeftRadius  = new StyleLength(4);
+        cell.style.borderBottomRightRadius = new StyleLength(4);
+        cell.style.marginBottom  = 2;
+
+        if (day <= 0) return cell;  // spacer
+
+        if (isToday)
+            cell.style.backgroundColor = new StyleColor(new Color(0.90f, 0.70f, 0.06f, 0.25f));
+
+        cell.style.cursor = new StyleCursor(new UnityEngine.UIElements.Cursor());
+
+        var lbl = new Label(day.ToString());
+        lbl.style.color = isToday
+            ? new StyleColor(new Color(1f, 0.88f, 0.2f))
+            : new StyleColor(new Color(0.80f, 0.85f, 0.80f));
+        lbl.style.fontSize = 13;
+        cell.Add(lbl);
+
+        if (hasWater || hasFert)
+        {
+            var dotRow = new VisualElement();
+            dotRow.style.flexDirection = FlexDirection.Row;
+            dotRow.style.marginTop     = 2;
+
+            if (hasWater) dotRow.Add(MakeDot(new Color(0.25f, 0.55f, 1.00f)));  // blue
+            if (hasFert)  dotRow.Add(MakeDot(new Color(0.25f, 0.80f, 0.35f)));  // green
+
+            cell.Add(dotRow);
+        }
+
+        return cell;
+    }
+
+    VisualElement MakeDot(Color color)
+    {
+        var dot = new VisualElement();
+        dot.style.width  = 5;
+        dot.style.height = 5;
+        dot.style.borderTopLeftRadius     = new StyleLength(3);
+        dot.style.borderTopRightRadius    = new StyleLength(3);
+        dot.style.borderBottomLeftRadius  = new StyleLength(3);
+        dot.style.borderBottomRightRadius = new StyleLength(3);
+        dot.style.backgroundColor = new StyleColor(color);
+        dot.style.marginLeft      = 1;
+        dot.style.marginRight     = 1;
+        return dot;
+    }
+
+    void OpenDayDetail(int day)
+    {
+        calSelectedDay = day;
+        if (calDayTitleLabel != null)
+        {
+            var dt = new System.DateTime(calViewYear, calViewMonth, day);
+            calDayTitleLabel.text = $"{dt.DayOfWeek}, {MonthNames[calViewMonth]} {day}";
+        }
+        RebuildDayEventList();
+        CalShowView(calDayView);
+    }
+
+    void RebuildDayEventList()
+    {
+        if (calDayEventList == null) return;
+        calDayEventList.Clear();
+
+        var events = GameManager.schedule.FindAll(e => e.month == calViewMonth && e.day == calSelectedDay);
+        if (events.Count == 0)
+        {
+            var empty = new Label("No events scheduled.");
+            empty.style.color    = new StyleColor(new Color(0.5f, 0.5f, 0.5f));
+            empty.style.fontSize = 11;
+            empty.style.marginBottom = 4;
+            calDayEventList.Add(empty);
+            return;
+        }
+
+        foreach (var ev in events)
+        {
+            var evCopy = ev;
+            var row    = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems    = Align.Center;
+            row.style.marginBottom  = 4;
+
+            string icon   = ev.type == ScheduledEventType.Water ? "💧" : "🌿";
+            string repeat = ev.repeat == RepeatMode.Once ? "Once"
+                : ev.repeat == RepeatMode.EveryNDays  ? $"Every {ev.repeatInterval}d"
+                : $"Every {ev.repeatInterval}w";
+            string season = ev.season == Season.AllYear ? "" : $" · {ev.season}";
+            string tod    = ev.timeOfDay.ToString();
+
+            var lbl = new Label($"{icon} {ev.type} · {ev.amount} · {tod} · {repeat}{season}");
+            lbl.style.flexGrow   = 1;
+            lbl.style.fontSize   = 11;
+            lbl.style.color      = new StyleColor(new Color(0.75f, 0.85f, 0.75f));
+            lbl.style.whiteSpace = new StyleEnum<WhiteSpace>(WhiteSpace.Normal);
+
+            var toggle = new Toggle();
+            toggle.value = ev.enabled;
+            toggle.RegisterValueChangedCallback(e => { evCopy.enabled = e.newValue; });
+
+            var del = new Button(() => { GameManager.schedule.Remove(evCopy); RebuildDayEventList(); BuildCalendarGrid(); });
+            del.text = "✕";
+            del.style.width           = 24;
+            del.style.height          = 24;
+            del.style.backgroundColor = new StyleColor(new Color(0.3f, 0.1f, 0.1f));
+            del.style.color           = new StyleColor(new Color(0.8f, 0.4f, 0.4f));
+            del.style.borderLeftWidth         = 0;
+            del.style.borderRightWidth        = 0;
+            del.style.borderTopWidth          = 0;
+            del.style.borderBottomWidth       = 0;
+            del.style.borderTopLeftRadius     = new StyleLength(4);
+            del.style.borderTopRightRadius    = new StyleLength(4);
+            del.style.borderBottomLeftRadius  = new StyleLength(4);
+            del.style.borderBottomRightRadius = new StyleLength(4);
+            del.style.cursor          = new StyleCursor(new UnityEngine.UIElements.Cursor());
+
+            row.Add(lbl);
+            row.Add(toggle);
+            row.Add(del);
+            calDayEventList.Add(row);
+        }
+    }
+
+    void OpenEventDetail(ScheduledEventType type)
+    {
+        calEditType     = type;
+        calEditAmount   = ScheduledEventAmount.Light;
+        calEditFertType = 0;
+        calEditTimeOfDay = TimeOfDay.Morning;
+        calEditSeason   = Season.AllYear;
+        calEditRepeat   = RepeatMode.Once;
+        calEditRepeatN  = 2;
+
+        if (calEventTitleLabel != null)
+            calEventTitleLabel.text = type == ScheduledEventType.Water ? "Schedule Watering" : "Schedule Fertilizer";
+
+        if (calFertTypeRow != null)
+            calFertTypeRow.style.display = type == ScheduledEventType.Fertilize ? DisplayStyle.Flex : DisplayStyle.None;
+
+        if (calRepeatToggle != null) calRepeatToggle.value = false;
+        if (calRepeatOptions != null) calRepeatOptions.style.display = DisplayStyle.None;
+        calEditRepeatN = 1;
+        if (calRepeatNLabel != null) calRepeatNLabel.text = "1";
+
+        RefreshCalendarChips();
+        CalShowView(calEventView);
+    }
+
+    void WireCalendarChips()
+    {
+        WireChip("CalAmtLight",      () => { calEditAmount = ScheduledEventAmount.Light;  RefreshCalendarChips(); });
+        WireChip("CalAmtMedium",     () => { calEditAmount = ScheduledEventAmount.Medium; RefreshCalendarChips(); });
+        WireChip("CalAmtHeavy",      () => { calEditAmount = ScheduledEventAmount.Heavy;  RefreshCalendarChips(); });
+        WireChip("CalFertBalanced",  () => { calEditFertType = 0; RefreshCalendarChips(); });
+        WireChip("CalFertHighN",     () => { calEditFertType = 1; RefreshCalendarChips(); });
+        WireChip("CalFertHighP",     () => { calEditFertType = 2; RefreshCalendarChips(); });
+        WireChip("CalFertLowN",      () => { calEditFertType = 3; RefreshCalendarChips(); });
+        WireChip("CalTimeMorning",   () => { calEditTimeOfDay = TimeOfDay.Morning; RefreshCalendarChips(); });
+        WireChip("CalTimeMidday",    () => { calEditTimeOfDay = TimeOfDay.Midday;  RefreshCalendarChips(); });
+        WireChip("CalTimeNight",     () => { calEditTimeOfDay = TimeOfDay.Night;   RefreshCalendarChips(); });
+        WireChip("CalSeasonAll",     () => { calEditSeason = Season.AllYear; RefreshCalendarChips(); });
+        WireChip("CalSeasonSpring",  () => { calEditSeason = Season.Spring;  RefreshCalendarChips(); });
+        WireChip("CalSeasonSummer",  () => { calEditSeason = Season.Summer;  RefreshCalendarChips(); });
+        WireChip("CalSeasonAutumn",  () => { calEditSeason = Season.Autumn;  RefreshCalendarChips(); });
+        WireChip("CalSeasonWinter",  () => { calEditSeason = Season.Winter;  RefreshCalendarChips(); });
+        WireChip("CalCadenceDays",   () => { calEditRepeat = RepeatMode.EveryNDays;  RefreshCalendarChips(); });
+        WireChip("CalCadenceWeeks",  () => { calEditRepeat = RepeatMode.EveryNWeeks; RefreshCalendarChips(); });
+
+        calRepeatNDec?.RegisterCallback<ClickEvent>(_ => {
+            calEditRepeatN = Mathf.Max(1, calEditRepeatN - 1);
+            if (calRepeatNLabel != null) calRepeatNLabel.text = calEditRepeatN.ToString();
+        });
+        calRepeatNInc?.RegisterCallback<ClickEvent>(_ => {
+            calEditRepeatN = Mathf.Min(99, calEditRepeatN + 1);
+            if (calRepeatNLabel != null) calRepeatNLabel.text = calEditRepeatN.ToString();
+        });
+    }
+
+    void WireChip(string name, System.Action onClick)
+    {
+        var btn = buttonDocument?.rootVisualElement.Q(name) as Button;
+        btn?.RegisterCallback<ClickEvent>(_ => onClick());
+    }
+
+    void RefreshCalendarChips()
+    {
+        SetChipActive("CalAmtLight",     calEditAmount == ScheduledEventAmount.Light);
+        SetChipActive("CalAmtMedium",    calEditAmount == ScheduledEventAmount.Medium);
+        SetChipActive("CalAmtHeavy",     calEditAmount == ScheduledEventAmount.Heavy);
+        SetChipActive("CalFertBalanced", calEditFertType == 0);
+        SetChipActive("CalFertHighN",    calEditFertType == 1);
+        SetChipActive("CalFertHighP",    calEditFertType == 2);
+        SetChipActive("CalFertLowN",     calEditFertType == 3);
+        SetChipActive("CalTimeMorning",  calEditTimeOfDay == TimeOfDay.Morning);
+        SetChipActive("CalTimeMidday",   calEditTimeOfDay == TimeOfDay.Midday);
+        SetChipActive("CalTimeNight",    calEditTimeOfDay == TimeOfDay.Night);
+        SetChipActive("CalSeasonAll",    calEditSeason == Season.AllYear);
+        SetChipActive("CalSeasonSpring", calEditSeason == Season.Spring);
+        SetChipActive("CalSeasonSummer", calEditSeason == Season.Summer);
+        SetChipActive("CalSeasonAutumn", calEditSeason == Season.Autumn);
+        SetChipActive("CalSeasonWinter", calEditSeason == Season.Winter);
+
+        bool repeating = calRepeatToggle?.value ?? false;
+        SetChipActive("CalCadenceDays",  repeating && calEditRepeat == RepeatMode.EveryNDays);
+        SetChipActive("CalCadenceWeeks", repeating && calEditRepeat == RepeatMode.EveryNWeeks);
+    }
+
+    void SetChipActive(string name, bool active)
+    {
+        var btn = buttonDocument?.rootVisualElement.Q(name) as Button;
+        if (btn == null) return;
+        btn.style.backgroundColor = active
+            ? new StyleColor(new Color(0.90f, 0.70f, 0.06f))
+            : new StyleColor(new Color(0.16f, 0.16f, 0.16f));
+        btn.style.color = active
+            ? new StyleColor(new Color(0.04f, 0.04f, 0.04f))
+            : new StyleColor(new Color(0.63f, 0.63f, 0.63f));
+    }
+
+    void ConfirmCalendarEvent()
+    {
+        bool repeating = calRepeatToggle?.value ?? false;
+        var ev = new ScheduledEvent
+        {
+            id             = System.Guid.NewGuid().ToString(),
+            type           = calEditType,
+            amount         = calEditAmount,
+            fertType       = calEditFertType,
+            month          = calViewMonth,
+            day            = calSelectedDay,
+            repeat         = repeating ? calEditRepeat : RepeatMode.Once,
+            repeatInterval = calEditRepeatN,
+            season         = repeating ? calEditSeason : Season.AllYear,
+            timeOfDay      = calEditTimeOfDay,
+            enabled        = true,
+        };
+        GameManager.schedule.Add(ev);
+        OpenDayDetail(calSelectedDay);   // return to day view, list rebuilds
+        BuildCalendarGrid();             // refresh dots
     }
 
     static string SoilLabel(float retention) =>

@@ -152,11 +152,64 @@ public class Leaf : MonoBehaviour
 
         leafRenderer.GetPropertyBlock(propBlock);
         propBlock.SetColor("_Color", color);      // Standard / Unlit shaders
+        propBlock.SetColor("_BaseColor", color);  // URP shaders
         leafRenderer.SetPropertyBlock(propBlock);
     }
 
     /// <summary>Force a colour refresh — called by LeafManager after updating fungalSeverity.</summary>
     public void ForceRefreshColor() => UpdateLeafColor();
+
+    /// <summary>
+    /// Deforms this leaf's mesh in place with a random twist (rotation around the stem/Z axis,
+    /// growing from base to tip) and a cup curl (blade edges droop relative to the center).
+    /// Call once immediately after instantiation, before the scale-in begins.
+    /// twistDeg: signed degrees of rotation at the tip (e.g. ±25).
+    /// curlFraction: 0=flat, 1=edges droop by 100% of leaf length at the tip.
+    /// </summary>
+    public void ApplyDeformation(float twistDeg, float curlFraction)
+    {
+        foreach (var mf in GetComponentsInChildren<MeshFilter>())
+        {
+            if (mf.sharedMesh == null) continue;
+            if (!mf.sharedMesh.isReadable) continue;   // Read/Write not enabled in import settings
+            var mesh  = Instantiate(mf.sharedMesh);
+            var verts = mesh.vertices;
+
+            float zMin = float.MaxValue, zMax = float.MinValue, xMax = 0f;
+            foreach (var v in verts)
+            {
+                if (v.z < zMin) zMin = v.z;
+                if (v.z > zMax) zMax = v.z;
+                if (Mathf.Abs(v.x) > xMax) xMax = Mathf.Abs(v.x);
+            }
+            float zRange = zMax - zMin;
+            if (zRange < 0.0001f) { mf.mesh = mesh; continue; }
+
+            for (int i = 0; i < verts.Length; i++)
+            {
+                float t = (verts[i].z - zMin) / zRange;   // 0 = stem end, 1 = leaf tip
+
+                // Twist: rotate XY plane around Z axis, increasing toward tip
+                float rad  = twistDeg * t * Mathf.Deg2Rad;
+                float cosA = Mathf.Cos(rad), sinA = Mathf.Sin(rad);
+                float x    = verts[i].x * cosA - verts[i].y * sinA;
+                float y    = verts[i].x * sinA + verts[i].y * cosA;
+                verts[i]   = new Vector3(x, y, verts[i].z);
+
+                // Cup curl: blade edges droop downward proportional to (x/xMax)^2 * t
+                if (xMax > 0.0001f)
+                {
+                    float xNorm  = verts[i].x / xMax;
+                    verts[i].y  -= curlFraction * zRange * xNorm * xNorm * t;
+                }
+            }
+
+            mesh.vertices = verts;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            mf.mesh = mesh;
+        }
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 

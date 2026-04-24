@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire, Paste, AirLayer, Pinch, Defoliate, Graft }
+public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire, Paste, AirLayer, Pinch, Defoliate, Graft, Promote }
 
 public class ToolManager : MonoBehaviour
 {
@@ -23,6 +23,7 @@ public class ToolManager : MonoBehaviour
         ToolType.Pinch,
         ToolType.Defoliate,
         ToolType.Graft,
+        ToolType.Promote,
     };
 
     void Awake() => Instance = this;
@@ -72,6 +73,7 @@ public class ToolManager : MonoBehaviour
         GameManager.canPinch      = tool == ToolType.Pinch;
         GameManager.canDefoliate  = tool == ToolType.Defoliate;
         GameManager.canGraft      = tool == ToolType.Graft;
+        GameManager.canPromote    = tool == ToolType.Promote;
         Debug.Log($"[Tool] SelectTool={tool} | canTrim={GameManager.canTrim} canWire={GameManager.canWire} canRemoveWire={GameManager.canRemoveWire} canPaste={GameManager.canPaste} | gameState={GameManager.Instance?.state}");
     }
 
@@ -87,6 +89,7 @@ public class ToolManager : MonoBehaviour
         GameManager.canPinch      = false;
         GameManager.canDefoliate  = false;
         GameManager.canGraft      = false;
+        GameManager.canPromote    = false;
         Debug.Log($"[Tool] ClearTool | gameState={GameManager.Instance?.state}");
     }
 }

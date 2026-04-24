@@ -55,6 +55,10 @@ public class WeedManager : MonoBehaviour
     float   potRadius;
     float   trunkRadius;
 
+    // ── Events ────────────────────────────────────────────────────────────────
+
+    public static event System.Action OnFirstWeedSpawned;
+
     // ── Properties ────────────────────────────────────────────────────────────
 
     public int  ActiveWeedCount         => activeWeeds.Count;
@@ -317,6 +321,7 @@ public class WeedManager : MonoBehaviour
         }
 
         activeWeeds.Add(weed);
+        OnFirstWeedSpawned?.Invoke();
         Debug.Log($"[Weeds] Spawned {go.name} at {pos} | " +
                   $"force={weed.forceRequired:F3} rip={weed.ripChance:F2}");
     }

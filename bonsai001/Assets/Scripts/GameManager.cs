@@ -32,6 +32,7 @@ public class GameManager : MonoBehaviour
     public static bool canPinch         = false;
     public static bool canDefoliate     = false;
     public static bool canGraft         = false;
+    public static bool canPromote       = false;
     public static float selectionRadius = 0.5f;
 
     // Saved state to restore when exiting RootPrune mode.
@@ -61,10 +62,9 @@ public class GameManager : MonoBehaviour
                 case 3:  return 0.3f;   // March   — buds break, slow start
                 case 4:  return 1.0f;   // April   — peak growth
                 case 5:  return 1.0f;   // May     — peak growth
-                case 6:  return 0.6f;   // June    — slowing
-                case 7:  return 0.5f;   // July
-                case 8:  return 0.4f;   // August  — winding down
-                default: return 0.0f;   // Sep–Feb — dormant
+                case 6:  return 0.4f;   // June    — first hardening, noticeably slower
+                case 7:  return 0.1f;   // July    — nearly stopped
+                default: return 0.0f;   // Aug–Feb — dormant
             }
         }
     }
@@ -92,18 +92,37 @@ public class GameManager : MonoBehaviour
     GameObject skyLight;
 
     //Time Stuff
-    public static float TIMESCALE = 200f;
-    /// Fast speed — default. 200 game-hours per real second.
-    public const float TIMESCALE_FAST = 200f;
-    /// Medium speed — roughly 10× real-time. Good for watching active growth.
-    public const float TIMESCALE_MED  = 10f;
-    /// Slow speed — 1 game-hour = 2 real seconds (0.5 game-hrs/real-sec). Comfortable for trimming.
-    public const float TIMESCALE_SLOW = 0.5f;
+    public static float TIMESCALE = 10f;   // set from TIMESCALE_MED after PlayerPrefs load
+    // Player-configurable speed ratios — loaded from PlayerPrefs, defaulting to these values.
+    public static float TIMESCALE_FAST = 200f;
+    public static float TIMESCALE_MED  = 10f;
+    public static float TIMESCALE_SLOW = 0.5f;
     /// Slowest allowed timescale: 1 game minute per real second (TIMESCALE = 1/60 game-hrs/sec).
     public const float TIMESCALE_MIN = 1f / 60f;
 
+    /// <summary>Persist the three speed ratios to PlayerPrefs.</summary>
+    public static void SaveTimescalePrefs()
+    {
+        PlayerPrefs.SetFloat("ts_slow", TIMESCALE_SLOW);
+        PlayerPrefs.SetFloat("ts_med",  TIMESCALE_MED);
+        PlayerPrefs.SetFloat("ts_fast", TIMESCALE_FAST);
+        PlayerPrefs.Save();
+    }
+
+    static void LoadTimescalePrefs()
+    {
+        TIMESCALE_SLOW = PlayerPrefs.GetFloat("ts_slow", 0.5f);
+        TIMESCALE_MED  = PlayerPrefs.GetFloat("ts_med",  10f);
+        TIMESCALE_FAST = PlayerPrefs.GetFloat("ts_fast", 200f);
+        // Enforce ordering
+        TIMESCALE_SLOW = Mathf.Clamp(TIMESCALE_SLOW, TIMESCALE_MIN, TIMESCALE_MED - 0.1f);
+        TIMESCALE_MED  = Mathf.Clamp(TIMESCALE_MED,  TIMESCALE_SLOW + 0.1f, TIMESCALE_FAST - 1f);
+        TIMESCALE_FAST = Mathf.Clamp(TIMESCALE_FAST, TIMESCALE_MED  + 1f,   500f);
+        TIMESCALE = TIMESCALE_MED;
+    }
+
     public enum SpeedMode { Slow, Med, Fast }
-    public static SpeedMode CurrentSpeed { get; private set; } = SpeedMode.Fast;
+    public static SpeedMode CurrentSpeed { get; private set; } = SpeedMode.Med;
     /// Back-compat: true when Slow mode is active.
     public static bool IsSlowSpeed => CurrentSpeed == SpeedMode.Slow;
 
@@ -112,8 +131,101 @@ public class GameManager : MonoBehaviour
     public static int day, month, year;
     public static float hour;
 
-    /// <summary>Approximate day of year (1–336). Each month = 28 days, year starts March=1.</summary>
-    public static int dayOfYear => (month - 1) * 28 + day;
+    // ── Real calendar ─────────────────────────────────────────────────────────
+    static readonly int[] DaysInMonthTable = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    public static bool IsLeapYear(int y) => (y % 4 == 0) && (y % 100 != 0 || y % 400 == 0);
+    public static int DaysInMonth(int m, int y) => (m == 2 && IsLeapYear(y)) ? 29 : DaysInMonthTable[m - 1];
+
+    /// <summary>Day of year using real month lengths (1–365/366).</summary>
+    public static int dayOfYear
+    {
+        get
+        {
+            int total = 0;
+            for (int m = 1; m < month; m++) total += DaysInMonth(m, year);
+            return total + day;
+        }
+    }
+
+    // ── Scheduled care events ─────────────────────────────────────────────────
+    public static List<ScheduledEvent> schedule = new List<ScheduledEvent>();
+    static int lastCheckedDay = -1;
+
+    static int TimeOfDayHour(TimeOfDay t) => t switch
+    {
+        TimeOfDay.Morning => 7,
+        TimeOfDay.Midday  => 12,
+        TimeOfDay.Night   => 21,
+        _                 => 7,
+    };
+
+    public static bool IsInSeason(Season s, int m) => s switch
+    {
+        Season.Spring  => m >= 3 && m <= 5,
+        Season.Summer  => m >= 6 && m <= 8,
+        Season.Autumn  => m >= 9 && m <= 10,
+        Season.Winter  => m >= 11 || m <= 2,
+        _              => true,
+    };
+
+    static bool EventFiresToday(ScheduledEvent ev, int m, int d, int y, int doy)
+    {
+        if (ev.repeat != RepeatMode.Once && ev.season != Season.AllYear && !IsInSeason(ev.season, m))
+            return false;
+
+        int originDoy = 0;
+        for (int i = 1; i < ev.month; i++) originDoy += DaysInMonth(i, y);
+        originDoy += ev.day;
+
+        switch (ev.repeat)
+        {
+            case RepeatMode.Once:
+                return ev.month == m && ev.day == d;
+            case RepeatMode.EveryNDays:
+            {
+                int diff = doy - originDoy;
+                int interval = ev.repeatInterval;
+                return interval > 0 && ((diff % interval + interval) % interval) == 0;
+            }
+            case RepeatMode.EveryNWeeks:
+            {
+                int diff = doy - originDoy;
+                int interval = ev.repeatInterval * 7;
+                return interval > 0 && ((diff % interval + interval) % interval) == 0;
+            }
+            default: return false;
+        }
+    }
+
+    /// <summary>Returns true if the given event fires on the specified calendar date.</summary>
+    public static bool EventFiresOnDate(ScheduledEvent ev, int m, int d, int y)
+    {
+        if (!ev.enabled) return false;
+        int doy = 0;
+        for (int i = 1; i < m; i++) doy += DaysInMonth(i, y);
+        doy += d;
+        return EventFiresToday(ev, m, d, y, doy);
+    }
+
+    void CheckScheduledEvents()
+    {
+        if (lastCheckedDay == day) return;
+        lastCheckedDay = day;
+
+        int doy = dayOfYear;
+        var sk = FindAnyObjectByType<TreeSkeleton>();
+        foreach (var ev in schedule)
+        {
+            if (!ev.enabled) continue;
+            if (!EventFiresToday(ev, month, day, year, doy)) continue;
+            switch (ev.type)
+            {
+                case ScheduledEventType.Water:      sk?.Water(); break;
+                case ScheduledEventType.Fertilize:  sk?.Fertilize(); break;
+            }
+        }
+    }
+
     static int lastCalendarMinute = -1;
 
     public Text calendar;
@@ -125,22 +237,18 @@ public class GameManager : MonoBehaviour
 
     void Awake(){
         Instance = this;
+        month = 3;
+        day   = 1;
+        year  = 2123;
+        hour  = 12f;
+        LoadTimescalePrefs();
         // If any named saves exist, show the load menu; otherwise go straight to species pick.
         UpdateGameState(SaveManager.HasAnySave() ? GameState.LoadMenu : GameState.SpeciesSelect);
     }
 
     void Start(){
-
-
-        month = 3;
-        day = 1;
-        year = 2123;
-        hour = 12f;
-
         rend = cityDay.GetComponent<SpriteRenderer>();
-        sky = skyLight.GetComponent<Light>();
-
-
+        sky  = skyLight.GetComponent<Light>();
     }
     
     void Update(){
@@ -208,27 +316,26 @@ public class GameManager : MonoBehaviour
 
 
 
-        if(hour >= 24f){
+        if (hour >= 24f)
+        {
             day++;
             hour = 0f;
+            CheckScheduledEvents();
             TextCallFunction();
-
         }
-        if(day > 28){
-
+        if (day > DaysInMonth(month, year))
+        {
             month++;
             day = 1;
             SetMonthText();
             TextCallFunction();
-
         }
-        if(month > 12){
-
+        if (month > 12)
+        {
             month = 1;
             year++;
             SetMonthText();
             TextCallFunction();
-
         }
 
 
@@ -269,8 +376,6 @@ public class GameManager : MonoBehaviour
         switch(month){
             case 1:
                 monthName = "January";
-                // Auto-slow: switch to trimming speed for the dormant pruning window
-                if (!IsSlowSpeed) SetSpeed(slow: true);
                 break;
             case 2:
                 monthName = "February";
@@ -284,8 +389,6 @@ public class GameManager : MonoBehaviour
                 break;
             case 4:
                 monthName = "April";
-                // Auto-slow: new shoots are extending — prime window for pinching and light pruning
-                if (!IsSlowSpeed) SetSpeed(slow: true);
                 break;
             case 5:
                 monthName = "May";
@@ -384,6 +487,9 @@ public class GameManager : MonoBehaviour
                 break;
             case GameState.LoadMenu:
                 Time.timeScale = 0f;
+                break;
+            case GameState.CalendarOpen:
+                Time.timeScale = 0f;   // freeze while calendar is open
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
@@ -587,4 +693,29 @@ public enum GameState {
     TreeDead,      // tree has died; gameplay halted
     AirLayerSever, // player is confirming an air-layer severance
     LoadMenu,      // browsing saved games at launch or from pause menu
+    CalendarOpen,  // calendar overlay open; time paused
+}
+
+// ── Scheduled care system ─────────────────────────────────────────────────────
+
+public enum ScheduledEventType { Water, Fertilize }
+public enum ScheduledEventAmount { Light, Medium, Heavy }
+public enum RepeatMode { Once, EveryNDays, EveryNWeeks }
+public enum Season { Spring, Summer, Autumn, Winter, AllYear }
+public enum TimeOfDay { Morning, Midday, Night }
+
+[System.Serializable]
+public class ScheduledEvent
+{
+    public string               id;
+    public ScheduledEventType   type;
+    public ScheduledEventAmount amount;
+    public int                  fertType;    // index into fertilizer type list
+    public int                  month;       // anchor month (1–12)
+    public int                  day;         // anchor day
+    public RepeatMode           repeat;
+    public int                  repeatInterval;  // N for EveryNDays / EveryNWeeks
+    public Season               season;
+    public TimeOfDay            timeOfDay;
+    public bool                 enabled = true;
 }

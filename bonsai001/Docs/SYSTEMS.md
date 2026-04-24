@@ -1,6 +1,6 @@
 # BONSAIMANCER — Systems Reference
 
-Last updated: 2026-04-16
+Last updated: 2026-04-23 (added §42 Sibling Branch Fusion, §41 rock size updated, §43 Bark Texture System added)
 
 A concise technical reference for every implemented game system. Read this
 before touching a system's code — each entry explains the mental model, the
@@ -29,6 +29,14 @@ key data flow, and the things most likely to go wrong.
 17. [Pause & Settings Menu](#17-pause--settings-menu)
 18. [Bark Shader System](#18-bark-shader-system)
 19. [Bark Flaker Manager](#19-bark-flaker-manager)
+36. [Play Mode Manager](#36-play-mode-manager)
+37. [Calendar System (3-Tab Overlay)](#37-calendar-system-3-tab-overlay)
+38. [Calendar Scheduling (Parts 1–4)](#38-calendar-scheduling-parts-14)
+39. [Autosave System](#39-autosave-system)
+40. [Repot Root Raking](#40-repot-root-raking)
+41. [Pot Size Selection](#41-pot-size-selection)
+42. [Sibling Branch Fusion](#42-sibling-branch-fusion)
+43. [Bark Texture System](#43-bark-texture-system)
 
 ---
 
@@ -89,7 +97,11 @@ States are set by UI buttons. `OnGameStateChanged` fires a C# `Action<GameState>
 event that all interested systems subscribe to on `OnEnable`.
 
 ### Speed mode
-`SpeedMode` enum (`Slow`=0.5, `Med`=10, `Fast`=200 game-hrs/real-sec). `ToggleSpeed()` cycles Slow→Med→Fast→Slow. Speed button label: ▶ / ▶▶ / ▶▶▶ with amber/grey/green tints. `IsSlowSpeed` kept as a back-compat property (`=> CurrentSpeed == SpeedMode.Slow`). Auto-slow fires in **April** (`month == 4`) — the pinching window — not June (growth is already complete by then).
+`SpeedMode` enum (`Slow`, `Med`, `Fast`). `ToggleSpeed()` cycles Slow→Med→Fast→Slow. Speed button label: ▶ / ▶▶ / ▶▶▶ with amber/grey/green tints. `IsSlowSpeed` kept as a back-compat property (`=> CurrentSpeed == SpeedMode.Slow`). Auto-slow fires in **April** (`month == 4`) — the pinching window.
+
+**Mutable timescale statics:** `TIMESCALE_SLOW`, `TIMESCALE_MED`, `TIMESCALE_FAST` are `public static float` (not `const`). Defaults: 0.5 / 10 / 200 game-hrs/real-sec. Values are loaded from `PlayerPrefs` (`ts_slow/med/fast`) in `Awake()` via `LoadTimescalePrefs()`, which also enforces ordering (`Slow < Med < Fast`). `SaveTimescalePrefs()` writes them back. The Calendar Speed Config tab is the primary UI for changing them. `SetSpeedMode()` reads the mutable values so all speed changes automatically use the player's configured ratios.
+
+`PlayModeManager` (see §36) calls `gm.SetSpeedMode()` each frame; the speed button still works as a manual override — `PlayModeManager` will override it back next frame if a rule applies.
 
 ### Gotchas
 - `canTrim`, `canWire`, `canRemoveWire` are static flags set by the UI/tool
@@ -549,6 +561,16 @@ State is `(yaw, pitch, radius)` initialised from the camera's existing
 position in `Start()` to prevent a startup jump. `ApplyOrbit()` converts to
 Cartesian and calls `LookAt(pivot)`.
 
+### Idle orbit
+When `PlayModeManager.Instance.IdleOrbitActive` is true, the camera enters a slow automated orbit:
+- On the first orbit frame, current `(yaw, pitch, radius, panY)` are saved to `savedOrbit*` fields.
+- Each frame: `yaw += OrbitYawSpeed (4°/s) × unscaledDeltaTime`.
+- Pitch drifts ±`OrbitElevAmpl` (5°) on a sine wave with period `OrbitElevPeriod` (20 s real).
+- `Update()` returns early after `ApplyOrbit()` — normal drag input is not processed.
+- When `IdleOrbitActive` becomes false (any input in `PlayModeManager`), the saved state is restored in one frame and `orbitStateSaved` is cleared.
+
+All orbit motion uses `Time.unscaledDeltaTime` so it runs regardless of `Time.timeScale`.
+
 ### Gotchas
 - `pitchMin` (default 5°) prevents the camera from going below horizontal.
   In `RootPrune` mode this is relaxed to allow viewing roots from below.
@@ -558,6 +580,9 @@ Cartesian and calls `LookAt(pivot)`.
   technically be true simultaneously without conflict.
 - Drag start is additionally blocked during `Wiring` and `WireAnimate` states
   so the wire confirm click doesn't accidentally start a camera orbit.
+- Idle orbit snap-back is instantaneous (one frame). There is intentionally no
+  smooth transition — the user just interacted, so the camera should be exactly
+  where they left it.
 
 ---
 
@@ -685,6 +710,7 @@ noticeably thicken the base of the trunk compared to a bare-rooted tree.
   state is `RootPrune`.
 - `PlantRoot` uses world `y = 0` for the soil plane. If the scene's ground is
   not at world origin, `SOIL_WORLD_Y` in `TreeInteraction` needs adjusting.
+- **Root containment hard clamp:** in `SpawnChildren`, before processing a root terminal, if `distRatio >= 1.3f` the terminal is skipped. Additionally, if the tip is already outside the side or bottom faces of `rootAreaTransform`, `isTrimmed = true` is set permanently. Top-face escape (surface roots rising above soil) is intentionally left alone. Ishitsuki training-wire roots are exempt from all pot-boundary checks.
 - Root nodes ARE trimmable through the standard `TrimNode` path. Trimming a
   root near the trunk base removes the whole strand and immediately reduces
   the trunk's base radius via `RecalculateRadii`.
@@ -1312,3 +1338,326 @@ The groove is a child `GameObject ("_SawGroove")` rebuilt each frame via `Update
 - SmallClippers and BigClippers always cut instantly regardless of radius — only `ToolType.Saw` triggers the mechanic.
 - The groove mesh is in tree-local space; it correctly follows the branch if the tree lifts (e.g. during root mode, though sawing is blocked there anyway).
 - `sawProgress` is purely cosmetic — the cut is binary (not partial). There is no "halfway sawed" state that persists if you cancel.
+
+---
+
+## 36. Play Mode Manager
+
+**Files:** `PlayModeManager.cs`
+
+### What it does
+`PlayModeManager` is a singleton that runs an automation layer on top of `GameManager`'s speed controls. Each frame it evaluates the active `PlayMode`'s rules, picks the lowest (slowest) matching speed, and calls `gm.SetSpeedMode()`. It also syncs `TreeSkeleton.autoWaterEnabled` / `autoFertilizeEnabled` and exposes `IdleOrbitActive` for `CameraOrbit`.
+
+### Data model
+
+```
+PlayMode
+  ├── name, isBuiltIn
+  ├── defaultSpeed         — used when no rules fire
+  ├── autoWater / autoFertilize   — synced to TreeSkeleton each frame
+  ├── idleOrbit / idleOrbitDelaySecs
+  └── List<SpeedRule>
+        ├── trigger         (SpeedRuleTrigger enum)
+        ├── triggerParam    (threshold / month index)
+        ├── targetSpeed
+        ├── idleResumeEnabled / idleResumeRealSeconds / idleResumeInGameDays
+        └── [NonSerialized] suppressed
+```
+
+`SpeedRule.suppressed` is a runtime flag — it is deliberately `[NonSerialized]` so it resets to false on every load/restart.
+
+### Trigger types (SpeedRuleTrigger)
+
+| Value | Active when |
+|---|---|
+| `Month` | `GameManager.month == (int)triggerParam` |
+| `Season` | `GameManager.IsInSeason((Season)triggerParam, month)` |
+| `MoistureBelow` | `skeleton.soilMoisture < triggerParam` |
+| `HealthBelow` | average non-root node health < triggerParam |
+| `NutrientBelow` | `skeleton.nutrientReserve < triggerParam` |
+| `FungalLoadAbove` | max `node.fungalLoad` across all nodes > triggerParam |
+| `WeedCountAbove` | `WeedManager.ActiveWeedCount > (int)triggerParam` |
+| `WireSetGold` | `OnWireSetGold` event fired this frame (one-shot, clears each frame) |
+| `TreeInDanger` | `skeleton.treeInDanger` |
+
+### Rule evaluation (every frame)
+1. Skip if `GameState.CalendarOpen` or `GameState.GamePause`.
+2. Un-suppress rules whose idle timer has elapsed.
+3. Walk all enabled, non-suppressed rules; collect those whose trigger is active.
+4. Take the minimum (slowest) `targetSpeed`. If none fire → `mode.defaultSpeed`.
+5. If resolved speed differs from `GameManager.CurrentSpeed` → call `gm.SetSpeedMode(resolved)`.
+
+### Idle tracking
+`lastInputRealTime` (`Time.unscaledTime`) and `lastInputInGameDay` reset on any mouse click, scroll, or keypress each frame. `IdleOrbitActive` is set `true` when `mode.idleOrbit && (unscaledTime - lastInputRealTime) >= idleOrbitDelaySecs`.
+
+When idle timers for a rule's re-arm threshold elapse, the rule's `suppressed` flag is cleared. This lets a "Month=Jan → Slow" rule fire once when January arrives, then re-arm after the player hasn't touched the game for N real seconds.
+
+### Built-in presets
+
+| Mode | Default | Auto | Orbit | Key rules |
+|---|---|---|---|---|
+| Screensaver | Fast | ✓/✓ | 30 s | Jan→Slow; Danger→Slow (re-arm 20 s); Moisture<30%→Slow (re-arm 20 s) |
+| Active Play | Med | ✗/✗ | — | Jan→Slow; WireGold→Slow (re-arm 5 days); Spring→Slow |
+| Hands-Off | Fast | ✓/✓ | — | Danger→Slow (re-arm 60 s) |
+| Focused | Slow | ✗/✗ | — | (no rules) |
+
+### Persistence
+Modes are serialized as `JsonUtility.ToJson(new PlayModeList { modes })` into `PlayerPrefs["playModes"]`. `activeModeIndex` stored separately. On `Awake`, tries to load from PlayerPrefs; falls back to `CreateDefaultModes()`. `SaveModes()` is called after any mode/rule change. `[NonSerialized]` fields are never included.
+
+### Gotchas
+- `PlayModeManager` calls `gm.SetSpeedMode()` every frame when the resolved speed differs. The manual speed toggle button still works, but it will be overridden next frame by PlayModeManager. This is intentional — "the mode wins."
+- `WireSetGold` is a one-shot: `wireGoldFired` is set on `OnWireSetGold` and cleared at the bottom of `Update()`. If the rule is suppressed, the one-shot is consumed and won't re-fire until the trigger exits + re-enters (which for WireSetGold means the next wire goes gold).
+- Auto-care is written to `TreeSkeleton` fields (`autoWaterEnabled`, `autoFertilizeEnabled`) each frame, not once — so toggling the active mode instantly changes auto-care behavior without a reload.
+
+---
+
+## 37. Calendar System (3-Tab Overlay)
+
+**Files:** `buttonClicker.cs`, `ButtonUI.uxml`, `PlayModeManager.cs`
+
+### What it does
+A full-screen overlay opened by clicking the date label. Three tabs: **Schedule** (care event scheduling), **Modes** (Play Mode editor), **Speed** (timescale config). Opening the calendar transitions to `GameState.CalendarOpen` (pauses time). Closing calls `gm.SetSpeedMode(Med)` so PlayModeManager re-evaluates rules next frame from a known baseline.
+
+### Tab strip
+`CalTabSchedule` / `CalTabModes` / `CalTabSpeed` buttons call `SwitchCalTab(0/1/2)`, which shows the matching sub-panel (`CalScheduleTab` / `CalModesTab` / `CalSpeedTab`) and hides the others. Active tab gets a gold underline; inactive tabs are default text color. Calendar always opens on the Schedule tab.
+
+### Schedule tab
+Month/year header with `◂`/`▸` navigation buttons. A 7-column day grid (`CalMonthView`) populated dynamically with day-cell buttons. Clicking a day opens `CalDayView` listing that day's events. Events can be added (type, amount, time-of-day, repeat cadence, season scope), toggled, or deleted. Implemented but Part 1–4 of the Calendar System spec (real month lengths, event data model, persistent schedule) are still pending.
+
+### Modes tab
+Mode chip strip (`CalModeChips`) — one chip per `PlayMode`. Selecting a chip shows that mode's settings panel (`CalModeSettings`):
+- **Speed chips** — Slow / Med / Fast, updates `mode.defaultSpeed`
+- **Auto-water / Auto-fertilize** toggles
+- **Idle orbit** toggle + integer delay field
+- **Rules list** (`CalRulesList`) — one row per `SpeedRule` with enable checkbox + trigger summary label + delete button
+- **Add Rule** button → opens `CalAddRulePanel`: trigger dropdown → param slider (if numeric) → speed chips → idle resume toggle + real-seconds + in-game-days fields → ADD / Cancel
+- **Reset to defaults** button — calls `PlayModeManager.ResetBuiltInModes()`
+
+### Speed tab
+Three rows, one per speed tier:
+
+| Row | Slider range | Live label | Hint |
+|---|---|---|---|
+| Slow | 0.05 – (Med-0.1) | e.g. `0.5×` | `"1 in-game day = 48 real seconds"` |
+| Medium | (Slow+0.1) – (Fast-1) | e.g. `10×` | `"1 in-game day = 2.4 real seconds"` |
+| Fast | (Med+1) – 500 | e.g. `200×` | `"1 in-game day = 7.2 real seconds"` |
+
+All sliders share `OnSpeedSliderChanged`, which enforces ordering, calls `GameManager.SaveTimescalePrefs()`, and updates all three hint labels. `Reset to defaults` restores 0.5 / 10 / 200 and saves.
+
+`FormatDayDuration(timescale)`: `float realSecs = 24f / timescale`; returns `"X real seconds"` when < 60, `"X.X real minutes"` otherwise.
+
+### Gotchas
+- Calendar uses `DisplayStyle.Flex` / `DisplayStyle.None` for all show/hide — not `visible`. Setting `visible = false` hides content but the element still occupies layout space.
+- `SwitchCalTab` must be called from `OpenCalendar` to reset to the Schedule tab on every open; otherwise the last-active tab persists.
+- `RefreshModesTab` must be called after `PlayModeManager` mode list changes (add/delete/reset), not just on tab switch, or the chip strip will show stale data.
+- The Add Rule panel (`CalAddRulePanel`) is hidden by default and shown only when Add Rule is clicked. Confirm/Cancel both hide it again. The confirm path creates a `SpeedRule`, appends it to the active mode's list, calls `PlayModeManager.SaveModes()`, and refreshes the rules list.
+
+---
+
+## 38. Calendar Scheduling (Parts 1–4)
+
+**Files:** `GameManager.cs`, `buttonClicker.cs`, `ButtonUI.uxml`, `SaveData.cs`
+
+### What it does
+Replaces the fixed 28-day month with real calendar month lengths and adds a scheduling system for auto-firing care tasks on configured days.
+
+### Real month lengths
+`DaysInMonthTable[]` holds real month lengths. `IsLeapYear(y)` and `DaysInMonth(m, y)` are static helpers. `dayOfYear` is a computed property summing months 1–(month-1) then adding `dayOfMonth`. Day rollover in `CalculateTime()` uses `DaysInMonth(month, year)`. Winter skip (Nov → Feb) is unchanged.
+
+### Scheduled event data model
+
+```csharp
+public enum ScheduledEventType { Water, Fertilize }
+public enum RepeatMode { Once, EveryNDays, EveryNWeeks }
+public enum TimeOfDay { Morning, Midday, Night }
+
+[Serializable]
+public class ScheduledEvent
+{
+    public string id;
+    public ScheduledEventType type;
+    public int month, day;
+    public RepeatMode repeat;
+    public int repeatInterval;
+    public Season season;
+    public TimeOfDay timeOfDay;
+    public bool enabled;
+}
+```
+
+`GameManager.schedule` is a `static List<ScheduledEvent>`. `CheckScheduledEvents()` fires each time `dayOfMonth` increments, calling `skeleton.Water()` or `skeleton.Fertilize()` for matching events. Season gate: repeat events only fire during their target season. `EventFiresOnDate(ev, m, d, y)` is a static helper used by the calendar UI to show dots on day cells.
+
+### Calendar UI — Schedule tab
+**Month view:** 7-column day grid (`CalMonthView`). `MakeDayCell()` builds each cell: today highlighted gold, water/fertilize event dots shown as coloured indicators, past days dimmed.
+
+**Day view (`CalDayView`):** lists events for the selected day. Each row has enable toggle + type label + delete button.
+
+**Event add view (`CalEventView`):** type chips (Water/Fertilize) → season chip → repeat toggle → if repeating: N-day/N-week cadence with decrement/increment buttons → Confirm/Cancel. Confirm creates a `ScheduledEvent`, adds it to `GameManager.schedule`, and saves to `SaveData`.
+
+### Seasonal templates
+Four template buttons (Spring/Summer/Autumn/Winter) merge pre-built `ScheduledEvent` sets into the schedule, deduplicating by type+repeat. Templates apply species-appropriate care cadences.
+
+### Gotchas
+- `CheckScheduledEvents` runs inside the same guard as `CalculateTime` — it only fires when the state is a time-advancing state, never during pause or calendar-open.
+- The `dayOfMonth` field is separate from the old `day` field; both are serialized but only `dayOfMonth` drives the new real-month rollover.
+- `EventFiresOnDate` uses DOY-based modulo math for repeating events; the origin anchor (`ev.day`) must be computed correctly when the event was created or dots won't align with fire days.
+
+---
+
+## 39. Autosave System
+
+**Files:** `SaveManager.cs`, `TreeSkeleton.cs`
+
+### What it does
+`SaveManager.AutoSave(skeleton, leafManager)` creates a save slot automatically if no `ActiveSlotId` exists, then saves. This ensures new games always get written without the player having to manually save first.
+
+### Auto-slot creation
+When `ActiveSlotId` is null, `AutoSave` generates a new slot with `NewSlotId()` and names it `"{SpeciesName} {Year} (autosave)"`. Sets it as the active slot. Subsequent autosaves reuse the same slot.
+
+### Autosave triggers (in TreeSkeleton)
+- End of every growing season (`StartNewGrowingSeason` after bud set)
+- After a successful repot
+- After an air layer is severed
+- After Ishitsuki rock orientation is confirmed
+
+### Gotchas
+- A save toast ("Autosaved" HUD label) is not yet implemented — only `SaveStatusLabel` in the pause menu reflects save state. The `SaveManager.AutoSave` call itself is silent to the player.
+- `AutoSave` calls `TakeScreenshotForSlot` via the same coroutine as manual saves for thumbnail capture.
+
+---
+
+## 40. Repot Root Raking
+
+**Files:** `RootRakeManager.cs`, `GameManager.cs`, `buttonClicker.cs`, `ButtonUI.uxml`
+
+### What it does
+When repotting a pot-bound tree, instead of immediately applying new soil the game enters `GameState.RootRake`. The player rakes roots apart and prunes excess ones before confirming. Keeping a long root gives a bonus root strand in the new pot.
+
+### Flow
+1. Repot button pressed while pot-bound → enter `GameState.RootRake`.
+2. `RootRakeManager` (`GetComponent` on the skeleton's GameObject) drives the interaction.
+3. Player rakes (LMB drag) to visually spread roots, click individual root tips to prune.
+4. Root-count indicator in HUD (`RootRakePanel`) shows current vs. target range.
+5. **Confirm:** `RootRakeManager.ConfirmRepot()` — calls `PotSoil.Repot()`, checks if any root is longer than 1.5× average (sets `skeleton.hasLongRoot`), then calls `skeleton.RegenerateInitialRoots(hasLongRoot)` which spawns one extra-long strand on the long-root side if flagged.
+6. **Cancel:** `CancelRakeMode()` returns to normal repot flow.
+
+### Key data
+| Field | Location | Meaning |
+|---|---|---|
+| `hasLongRoot` | `TreeSkeleton` | Set by RootRakeManager on confirm; consumed by `RegenerateInitialRoots` |
+| `canRootRake` | `GameManager` | Static flag, true only during `RootRake` state |
+| `RootRakePanel` | `ButtonUI.uxml` | HUD panel shown during rake mode with count label + Confirm/Cancel |
+
+### Gotchas
+- `RootRakeManager` is attached as a component on the same GameObject as `TreeSkeleton` — `buttonClicker` accesses it via `skeleton.GetComponent<RootRakeManager>()`.
+- `hasLongRoot` is reset to `false` in `ConfirmRepot` before checking, so it always reflects the current rake session.
+- `GameState.RootRake` is included in `canRootWork` (same flag set as `RootPrune`/`RockPlace`/`TreeOrient`) so root interaction remains active.
+
+---
+
+## 41. Pot Size Selection
+
+**Files:** `PotSoil.cs`, `buttonClicker.cs`, `SaveData.cs`
+
+### What it does
+Lets the player choose a pot size when repotting. Size affects `rootAreaTransform` scale, which controls how quickly roots hit the boundary and trigger pot-bound mechanics.
+
+### PotSize enum
+`XS / S / M / L / XL / Slab` on `PotSoil`. `ApplyPotSize(rootAreaTransform)` resizes the transform to match the chosen size. Slab is very wide and shallow, encouraging lateral surface roots.
+
+### UI
+Six buttons in the repot panel (`PotSizeXSButton` … `PotSizeSlabButton`). `SelectPotSize(size)` updates `potSoil.potSize`, calls `ApplyPotSize`, and updates the `PotSizeLabel`. Current size is highlighted.
+
+### Serialization
+`SaveData.potSize` stores `(int)potSoil.potSize`. Loaded and applied on `LoadFromSaveData`.
+
+### Rock size
+`RockPlacer.RockSize` enum (S/M/L/XL). `ApplyRockSize()` sets `transform.localScale` from a lookup table. Four chip buttons (`RockSizeSButton`…`RockSizeXLButton`) shown in the HUD `RockSizePanel` only during the RockPlace state. `SaveData.rockSize` stores the cast-to-int value; restored in `LoadFromSaveData`.
+
+### Gotchas
+- `ApplyPotSize` must be called after every repot and also on load, or the root area won't match the serialized pot size.
+- Slab roots grow wide and shallow — combined with `rootGravityWeight` they still tend downward; the slab primarily caps downward depth via the bottom-face clamp.
+
+---
+
+## 42. Sibling Branch Fusion
+
+**Files:** `TreeSkeleton.cs`, `SaveManager.cs`
+
+### What it does
+Automatically detects when sibling branch tips grow close enough to touch and registers a multi-season fusion process. After enough seasons, a physical bridge node appears between them — the same `isGraftBridge` path used by approach grafts. This simulates the natural self-grafting that happens in dense bonsai canopies.
+
+### Detection — `DetectNewFusions()`
+Called from `StartNewGrowingSeason` after `AdvanceGrafts`. Groups all living, non-root, non-dead, terminal nodes by parent. For each sibling pair:
+- Neither node may already be in any `FusionBond`.
+- Tip-to-tip world distance must be ≤ `(radiusA + radiusB) × fusionTipProximityMult` (default 2.5).
+
+On match, a `FusionBond(nodeIdA, nodeIdB)` is added to `skeleton.fusionBonds`.
+
+### Progression — `AdvanceFusions()`
+Called immediately after `DetectNewFusions`. For each incomplete bond:
+1. Look up both nodes in `allNodes`. If either is gone/dead/trimmed → remove bond.
+2. Increment `seasonsElapsed`.
+3. Once `seasonsElapsed >= fusionSeasonsToFuse` (default 4): create a bridge `TreeNode` from `tipA` pointing toward `tipB`, radius = `min(rA, rB) × 0.65`, length = world tip-to-tip distance. Mark `isGraftBridge = true`, `isGrowing = false`. Append to `a.children` and `allNodes`. Set `isComplete = true`, `bridgeId = bridge.id`. Call `RecalculateRadii` + `meshBuilder.SetDirty`.
+
+### Data model
+
+```csharp
+public class FusionBond
+{
+    public int  nodeIdA, nodeIdB;
+    public int  seasonsElapsed;
+    public bool isComplete;
+    public int  bridgeId;   // -1 until fused
+}
+```
+
+### Serialization
+`SaveFusionBond` mirrors `FusionBond` fields. `SaveData.fusionBonds` list populated in `BuildSaveData`; restored in `LoadFromSaveData` (Pass 3b, before mesh rebuild).
+
+### Inspector fields (`TreeSkeleton`, Header "Sibling Fusion")
+
+| Field | Default | Meaning |
+|---|---|---|
+| `fusionSeasonsToFuse` | 4 | Growing seasons before two touching tips fuse |
+| `fusionTipProximityMult` | 2.5 | Tip distance threshold = (rA+rB) × this value |
+
+### Gotchas
+- Detection only considers **terminal** nodes. Mid-chain sub-segment tips are excluded — they're too close by construction and would produce noise.
+- The bridge reuses `isGraftBridge`, so `TreeMeshBuilder` already renders it as a thin connecting segment without any extra mesh code.
+- Bonds that lose a node (trimmed, dead) are silently removed; no partial geometry is left behind.
+- On load, `fusionBonds` is cleared and rebuilt from `SaveData.fusionBonds`. Completed bonds are restored but the bridge node itself is already in `allNodes` (it was serialized as a regular `SaveNode`), so no bridge re-creation is needed.
+
+---
+
+## 43. Bark Texture System
+
+**Files:** `TreeSpecies.cs`, `BarkVertexColor.shader`, `TreeMeshBuilder.cs`
+
+### What it does
+Optional pixel-art texture tiers layered on top of the existing procedural bark. When no textures are assigned the system is completely inert — the shader falls through to the original procedural patterns. When textures are assigned, each texel makes a hard binary flip from the young tier to the mature tier as the bark matures, using pixel-snapped noise so the transition reads like bark organically aging rather than two textures cross-fading.
+
+### Data flow
+1. `TreeSpecies` holds `youngBarkTexture`, `matureBarkTexture` (optional `Texture2D`).
+2. `TreeMeshBuilder.ApplySpeciesColors()` pushes them to the material: `_BarkTexA` / `_BarkTexB`, `_UseTextures` (0 when both null, 1 otherwise), `_TexelRes`, `_BarkNoiseMode`. Also sets `barkVTilingScale` from `species.barkVTiling` (default `0.4f` — matches original UV scale).
+3. `AddRing` writes `uv.y = heightV * barkVTilingScale` (was hardcoded `0.4f`).
+4. In the shader `ForwardLit` fragment: when `_UseTextures > 0.5`, snap UV to the texel grid (`floor(uv * _TexelRes) / _TexelRes`), compute noise (scatter or Voronoi cellular), hard-threshold against vertex alpha `blend`. Each texel is 100% young or 100% mature — no color blending.
+
+### Noise modes
+| `_BarkNoiseMode` | Pattern | Best for |
+|---|---|---|
+| 0 (scatter) | Per-texel random hash — salt-and-pepper spread | Fine maple / cherry bark |
+| 1 (cellular) | Voronoi cell distance — spreading patches | Chunky pine / juniper plate bark |
+
+### Art workflow
+1. Paint seamless tile textures (suggested 64×64 or 128×128), import with **Point (no filter)** sampling.
+2. Assign to `youngBarkTexture` / `matureBarkTexture` on the species `.asset`.
+3. Set `barkVTiling` to the desired repeat density (start around 2–4 for 64×64 art).
+4. Set `barkTexelRes` to match the texture dimension (e.g. 64).
+5. Tune `barkNoiseMode` in Inspector.
+
+### Gotchas
+- `_UseTextures = 0` when both textures are null — the shader takes the existing procedural path with zero overhead.
+- Adjacent tiers don't need to share a color language — the noise transition handles it.
+- Groove darkening is still applied on top of the texture sample, so bark geometry reads through even with textures.
+- `barkVTiling` defaults to `0.4f` which preserves the UV scale that the procedural bark patterns were tuned for. Raise it only when switching to textures.

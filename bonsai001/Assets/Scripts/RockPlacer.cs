@@ -34,6 +34,25 @@ public class RockPlacer : MonoBehaviour
     [Tooltip("World units per scroll tick for rock Y movement.")]
     [SerializeField] float liftSensitivity = 0.15f;
 
+    // ── Rock size ─────────────────────────────────────────────────────────────
+
+    public enum RockSize { S, M, L, XL }
+
+    static readonly Vector3[] RockScales =
+    {
+        new Vector3(0.6f,  0.5f,  0.6f),   // S
+        new Vector3(1.0f,  0.85f, 1.0f),   // M  ← default
+        new Vector3(1.5f,  1.3f,  1.5f),   // L
+        new Vector3(2.2f,  1.9f,  2.2f),   // XL
+    };
+
+    public RockSize rockSize = RockSize.M;
+
+    public void ApplyRockSize()
+    {
+        transform.localScale = RockScales[(int)rockSize];
+    }
+
     // ── State ─────────────────────────────────────────────────────────────────
     public static bool RockGrabbed { get; private set; }
     bool rockGrabbed { get => RockGrabbed; set => RockGrabbed = value; }

@@ -16,15 +16,15 @@ MonoBehaviour:
   scientificName: Ficus retusa
   baseGrowSpeed: 0.30
   depthSpeedDecay: 0.86
-  depthsPerYear: 5
+  depthsPerYear: 1
   baseElongation: 0.06
   elongationDepthDecay: 0.72
-  branchSegmentLength: 1.00
-  segmentLengthDecay: 0.82
+  branchSegmentLength: 2.00
+  segmentLengthDecay: 0.85
   rootSegmentLength: 0.75
-  baseBranchChance: 0.80
-  branchChanceDepthDecay: 0.91
-  springLateralChance: 0.85
+  baseBranchChance: 0.25
+  branchChanceDepthDecay: 0.80
+  springLateralChance: 0.08
   oldWoodBudChance: 0.08
   backBudBaseChance: 0.20
   budType: 0
@@ -48,8 +48,8 @@ MonoBehaviour:
   preferredAerationScore: 0.45
   soilToleranceRange: 0.28
   soilMismatchPenalty: 0.02
-  growthSlowDay: 213
-  growthStopDay: 244
+  growthSlowDay: 152
+  growthStopDay: 183
   repotTolerance: 0.80
   barkType: 1
   youngBarkColor: {r: 0.52, g: 0.55, b: 0.40, a: 1}

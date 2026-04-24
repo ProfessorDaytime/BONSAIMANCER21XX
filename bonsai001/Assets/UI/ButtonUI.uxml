@@ -1,4 +1,5 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEngine.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <ui:Label name="DebugStateLabel" text="" style="position: absolute; left: 8px; top: 8px; color: rgb(255,255,0); font-size: 13px; -unity-font-style: bold; display: none;" />
     <ui:Button text="&#10;" display-tooltip-when-elided="true" name="TrimButton" style="top: 0; height: 106px; width: 130px; background-image: url(&apos;project://database/Assets/Textures/Trimmer.png?fileID=1676363445&amp;guid=54510a529bc20624bbbf4a1912fe0e85&amp;type=3#Trimmer_0&apos;); background-color: rgba(20,20,20,0.85); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
     <ui:Button text="&#10;" display-tooltip-when-elided="true" name="WaterButton" style="height: 101px; width: 130px; top: -1px; background-image: url(&apos;project://database/Assets/Textures/watering_can.png?fileID=1903538586&amp;guid=70e9feeaae197ff4b9cdaefae05b11ae&amp;type=3#watering_can_0&apos;); background-color: rgba(20,20,20,0.85); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
     <!-- Soil moisture bar — sits flush below the water button -->
@@ -15,7 +16,15 @@
     <ui:Button text="Repot" display-tooltip-when-elided="true" name="RootPruneButton" style="position: absolute; right: 0; top: 51px; height: 50px; width: 130px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
     <ui:Button text="Air Layer" display-tooltip-when-elided="true" name="AirLayerButton" style="position: absolute; right: 0; top: 102px; height: 50px; width: 130px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
     <ui:Button text="Graft" display-tooltip-when-elided="true" name="GraftButton" style="position: absolute; right: 0; top: 153px; height: 50px; width: 130px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
+    <ui:Button text="Promote" display-tooltip-when-elided="true" name="PromoteButton" style="position: absolute; right: 0; top: 204px; height: 50px; width: 130px; background-color: rgba(20,20,20,0.85); color: rgb(140,210,255); border-color: rgb(60,100,120); border-width: 1px; border-radius: 4px; cursor: initial;" />
     <ui:Button text="Place Rock" display-tooltip-when-elided="true" name="PlaceRockButton" style="position: absolute; right: 0; top: 102px; height: 50px; width: 130px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial; display: none;" />
+    <!-- Rock size chips — shown alongside PlaceRockButton in RootPrune mode -->
+    <ui:VisualElement name="RockSizePanel" style="position: absolute; right: 0; top: 154px; width: 130px; flex-direction: row; justify-content: space-around; padding: 4px 4px; background-color: rgba(14,20,14,0.88); border-radius: 4px; display: none;">
+        <ui:Button text="S"  name="RockSizeSButton"  style="flex: 1; height: 24px; margin: 0 2px; font-size: 11px; background-color: rgba(40,60,40,0.9); color: rgb(200,200,200); border-width: 1px; border-color: rgb(80,80,80); border-radius: 3px; cursor: initial;" />
+        <ui:Button text="M"  name="RockSizeMButton"  style="flex: 1; height: 24px; margin: 0 2px; font-size: 11px; background-color: rgba(60,90,40,0.9); color: rgb(229,179,16); border-width: 1px; border-color: rgb(120,100,40); border-radius: 3px; cursor: initial;" />
+        <ui:Button text="L"  name="RockSizeLButton"  style="flex: 1; height: 24px; margin: 0 2px; font-size: 11px; background-color: rgba(40,60,40,0.9); color: rgb(200,200,200); border-width: 1px; border-color: rgb(80,80,80); border-radius: 3px; cursor: initial;" />
+        <ui:Button text="XL" name="RockSizeXLButton" style="flex: 1; height: 24px; margin: 0 2px; font-size: 11px; background-color: rgba(40,60,40,0.9); color: rgb(200,200,200); border-width: 1px; border-color: rgb(80,80,80); border-radius: 3px; cursor: initial;" />
+    </ui:VisualElement>
     <!-- Repot panel — visible only in RootPrune mode; hidden otherwise -->
     <ui:VisualElement name="RepotPanel" style="position: absolute; left: 0; bottom: 60px; width: 160px; padding: 8px; background-color: rgba(16,24,16,0.88); border-radius: 6px; display: none; flex-direction: column;">
         <ui:Label text="SOIL" style="color: rgb(160,200,160); font-size: 11px; -unity-font-style: bold; margin-bottom: 4px;" />
@@ -59,7 +68,7 @@
         <ui:Button text="Cancel" name="CancelRakeButton" style="height: 26px; font-size: 10px; cursor: initial; background-color: rgba(20,20,20,0.85); color: rgb(200,140,140); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
     </ui:VisualElement>
     <!-- Fertilize + Herbicide — right column, immediately below Graft -->
-    <ui:VisualElement style="position: absolute; right: 0; top: 204px; flex-direction: column;">
+    <ui:VisualElement style="position: absolute; right: 0; top: 255px; flex-direction: column;">
         <ui:Button text="Fertilize" display-tooltip-when-elided="true" name="FertilizeButton" style="height: 50px; width: 130px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
         <ui:VisualElement name="NutrientBarBg" style="width: 122px; height: 5px; margin-left: 4px; margin-top: -6px; background-color: rgba(20,20,20,0.85); border-radius: 3px;">
             <ui:VisualElement name="NutrientBarFill" style="height: 100%; width: 50%; background-color: rgb(80,200,80); border-radius: 3px;" />
@@ -130,6 +139,15 @@
             <ui:Label name="StatRepot" text="—" style="color: rgb(200,220,200); font-size: 10px;" />
         </ui:VisualElement>
     </ui:VisualElement>
+    <!-- ── Promotion Advisor Panel ──────────────────────────────────────────── -->
+    <ui:VisualElement name="PromotionAdvisorPanel" style="position: absolute; right: 65px; bottom: 90px; width: 240px; max-height: 260px; padding: 10px; background-color: rgba(10,14,20,0.94); border-color: rgb(50,90,110); border-width: 1px; border-radius: 6px; display: none; flex-direction: column;">
+        <ui:Label text="PROMOTION ADVISOR" style="color: rgb(140,210,255); font-size: 11px; -unity-font-style: bold; margin-bottom: 4px;" />
+        <ui:Label name="PromotionTargetLabel" text="Target: —" style="color: rgb(180,230,255); font-size: 10px; margin-bottom: 6px; border-bottom-color: rgb(50,90,110); border-bottom-width: 1px; padding-bottom: 4px;" />
+        <ui:Label text="Suggestions (ranked):" style="color: rgb(120,160,180); font-size: 9px; margin-bottom: 4px;" />
+        <ui:VisualElement name="PromotionListContainer" style="flex-direction: column;" />
+        <ui:Label text="Right-click to clear target." style="color: rgb(80,80,80); font-size: 9px; margin-top: 6px; -unity-font-style: italic;" />
+    </ui:VisualElement>
+
     <ui:VisualElement name="RootHealthPanel" style="position: absolute; left: 10px; bottom: 10px; width: 160px; padding: 10px; background-color: rgb(18,28,18); border-radius: 6px; display: none;">
         <ui:Label text="ROOT HEALTH" name="RootHealthHeader" style="color: rgb(160,200,160); font-size: 11px; -unity-font-style: bold; margin-bottom: 2px;" />
         <ui:Label text="—" name="RootHealthScoreLabel" style="color: rgb(255,255,255); font-size: 32px; -unity-font-style: bold; margin-bottom: 4px;" />
@@ -211,14 +229,6 @@
             <!-- Tab: Debug -->
             <ui:VisualElement name="TabContentDebug" style="display: none;">
                 <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
-                    <ui:Label text="Auto Water" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
-                    <ui:Toggle name="ToggleAutoWater" value="true" style="flex: 1;" />
-                </ui:VisualElement>
-                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
-                    <ui:Label text="Auto Fertilize" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
-                    <ui:Toggle name="ToggleAutoFertilize" value="false" style="flex: 1;" />
-                </ui:VisualElement>
-                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
                     <ui:Label text="Scale Cubes (1m)" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
                     <ui:Toggle name="ToggleScaleCubes" value="false" style="flex: 1;" />
                 </ui:VisualElement>
@@ -273,11 +283,227 @@
     </ui:VisualElement>
 
     <!-- ── First-Use Tooltip Overlay ───────────────────────────────────────── -->
-    <ui:VisualElement name="TooltipOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.65); flex-direction: column; align-items: center; justify-content: center; display: none;">
-        <ui:VisualElement style="max-width: 400px; width: 90%; background-color: rgb(18,22,18); border-color: rgb(80,100,80); border-width: 1px; border-radius: 10px; padding: 28px 28px 22px 28px; flex-direction: column; align-items: stretch;">
-            <ui:Label name="TooltipTitleLabel" text="" style="color: rgb(229,179,16); font-size: 20px; -unity-font-style: bold; margin-bottom: 12px;" />
-            <ui:Label name="TooltipBodyLabel" text="" style="color: rgb(190,200,185); font-size: 13px; white-space: normal; margin-bottom: 22px;" />
-            <ui:Button text="GOT IT" name="TooltipDismissButton" style="height: 40px; background-color: rgba(40,60,40,0.9); color: rgb(160,210,160); font-size: 14px; -unity-font-style: bold; border-color: rgb(70,110,70); border-width: 1px; border-radius: 6px; cursor: initial;" />
+
+    <!-- ── Calendar Button (top-right, near date display) ───────────────────── -->
+    <ui:Button name="CalendarButton" text="📅" style="position: absolute; right: 10px; bottom: 130px; width: 48px; height: 32px; background-color: rgba(20,20,20,0.85); color: rgb(229,162,16); font-size: 18px; border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px; cursor: initial;" />
+
+    <!-- ── Calendar Overlay ──────────────────────────────────────────────────── -->
+    <ui:VisualElement name="CalendarOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.80); flex-direction: column; align-items: center; justify-content: center; display: none;">
+        <ui:VisualElement name="CalendarPanel" style="width: 440px; background-color: rgb(14,18,14); border-color: rgb(80,100,60); border-width: 1px; border-radius: 10px; padding: 20px; flex-direction: column;">
+
+            <!-- Header row -->
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 12px;">
+                <ui:Button name="CalPrevMonth" text="◀" style="width: 36px; height: 36px; background-color: rgba(40,40,40,0.9); color: rgb(200,200,200); border-width: 0; border-radius: 4px; cursor: initial;" />
+                <ui:Label name="CalMonthYearLabel" text="April 2123" style="flex-grow: 1; color: rgb(229,179,16); font-size: 18px; -unity-font-style: bold; -unity-text-align: middle-center;" />
+                <ui:Button name="CalNextMonth" text="▶" style="width: 36px; height: 36px; background-color: rgba(40,40,40,0.9); color: rgb(200,200,200); border-width: 0; border-radius: 4px; cursor: initial; margin-right: 8px;" />
+                <ui:Button name="CalCloseButton" text="✕" style="width: 36px; height: 36px; background-color: rgba(50,20,20,0.9); color: rgb(180,100,100); border-width: 0; border-radius: 4px; cursor: initial;" />
+            </ui:VisualElement>
+
+            <!-- ── Tab strip ── -->
+            <ui:VisualElement name="CalTabStrip" style="flex-direction: row; margin-bottom: 14px; border-bottom-color: rgb(50,70,50); border-bottom-width: 1px; padding-bottom: 0;">
+                <ui:Button name="CalTabSchedule" text="Schedule" style="flex: 1; height: 32px; margin-right: 3px; background-color: rgb(60,80,40); color: rgb(220,220,160); font-size: 12px; -unity-font-style: bold; border-width: 0; border-radius: 4px; cursor: initial;" />
+                <ui:Button name="CalTabModes"    text="Modes"    style="flex: 1; height: 32px; margin-right: 3px; background-color: rgb(30,30,30); color: rgb(140,140,140); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                <ui:Button name="CalTabSpeed"    text="Speed"    style="flex: 1; height: 32px; background-color: rgb(30,30,30); color: rgb(140,140,140); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+            </ui:VisualElement>
+
+            <!-- ══ Schedule Tab ══════════════════════════════════════════════════ -->
+            <ui:VisualElement name="CalScheduleTab" style="flex-direction: column; display: flex;">
+
+                <!-- ── Month View ── -->
+                <ui:VisualElement name="CalMonthView" style="flex-direction: column;">
+                    <ui:VisualElement style="flex-direction: row; margin-bottom: 4px;">
+                        <ui:Label text="Mo" style="flex: 1; color: rgb(120,140,120); font-size: 11px; -unity-text-align: middle-center; -unity-font-style: bold;" />
+                        <ui:Label text="Tu" style="flex: 1; color: rgb(120,140,120); font-size: 11px; -unity-text-align: middle-center; -unity-font-style: bold;" />
+                        <ui:Label text="We" style="flex: 1; color: rgb(120,140,120); font-size: 11px; -unity-text-align: middle-center; -unity-font-style: bold;" />
+                        <ui:Label text="Th" style="flex: 1; color: rgb(120,140,120); font-size: 11px; -unity-text-align: middle-center; -unity-font-style: bold;" />
+                        <ui:Label text="Fr" style="flex: 1; color: rgb(120,140,120); font-size: 11px; -unity-text-align: middle-center; -unity-font-style: bold;" />
+                        <ui:Label text="Sa" style="flex: 1; color: rgb(120,140,120); font-size: 11px; -unity-text-align: middle-center; -unity-font-style: bold;" />
+                        <ui:Label text="Su" style="flex: 1; color: rgb(120,140,120); font-size: 11px; -unity-text-align: middle-center; -unity-font-style: bold;" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="CalGrid" style="flex-direction: row; flex-wrap: wrap;" />
+                </ui:VisualElement>
+
+                <!-- ── Day Detail View ── -->
+                <ui:VisualElement name="CalDayView" style="flex-direction: column; display: none;">
+                    <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                        <ui:Button name="CalDayBackButton" text="◀ Back" style="height: 30px; padding: 0 10px; background-color: rgba(40,40,40,0.9); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial; margin-right: 10px;" />
+                        <ui:Label name="CalDayTitleLabel" text="Tuesday, April 8" style="flex-grow: 1; color: rgb(229,179,16); font-size: 15px; -unity-font-style: bold;" />
+                    </ui:VisualElement>
+                    <ui:ScrollView name="CalDayEventList" style="max-height: 160px; margin-bottom: 12px;" />
+                    <ui:Button name="CalAddWaterButton" text="+ Schedule Watering" style="height: 36px; background-color: rgba(20,50,80,0.9); color: rgb(140,190,230); font-size: 13px; border-width: 0; border-radius: 4px; cursor: initial; margin-bottom: 6px;" />
+                    <ui:Button name="CalAddFertButton" text="+ Schedule Fertilizer" style="height: 36px; background-color: rgba(20,60,20,0.9); color: rgb(140,210,140); font-size: 13px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                </ui:VisualElement>
+
+                <!-- ── Event Detail View ── -->
+                <ui:VisualElement name="CalEventView" style="flex-direction: column; display: none;">
+                    <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                        <ui:Button name="CalEventBackButton" text="◀ Back" style="height: 30px; padding: 0 10px; background-color: rgba(40,40,40,0.9); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial; margin-right: 10px;" />
+                        <ui:Label name="CalEventTitleLabel" text="Schedule Watering" style="flex-grow: 1; color: rgb(229,179,16); font-size: 15px; -unity-font-style: bold;" />
+                    </ui:VisualElement>
+                    <ui:Label text="AMOUNT" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                    <ui:VisualElement name="CalAmountChips" style="flex-direction: row; margin-bottom: 12px;">
+                        <ui:Button name="CalAmtLight"  text="Light"  style="flex: 1; height: 32px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalAmtMedium" text="Medium" style="flex: 1; height: 32px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalAmtHeavy"  text="Heavy"  style="flex: 1; height: 32px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="CalFertTypeRow" style="display: none; flex-direction: column; margin-bottom: 12px;">
+                        <ui:Label text="TYPE" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                        <ui:VisualElement name="CalFertTypeChips" style="flex-direction: row; flex-wrap: wrap;">
+                            <ui:Button name="CalFertBalanced" text="Balanced" style="height: 28px; padding: 0 8px; margin-right: 4px; margin-bottom: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalFertHighN"    text="High-N"   style="height: 28px; padding: 0 8px; margin-right: 4px; margin-bottom: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalFertHighP"    text="High-P"   style="height: 28px; padding: 0 8px; margin-right: 4px; margin-bottom: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalFertLowN"     text="Low-N"    style="height: 28px; padding: 0 8px; margin-right: 4px; margin-bottom: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:Label text="TIME OF DAY" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                    <ui:VisualElement name="CalTimeChips" style="flex-direction: row; margin-bottom: 12px;">
+                        <ui:Button name="CalTimeMorning" text="Morning" style="flex: 1; height: 32px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalTimeMidday"  text="Midday"  style="flex: 1; height: 32px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalTimeNight"   text="Night"   style="flex: 1; height: 32px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                    </ui:VisualElement>
+                    <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 10px;">
+                        <ui:Toggle name="CalRepeatToggle" style="margin-right: 8px;" />
+                        <ui:Label text="Repeating" style="color: rgb(200,200,200); font-size: 13px;" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="CalRepeatOptions" style="display: none; flex-direction: column; margin-bottom: 12px; padding: 10px; background-color: rgba(30,40,30,0.7); border-radius: 6px;">
+                        <ui:Label text="SEASON" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                        <ui:VisualElement name="CalSeasonChips" style="flex-direction: row; margin-bottom: 10px;">
+                            <ui:Button name="CalSeasonAll"    text="All Year" style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalSeasonSpring" text="Spring"   style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalSeasonSummer" text="Summer"   style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalSeasonAutumn" text="Autumn"   style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalSeasonWinter" text="Winter"   style="flex: 1; height: 28px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        </ui:VisualElement>
+                        <ui:Label text="REPEAT EVERY" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                        <ui:VisualElement style="flex-direction: row; align-items: center;">
+                            <ui:VisualElement style="flex-direction: row; align-items: center; margin-right: 8px;">
+                                <ui:Button name="CalRepeatNDec" text="−" style="width: 28px; height: 30px; font-size: 16px; background-color: rgba(40,60,40,0.9); color: rgb(200,200,200); border-width: 0; border-radius: 4px; cursor: initial; padding: 0;" />
+                                <ui:Label name="CalRepeatNLabel" text="1" style="width: 36px; height: 30px; font-size: 15px; -unity-font-style: bold; color: rgb(229,179,16); -unity-text-align: middle-center; background-color: rgba(30,40,30,0.9); border-color: rgb(80,100,60); border-left-width: 1px; border-right-width: 1px; border-top-width: 1px; border-bottom-width: 1px;" />
+                                <ui:Button name="CalRepeatNInc" text="+" style="width: 28px; height: 30px; font-size: 16px; background-color: rgba(40,60,40,0.9); color: rgb(200,200,200); border-width: 0; border-radius: 4px; cursor: initial; padding: 0;" />
+                            </ui:VisualElement>
+                            <ui:Button name="CalCadenceDays"  text="Days"  style="flex: 1; height: 30px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalCadenceWeeks" text="Weeks" style="flex: 1; height: 30px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    <ui:VisualElement style="flex-direction: row; margin-top: 4px;">
+                        <ui:Button name="CalEventConfirmButton" text="CONFIRM" style="flex: 1; height: 40px; margin-right: 6px; background-color: rgb(40,80,40); color: rgb(160,220,160); font-size: 14px; -unity-font-style: bold; border-width: 0; border-radius: 6px; cursor: initial;" />
+                        <ui:Button name="CalEventCancelButton"  text="CANCEL"  style="flex: 1; height: 40px; background-color: rgba(40,30,30,0.9); color: rgb(160,120,120); font-size: 14px; border-width: 0; border-radius: 6px; cursor: initial;" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+            </ui:VisualElement><!-- end CalScheduleTab -->
+
+            <!-- ══ Modes Tab ════════════════════════════════════════════════════ -->
+            <ui:VisualElement name="CalModesTab" style="flex-direction: column; display: none;">
+
+                <!-- Mode chips -->
+                <ui:Label text="ACTIVE MODE" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 6px;" />
+                <ui:VisualElement name="CalModeChips" style="flex-direction: row; flex-wrap: wrap; margin-bottom: 14px;" />
+
+                <!-- Active mode settings -->
+                <ui:VisualElement name="CalModeSettings" style="flex-direction: column; padding: 10px; background-color: rgba(20,30,20,0.7); border-radius: 6px; margin-bottom: 12px;">
+                    <!-- Default speed chips -->
+                    <ui:Label text="DEFAULT SPEED" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                    <ui:VisualElement name="CalModeSpeedChips" style="flex-direction: row; margin-bottom: 10px;">
+                        <ui:Button name="CalModeSpeedSlow" text="Slow" style="flex: 1; height: 28px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(140,140,140); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalModeSpeedMed"  text="Med"  style="flex: 1; height: 28px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalModeSpeedFast" text="Fast" style="flex: 1; height: 28px; background-color: rgb(40,40,40); color: rgb(140,140,140); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                    </ui:VisualElement>
+                    <!-- Toggles row -->
+                    <ui:VisualElement style="flex-direction: row; margin-bottom: 8px; align-items: center;">
+                        <ui:Toggle name="CalModeAutoWater" style="margin-right: 6px;" />
+                        <ui:Label text="Auto-water" style="color: rgb(180,180,180); font-size: 11px; margin-right: 16px;" />
+                        <ui:Toggle name="CalModeAutoFert" style="margin-right: 6px;" />
+                        <ui:Label text="Auto-fertilize" style="color: rgb(180,180,180); font-size: 11px;" />
+                    </ui:VisualElement>
+                    <!-- Orbit row -->
+                    <ui:VisualElement style="flex-direction: row; align-items: center;">
+                        <ui:Toggle name="CalModeIdleOrbit" style="margin-right: 6px;" />
+                        <ui:Label text="Idle orbit after" style="color: rgb(180,180,180); font-size: 11px; margin-right: 6px;" />
+                        <ui:IntegerField name="CalModeOrbitDelay" value="30" style="width: 50px; height: 24px; font-size: 11px; border-radius: 3px;" />
+                        <ui:Label text="s" style="color: rgb(140,140,140); font-size: 11px; margin-left: 4px;" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- Rules list -->
+                <ui:Label text="SPEED RULES  (lowest wins)" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 6px;" />
+                <ui:ScrollView name="CalRulesList" style="max-height: 120px; margin-bottom: 8px;" />
+                <ui:Button name="CalAddRuleButton" text="+ Add Rule" style="height: 30px; background-color: rgba(30,50,30,0.9); color: rgb(140,200,140); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial; margin-bottom: 10px;" />
+
+                <!-- Add Rule panel (hidden until + Add Rule clicked) -->
+                <ui:VisualElement name="CalAddRulePanel" style="display: none; flex-direction: column; padding: 10px; background-color: rgba(20,30,20,0.8); border-radius: 6px; margin-bottom: 10px;">
+                    <ui:Label text="TRIGGER" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                    <ui:DropdownField name="CalRuleTriggerDropdown" style="margin-bottom: 8px; height: 28px; font-size: 11px;" />
+                    <ui:VisualElement name="CalRuleParamRow" style="flex-direction: row; align-items: center; margin-bottom: 8px; display: none;">
+                        <ui:Label name="CalRuleParamLabel" text="Value:" style="color: rgb(160,160,160); font-size: 11px; width: 80px;" />
+                        <ui:Slider name="CalRuleParamSlider" low-value="0" high-value="1" value="0.5" style="flex: 1; margin-right: 8px;" />
+                        <ui:Label name="CalRuleParamValueLabel" text="0.50" style="width: 40px; color: rgb(229,179,16); font-size: 11px; -unity-text-align: middle-right;" />
+                    </ui:VisualElement>
+                    <ui:Label text="SET SPEED TO" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                    <ui:VisualElement name="CalRuleSpeedChips" style="flex-direction: row; margin-bottom: 8px;">
+                        <ui:Button name="CalRuleSpeedSlow" text="Slow" style="flex: 1; height: 28px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalRuleSpeedMed"  text="Med"  style="flex: 1; height: 28px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(140,140,140); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalRuleSpeedFast" text="Fast" style="flex: 1; height: 28px; background-color: rgb(40,40,40); color: rgb(140,140,140); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                    </ui:VisualElement>
+                    <!-- Idle resume -->
+                    <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 6px;">
+                        <ui:Toggle name="CalRuleIdleToggle" style="margin-right: 6px;" />
+                        <ui:Label text="Resume after idle:" style="color: rgb(180,180,180); font-size: 11px; margin-right: 6px;" />
+                        <ui:FloatField name="CalRuleIdleReal" value="0" style="width: 44px; height: 24px; font-size: 11px; border-radius: 3px; margin-right: 3px;" />
+                        <ui:Label text="s  or" style="color: rgb(140,140,140); font-size: 11px; margin-right: 3px;" />
+                        <ui:FloatField name="CalRuleIdleDays" value="0" style="width: 44px; height: 24px; font-size: 11px; border-radius: 3px; margin-right: 3px;" />
+                        <ui:Label text="days" style="color: rgb(140,140,140); font-size: 11px;" />
+                    </ui:VisualElement>
+                    <ui:VisualElement style="flex-direction: row;">
+                        <ui:Button name="CalRuleConfirmButton" text="ADD" style="flex: 1; height: 32px; margin-right: 4px; background-color: rgb(40,80,40); color: rgb(160,220,160); font-size: 12px; -unity-font-style: bold; border-width: 0; border-radius: 4px; cursor: initial;" />
+                        <ui:Button name="CalRuleCancelButton"  text="Cancel" style="flex: 1; height: 32px; background-color: rgba(40,30,30,0.9); color: rgb(160,120,120); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+
+                <!-- Footer -->
+                <ui:Button name="CalModeResetButton" text="Reset built-in defaults" style="height: 28px; background-color: rgba(40,20,20,0.8); color: rgb(160,100,100); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+
+            </ui:VisualElement><!-- end CalModesTab -->
+
+            <!-- ══ Speed Tab ═════════════════════════════════════════════════════ -->
+            <ui:VisualElement name="CalSpeedTab" style="flex-direction: column; display: none;">
+
+                <ui:Label text="TIME SPEED RATIOS" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 14px;" />
+
+                <!-- Slow -->
+                <ui:VisualElement style="flex-direction: column; margin-bottom: 14px;">
+                    <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 2px;">
+                        <ui:Label text="Slow  ▶" style="width: 70px; color: rgb(180,180,140); font-size: 12px;" />
+                        <ui:Slider name="CalSpeedSlowSlider" low-value="0.02" high-value="5" value="0.5" style="flex: 1; margin-right: 8px;" />
+                        <ui:Label name="CalSpeedSlowValue" text="0.5×" style="width: 40px; color: rgb(229,179,16); font-size: 12px; -unity-text-align: middle-right;" />
+                    </ui:VisualElement>
+                    <ui:Label name="CalSpeedSlowHint" text="1 in-game day = 48 real seconds" style="color: rgb(100,120,100); font-size: 10px; margin-left: 70px;" />
+                </ui:VisualElement>
+
+                <!-- Medium -->
+                <ui:VisualElement style="flex-direction: column; margin-bottom: 14px;">
+                    <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 2px;">
+                        <ui:Label text="Med  ▶▶" style="width: 70px; color: rgb(180,200,140); font-size: 12px;" />
+                        <ui:Slider name="CalSpeedMedSlider" low-value="1" high-value="50" value="10" style="flex: 1; margin-right: 8px;" />
+                        <ui:Label name="CalSpeedMedValue" text="10×" style="width: 40px; color: rgb(229,179,16); font-size: 12px; -unity-text-align: middle-right;" />
+                    </ui:VisualElement>
+                    <ui:Label name="CalSpeedMedHint" text="1 in-game day = 2.4 real seconds" style="color: rgb(100,120,100); font-size: 10px; margin-left: 70px;" />
+                </ui:VisualElement>
+
+                <!-- Fast -->
+                <ui:VisualElement style="flex-direction: column; margin-bottom: 20px;">
+                    <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 2px;">
+                        <ui:Label text="Fast ▶▶▶" style="width: 70px; color: rgb(200,220,140); font-size: 12px;" />
+                        <ui:Slider name="CalSpeedFastSlider" low-value="20" high-value="500" value="200" style="flex: 1; margin-right: 8px;" />
+                        <ui:Label name="CalSpeedFastValue" text="200×" style="width: 40px; color: rgb(229,179,16); font-size: 12px; -unity-text-align: middle-right;" />
+                    </ui:VisualElement>
+                    <ui:Label name="CalSpeedFastHint" text="1 in-game day = 7.2 real seconds" style="color: rgb(100,120,100); font-size: 10px; margin-left: 70px;" />
+                </ui:VisualElement>
+
+                <ui:Button name="CalSpeedResetButton" text="Reset to defaults" style="height: 30px; background-color: rgba(40,20,20,0.8); color: rgb(160,100,100); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
+
+            </ui:VisualElement><!-- end CalSpeedTab -->
+
         </ui:VisualElement>
     </ui:VisualElement>
 
@@ -291,5 +517,17 @@
             <ui:VisualElement name="SpeciesListContainer" style="flex-direction: column; width: 100%;" />
         </ui:ScrollView>
         <ui:Button text="PLANT SEED" name="SpeciesConfirmButton" style="margin-top: 18px; height: 48px; width: 280px; background-color: rgba(60,45,15,0.9); color: rgb(100,82,38); font-size: 16px; -unity-font-style: bold; border-width: 0; border-radius: 8px; cursor: initial;" />
+    </ui:VisualElement>
+
+    <!-- ── Save Toast — centered bottom, fades in/out in code ──── -->
+    <ui:Label name="SaveToastLabel" text="" style="position: absolute; bottom: 24px; left: 0; right: 0; -unity-text-align: upper-center; color: rgb(160,210,160); font-size: 13px; opacity: 0; display: none;" />
+
+    <!-- ── First-Use Tooltip Overlay — LAST so it renders above everything ──── -->
+    <ui:VisualElement name="TooltipOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.65); flex-direction: column; align-items: center; justify-content: center; display: none;">
+        <ui:VisualElement style="max-width: 400px; width: 90%; background-color: rgb(18,22,18); border-color: rgb(80,100,80); border-width: 1px; border-radius: 10px; padding: 28px 28px 22px 28px; flex-direction: column; align-items: stretch;">
+            <ui:Label name="TooltipTitleLabel" text="" style="color: rgb(229,179,16); font-size: 20px; -unity-font-style: bold; margin-bottom: 12px;" />
+            <ui:Label name="TooltipBodyLabel" text="" style="color: rgb(190,200,185); font-size: 13px; white-space: normal; margin-bottom: 22px;" />
+            <ui:Button text="GOT IT" name="TooltipDismissButton" style="height: 40px; background-color: rgba(40,60,40,0.9); color: rgb(160,210,160); font-size: 14px; -unity-font-style: bold; border-color: rgb(70,110,70); border-width: 1px; border-radius: 6px; cursor: initial;" />
+        </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

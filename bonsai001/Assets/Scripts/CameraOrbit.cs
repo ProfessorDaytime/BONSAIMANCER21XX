@@ -62,6 +62,52 @@ public class CameraOrbit : MonoBehaviour
 
     Vector3 lastTargetPosition;
 
+    // Idle orbit state
+    float savedOrbitYaw;
+    float savedOrbitPitch;
+    float savedOrbitRadius;
+    float savedOrbitPanY;
+    bool  orbitStateSaved;
+    float orbitElevPhase;   // sine phase for gentle elevation drift
+    const float OrbitYawSpeed   = 4f;    // degrees per real second
+    const float OrbitElevAmpl   = 5f;    // ± degrees of pitch drift
+    const float OrbitElevPeriod = 20f;   // seconds for one full elevation cycle
+
+    // Cinematic mode — toggled with C, ignores all input, smooth constant orbit
+    [Header("Cinematic Mode")]
+    [Tooltip("Yaw speed in degrees per real second during cinematic orbit. Default 0.8°/s — comfortable up to ~8× speed-up.")]
+    [SerializeField] float cinematicYawSpeed = 0.8f;
+    [Tooltip("Peak elevation drift in degrees (±) during cinematic orbit.")]
+    [SerializeField] float cinematicElevAmpl = 3f;
+    [Tooltip("Seconds for one full elevation cycle during cinematic orbit.")]
+    [SerializeField] float cinematicElevPeriod = 30f;
+
+    [Tooltip("Tree skeleton used to read tree height for cinematic auto-zoom. Optional — drag the tree GameObject here.")]
+    [SerializeField] TreeSkeleton skeleton;
+    [Tooltip("Camera radius = tree height × this multiplier. At pitch≈20° and 60° VFOV, 1.2 puts the canopy top at ~90% and the base at ~20% from screen bottom.")]
+    [SerializeField] float cinematicZoomHeightMult = 1.2f;
+    [Tooltip("Minimum radius the auto-zoom will target (never zooms closer than this).")]
+    [SerializeField] float cinematicZoomMin = 3f;
+    [Tooltip("How fast the radius eases toward the target height-based zoom. Lower = slower ease.")]
+    [SerializeField] float cinematicZoomLerpSpeed = 1.5f;
+    [Tooltip("Fraction of tree height used as the look-at pivot in cinematic mode. " +
+             "0.5 = look halfway up — puts the base at ~20% from screen bottom at pitch≈20°.")]
+    [SerializeField] [Range(0f, 1f)] float cinematicFramingFraction = 0.5f;
+    [Tooltip("How fast the look-at pivot eases to the framing height. Lower = slower.")]
+    [SerializeField] float cinematicPanLerpSpeed = 1.2f;
+    [Tooltip("Minimum pitch enforced while cinematic mode is active. Prevents the camera from " +
+             "going nearly horizontal (5°) where the top of a growing tree quickly escapes the frame. " +
+             "20° gives good vertical headroom without looking top-down.")]
+    [SerializeField] float cinematicMinPitch = 20f;
+    [Tooltip("Log cinematic zoom state (height, radius, panY) to the console every ~2 real seconds.")]
+    [SerializeField] bool debugCinematicZoom = false;
+
+    bool  cinematicActive;
+    float cinematicElevPhase;
+    float cinematicBasePitch;  // pitch captured when cinematic mode was entered
+    float cinematicSavedPanY;  // panY to restore when cinematic mode exits
+    float cinematicDebugTimer;
+
     // Reused buffer for UI raycasts — avoids per-frame allocation
     static readonly List<RaycastResult> uiHits = new List<RaycastResult>();
 
@@ -82,6 +128,17 @@ public class CameraOrbit : MonoBehaviour
 
         if (startRadius > 0f) radius = startRadius;
         if (startPanY   != 0f) panY   = startPanY;
+
+        // Auto-find skeleton for cinematic auto-zoom if not assigned in Inspector.
+        if (skeleton == null)
+        {
+            skeleton = FindObjectOfType<TreeSkeleton>();
+            if (skeleton != null)
+                Debug.Log("[CameraOrbit] Auto-found TreeSkeleton for cinematic zoom.");
+            else
+                Debug.LogWarning("[CameraOrbit] No TreeSkeleton found — cinematic auto-zoom disabled. Drag it into the Inspector.");
+        }
+
         ApplyOrbit();
 
         lastTargetPosition = target.position;
@@ -98,6 +155,17 @@ public class CameraOrbit : MonoBehaviour
         // doesn't leave isDragging=true and cause a jump on the next mouse move.
         isDragging = false;
         isPanning  = false;
+        // Only kill cinematic mode for states where it would actively interfere with
+        // interactive editing. Normal gameplay transitions (Water, BranchGrow, LeafFall,
+        // etc.) should not interrupt a cinematic recording session.
+        if (state == GameState.RootPrune  ||
+            state == GameState.RootRake   ||
+            state == GameState.RockPlace  ||
+            state == GameState.TreeOrient ||
+            state == GameState.WireAnimate ||
+            state == GameState.SpeciesSelect ||
+            state == GameState.LoadMenu)
+            cinematicActive = false;
 
         activePitchMin = (state == GameState.RootPrune) ? pitchMinRootPrune : pitchMin;
         pitch = Mathf.Clamp(pitch, activePitchMin, pitchMax);
@@ -125,7 +193,8 @@ public class CameraOrbit : MonoBehaviour
         bool inRockMode = GameManager.Instance != null &&
                           (GameManager.Instance.state == GameState.RockPlace ||
                            GameManager.Instance.state == GameState.TreeOrient);
-        bool blockScroll = RockPlacer.RockGrabbed ||
+        bool blockScroll = cinematicActive ||
+                           RockPlacer.RockGrabbed ||
                            RockPlacer.TreeGrabbed ||
                            (inRockMode && Mouse.current != null && Mouse.current.rightButton.isPressed);
         if (scroll != 0f && !blockScroll)
@@ -202,6 +271,82 @@ public class CameraOrbit : MonoBehaviour
             // Debug.Log($"[CameraOrbit] pan → startRadius={radius:F2} startPanY={panY:F2}");
         }
 
+        // Cinematic mode — C key toggles; runs independently of all other input
+        if (Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame)
+            SetCinematicMode(!cinematicActive);
+
+        if (cinematicActive)
+        {
+            float effectiveYawSpeed = GameManager.canTrim ? cinematicYawSpeed * 0.5f : cinematicYawSpeed;
+            yaw += effectiveYawSpeed * Time.unscaledDeltaTime;
+            cinematicElevPhase += Time.unscaledDeltaTime / cinematicElevPeriod * Mathf.PI * 2f;
+            pitch = cinematicBasePitch + Mathf.Sin(cinematicElevPhase) * cinematicElevAmpl;
+            // Enforce cinematicMinPitch — never let elevation drift below the floor
+            pitch = Mathf.Clamp(pitch, Mathf.Max(activePitchMin, cinematicMinPitch), pitchMax);
+
+            // Auto-zoom + framing: ease radius and look-at pivot to fit the full canopy.
+            if (skeleton != null)
+            {
+                float treeH = skeleton.CachedTreeHeight;
+
+                // Always track the pivot so the base stays at ~20% from the bottom.
+                float targetPanY = treeH * cinematicFramingFraction;
+                panY = Mathf.Lerp(panY, targetPanY, cinematicPanLerpSpeed * Time.unscaledDeltaTime);
+
+                // Only pull the camera back when the canopy enters the top 10% of the frame.
+                float targetRadius = Mathf.Max(cinematicZoomMin, treeH * cinematicZoomHeightMult);
+                targetRadius = Mathf.Clamp(targetRadius, zoomMin, zoomMax);
+                Vector3 treeTop = skeleton.transform.position + Vector3.up * treeH;
+                Vector3 vp = Camera.main.WorldToViewportPoint(treeTop);
+                if (vp.z > 0f && vp.y > 0.9f)
+                    radius = Mathf.Lerp(radius, targetRadius, cinematicZoomLerpSpeed * Time.unscaledDeltaTime);
+
+                if (debugCinematicZoom)
+                {
+                    cinematicDebugTimer += Time.unscaledDeltaTime;
+                    if (cinematicDebugTimer >= 2f)
+                    {
+                        cinematicDebugTimer = 0f;
+                        Debug.Log($"[CinematicZoom] treeH={treeH:F2} targetR={targetRadius:F2} radius={radius:F2} targetPanY={targetPanY:F2} panY={panY:F2} pitch={pitch:F1}");
+                    }
+                }
+            }
+
+            ApplyOrbit();
+            return;
+        }
+
+        // Idle orbit — driven by PlayModeManager
+        bool orbitActive = PlayModeManager.Instance != null && PlayModeManager.Instance.IdleOrbitActive;
+        if (orbitActive)
+        {
+            if (!orbitStateSaved)
+            {
+                savedOrbitYaw    = yaw;
+                savedOrbitPitch  = pitch;
+                savedOrbitRadius = radius;
+                savedOrbitPanY   = panY;
+                orbitStateSaved  = true;
+                orbitElevPhase   = 0f;
+            }
+            yaw += OrbitYawSpeed * Time.unscaledDeltaTime;
+            orbitElevPhase += Time.unscaledDeltaTime / OrbitElevPeriod * Mathf.PI * 2f;
+            pitch = savedOrbitPitch + Mathf.Sin(orbitElevPhase) * OrbitElevAmpl;
+            pitch = Mathf.Clamp(pitch, activePitchMin, pitchMax);
+            ApplyOrbit();
+            return;
+        }
+        else if (orbitStateSaved)
+        {
+            // Snap back to saved position when orbit stops
+            yaw    = savedOrbitYaw;
+            pitch  = savedOrbitPitch;
+            radius = savedOrbitRadius;
+            panY   = savedOrbitPanY;
+            orbitStateSaved = false;
+            ApplyOrbit();
+        }
+
         if (!isDragging) return;
 
         Vector2 mouseDelta = Mouse.current != null ? Mouse.current.delta.ReadValue() * 0.01f : Vector2.zero;
@@ -236,6 +381,41 @@ public class CameraOrbit : MonoBehaviour
                 return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Enable or disable cinematic mode programmatically (same effect as pressing C).
+    /// Called by AutoRunManager to start recording without keyboard input.
+    /// </summary>
+    public void SetCinematicMode(bool active)
+    {
+        if (cinematicActive == active) return;
+        cinematicActive = active;
+
+        if (active)
+        {
+            cinematicBasePitch = Mathf.Max(cinematicMinPitch, pitch);
+            cinematicElevPhase = 0f;
+            cinematicSavedPanY = panY;
+            cinematicDebugTimer = 0f;
+            if (skeleton != null)
+            {
+                float treeH = skeleton.CachedTreeHeight;
+                float snapR = Mathf.Clamp(
+                    Mathf.Max(cinematicZoomMin, treeH * cinematicZoomHeightMult),
+                    zoomMin, zoomMax);
+                radius = Mathf.Max(radius, snapR);
+                panY   = treeH * cinematicFramingFraction;
+            }
+            ApplyOrbit();
+            Debug.Log($"[CameraOrbit] Cinematic ON — yaw={yaw:F1} pitch={pitch:F1} → basePitch={cinematicBasePitch:F1} radius={radius:F2} panY={panY:F2}");
+        }
+        else
+        {
+            panY = cinematicSavedPanY;
+            ApplyOrbit();
+            Debug.Log($"[CameraOrbit] Cinematic OFF — yaw={yaw:F1} pitch={pitch:F1}");
+        }
     }
 
     /// <summary>

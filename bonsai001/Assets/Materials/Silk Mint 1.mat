@@ -22,8 +22,8 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: Silk Mint 1
   m_Shader: {fileID: -6465566751694194690, guid: bad0c51c5e385da4aaf828b8ed4b22f3, type: 3}
-  m_Parent: {fileID: 0}
-  m_ModifiedSerializedProperties: 0
+  m_Parent: {fileID: 2100000, guid: 3b877adb5752da344ad4156865151752, type: 2}
+  m_ModifiedSerializedProperties: 2
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 2
@@ -36,26 +36,11 @@ Material:
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
-    m_TexEnvs:
-    - unity_Lightmaps:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_LightmapsInd:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_ShadowMasks:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
+    m_TexEnvs: []
     m_Ints: []
     m_Floats:
     - _Amplitude: 6
     - _Noise_Scale: 11
-    - _QueueControl: 0
-    - _QueueOffset: 0
-    - _Turned_On: 1
     m_Colors:
     - _Color: {r: 1.5157166, g: 0.2285147, b: 0, a: 0}
     - _Flow_Speed: {r: 0.6, g: 0.02, b: 0, a: 0}

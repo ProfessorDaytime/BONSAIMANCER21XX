@@ -32,6 +32,10 @@ public class TreeMeshBuilder : MonoBehaviour
     [Tooltip("Number of sides on each cylinder segment. 8 is fine for a bonsai.")]
     [SerializeField] int ringSegments = 8;
 
+    // V-axis UV tiling scale. Matches the original hardcoded 0.4f by default.
+    // Set from species.barkVTiling in ApplySpeciesColors (also defaults to 0.4f).
+    float barkVTilingScale = 0.4f;
+
     // Tight-angle geometry: when the angle between a parent and child growDirection
     // exceeds this threshold, intermediate rings are inserted at the base of the
     // child segment to smooth the bend instead of pinching the vertices.
@@ -128,6 +132,9 @@ public class TreeMeshBuilder : MonoBehaviour
         mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;  // supports 4 billion vertices; default 16-bit caps at 65535
         GetComponent<MeshFilter>().mesh = mesh;
         meshCollider  = GetComponent<MeshCollider>();
+        // Skip mesh cleaning — it fails on transiently degenerate geometry during early growth.
+        meshCollider.cookingOptions = MeshColliderCookingOptions.CookForFasterSimulation
+                                    | MeshColliderCookingOptions.WeldColocatedVertices;
         meshRenderer  = GetComponent<MeshRenderer>();
 
         if (skeleton == null)
@@ -151,6 +158,16 @@ public class TreeMeshBuilder : MonoBehaviour
         mat.SetColor("_BarkColor",   skeleton.species.matureBarkColor);
         mat.SetColor("_NGRootColor", skeleton.species.rootNewGrowthColor);
         mat.SetInt  ("_BarkType",    skeleton.species.barkType);
+
+        // Bark texture tiers (optional pixel-art textures)
+        bool hasTex = skeleton.species.youngBarkTexture != null || skeleton.species.matureBarkTexture != null;
+        mat.SetFloat("_UseTextures",   hasTex ? 1f : 0f);
+        mat.SetFloat("_TexelRes",      skeleton.species.barkTexelRes);
+        mat.SetFloat("_BarkNoiseMode", skeleton.species.barkNoiseMode);
+        if (skeleton.species.youngBarkTexture  != null) mat.SetTexture("_BarkTexA", skeleton.species.youngBarkTexture);
+        if (skeleton.species.matureBarkTexture != null) mat.SetTexture("_BarkTexB", skeleton.species.matureBarkTexture);
+
+        barkVTilingScale = skeleton.species.barkVTiling;
     }
 
     bool isDead = false;
@@ -262,8 +279,14 @@ public class TreeMeshBuilder : MonoBehaviour
 
         // Refresh collider -- measure separately, it's usually the most expensive part
         colliderTimer.Restart();
-        meshCollider.sharedMesh = null;
-        meshCollider.sharedMesh = mesh;
+        if (IsMeshColliderSafe())
+        {
+            // Re-apply options each time — Unity can reset them when sharedMesh is cleared.
+            meshCollider.cookingOptions = MeshColliderCookingOptions.CookForFasterSimulation
+                                        | MeshColliderCookingOptions.WeldColocatedVertices;
+            meshCollider.sharedMesh = null;
+            meshCollider.sharedMesh = mesh;
+        }
         colliderTimer.Stop();
 
         buildTimer.Stop();
@@ -286,6 +309,28 @@ public class TreeMeshBuilder : MonoBehaviour
             totalColliderMs = 0;
             buildCount      = 0;
         }
+    }
+
+    bool IsMeshColliderSafe()
+    {
+        if (vertices.Count < 3 || triangles.Count < 3) return false;
+
+        // Reject non-finite vertices.
+        foreach (var v in vertices)
+            if (!float.IsFinite(v.x) || !float.IsFinite(v.y) || !float.IsFinite(v.z))
+                return false;
+
+        // Reject any zero-area triangle — PhysX mesh cleaning fails on these.
+        const float kMinAreaSq = 1e-10f;
+        for (int i = 0; i < triangles.Count; i += 3)
+        {
+            Vector3 a = vertices[triangles[i]];
+            Vector3 b = vertices[triangles[i + 1]];
+            Vector3 c = vertices[triangles[i + 2]];
+            float areaSq = Vector3.Cross(b - a, c - a).sqrMagnitude;
+            if (areaSq < kMinAreaSq) return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -690,7 +735,7 @@ public class TreeMeshBuilder : MonoBehaviour
             }
 
             vertices.Add(localPos);
-            uvs.Add(new Vector2(t, heightV * 0.4f));
+            uvs.Add(new Vector2(t, heightV * barkVTilingScale));
             colors.Add(vertexColor);
         }
     }

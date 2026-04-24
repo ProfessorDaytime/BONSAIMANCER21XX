@@ -22,6 +22,7 @@
   <Project Path="Unity.InputSystem.csproj" />
   <Project Path="Unity.Searcher.Editor.csproj" />
   <Project Path="UnityEditor.TestRunner.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.VisualScripting.Core.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.Runtime.csproj" />
   <Project Path="Unity.UnifiedRayTracing.Runtime.csproj" />
@@ -49,7 +50,6 @@
   <Project Path="Unity.Multiplayer.Center.Common.csproj" />
   <Project Path="Unity.RenderPipelines.Core.Runtime.Shared.csproj" />
   <Project Path="Unity.InputSystem.ForUI.csproj" />
-  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.AI.Navigation.csproj" />
   <Project Path="Unity.Collections.CodeGen.csproj" />
   <Project Path="Unity.Mathematics.Editor.csproj" />

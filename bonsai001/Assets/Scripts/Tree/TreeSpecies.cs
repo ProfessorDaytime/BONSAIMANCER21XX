@@ -189,6 +189,31 @@ public class TreeSpecies : ScriptableObject
              "See memory/reference_bark_types.md for full table.")]
     [Range(1, 18)] public int barkType = 2;
 
+    // ── Bark Textures (optional) ──────────────────────────────────────────────
+
+    [Header("Bark Textures (optional — leave null for procedural only)")]
+    [Tooltip("Pixel-art bark texture for new-growth / young wood (vertex alpha = 0 end).\n" +
+             "Import with Point (no filter) sampling to preserve hard pixels.\n" +
+             "Leave null to use the fully procedural bark pattern.")]
+    public Texture2D youngBarkTexture;
+
+    [Tooltip("Pixel-art bark texture for mature wood (vertex alpha = 1 end).\n" +
+             "Leave null to use the fully procedural bark pattern.")]
+    public Texture2D matureBarkTexture;
+
+    [Tooltip("UV V-axis tiling scale for bark textures (world-units per tile).\n" +
+             "Default 0.4 preserves the existing procedural bark UV scale.\n" +
+             "Increase (e.g. 2–4) only when using pixel-art textures to get tight repeats.")]
+    public float barkVTiling = 0.4f;
+
+    [Tooltip("Texel resolution of the bark textures for pixel-snapped noise.\n" +
+             "Should match the texture dimension (e.g. 64 for 64×64 art).")]
+    public float barkTexelRes = 64f;
+
+    [Tooltip("0 = scatter noise (random per-texel salt-and-pepper flip).\n" +
+             "1 = cellular noise (spreading Voronoi patches, organic look).")]
+    [Range(0f, 1f)] public float barkNoiseMode = 0f;
+
     [Tooltip("Bark color on thin, new-growth twigs (maps to shader _NGColor).\n" +
              "Deciduous: fresh green.  Pine/juniper: yellow-green.  Deadwood: grey.")]
     public Color youngBarkColor = new Color(0.42f, 0.62f, 0.25f);
