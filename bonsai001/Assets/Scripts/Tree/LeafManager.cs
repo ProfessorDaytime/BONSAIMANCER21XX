@@ -242,11 +242,6 @@ public class LeafManager : MonoBehaviour
             if (!node.isTerminal)          continue;
             if (node.isRoot)               continue;  // roots never get leaves
             if (node.depth < minLeafDepth) continue;
-            // Skip same-depth sub-chain and depth-cap extension segments.
-            // These are interior parts of a branch chord — only the true fork junction
-            // (depth > parent.depth) deserves immediate leaves. Extension nodes turning
-            // into a dense cluster is what causes thick-trunk leaf overload.
-            if (node.parent != null && node.depth == node.parent.depth) continue;
             if (nodeLeaves.ContainsKey(node.id)) continue;  // already has leaves
 
             // Bud gate: old-wood nodes only get leaves if they set a bud last autumn.

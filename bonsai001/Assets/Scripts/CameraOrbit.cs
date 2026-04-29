@@ -132,7 +132,7 @@ public class CameraOrbit : MonoBehaviour
         // Auto-find skeleton for cinematic auto-zoom if not assigned in Inspector.
         if (skeleton == null)
         {
-            skeleton = FindObjectOfType<TreeSkeleton>();
+            skeleton = FindAnyObjectByType<TreeSkeleton>();
             if (skeleton != null)
                 Debug.Log("[CameraOrbit] Auto-found TreeSkeleton for cinematic zoom.");
             else

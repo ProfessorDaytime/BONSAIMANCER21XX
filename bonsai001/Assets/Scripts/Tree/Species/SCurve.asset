@@ -1,0 +1,110 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b8ef179e5c610f4bacb25ffd2845eee, type: 3}
+  m_Name: SCurve
+  m_EditorClassIdentifier: Assembly-CSharp::StyleDefinition
+  styleName: S-Curve
+  styleType: 1
+  wireThresholdDeg: 10
+  trunkWaypoints:
+  - heightAboveSoil: 0.05
+    targetLeanAngleDeg: 0
+    leanAxisDeg: 0
+  - heightAboveSoil: 0.2
+    targetLeanAngleDeg: 22
+    leanAxisDeg: 0
+  - heightAboveSoil: 0.4
+    targetLeanAngleDeg: 22
+    leanAxisDeg: 180
+  - heightAboveSoil: 0.6
+    targetLeanAngleDeg: 18
+    leanAxisDeg: 0
+  - heightAboveSoil: 0.8
+    targetLeanAngleDeg: 14
+    leanAxisDeg: 180
+  - heightAboveSoil: 0.95
+    targetLeanAngleDeg: 6
+    leanAxisDeg: 0
+  branchTiers:
+  - minHeightNorm: 0.05
+    maxHeightNorm: 0.3
+    maxBranches: 2
+    targetAngleDeg: 75
+    maxAngleTolerance: 30
+  - minHeightNorm: 0.3
+    maxHeightNorm: 0.55
+    maxBranches: 3
+    targetAngleDeg: 60
+    maxAngleTolerance: 28
+  - minHeightNorm: 0.55
+    maxHeightNorm: 0.78
+    maxBranches: 3
+    targetAngleDeg: 45
+    maxAngleTolerance: 25
+  - minHeightNorm: 0.78
+    maxHeightNorm: 1
+    maxBranches: 4
+    targetAngleDeg: 30
+    maxAngleTolerance: 25
+  maxCanopyRadius: 0.5
+  canopySilhouette:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.1
+      value: 0.45
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.35
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.65
+      value: 0.75
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0.1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  pinchOvershootFactor: 1.15

@@ -16,7 +16,7 @@ MonoBehaviour:
   scientificName: Ficus retusa
   baseGrowSpeed: 0.30
   depthSpeedDecay: 0.86
-  depthsPerYear: 1
+  depthsPerYear: 2
   baseElongation: 0.06
   elongationDepthDecay: 0.72
   branchSegmentLength: 2.00

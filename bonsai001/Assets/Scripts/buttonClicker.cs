@@ -239,6 +239,7 @@ public class ButtonClicker : MonoBehaviour
     // Sliders + value labels
     Slider sliderTimescale;      Label labelTimescale;
     Toggle toggleQuickWinter;
+    Toggle toggleAntiAliasing;
     Label  labelSelectionRadius;
     Button saveButton;
     Button loadButton;
@@ -623,6 +624,7 @@ public class ButtonClicker : MonoBehaviour
         sliderTimescale      = root.Q("SliderTimescale")      as Slider;
         labelTimescale       = root.Q("LabelTimescale")       as Label;
         toggleQuickWinter    = root.Q("ToggleQuickWinter")    as Toggle;
+        toggleAntiAliasing   = root.Q("ToggleAntiAliasing")   as Toggle;
         sliderGrowSpeed      = root.Q("SliderGrowSpeed")      as Slider;
         labelGrowSpeed       = root.Q("LabelGrowSpeed")       as Label;
         sliderSpringLaterals = root.Q("SliderSpringLaterals") as Slider;
@@ -749,6 +751,11 @@ public class ButtonClicker : MonoBehaviour
                     ? new StyleColor(Color.black)
                     : new StyleColor(new Color(0.78f, 0.78f, 0.78f));
             }
+        });
+        toggleAntiAliasing?.RegisterValueChangedCallback(evt => {
+            QualitySettings.antiAliasing = evt.newValue ? 4 : 0;
+            PlayerPrefs.SetInt("antiAliasing", evt.newValue ? 1 : 0);
+            PlayerPrefs.Save();
         });
         sliderGrowSpeed?.RegisterValueChangedCallback(evt => {
             if (skeleton != null) skeleton.BaseGrowSpeed = evt.newValue;
@@ -935,7 +942,7 @@ public class ButtonClicker : MonoBehaviour
                 }
 
                 // Sync rock size chips to the current rock
-                var placer = FindFirstObjectByType<RockPlacer>();
+                var placer = FindAnyObjectByType<RockPlacer>();
                 if (placer != null) RefreshRockSizeButtons(placer.rockSize);
 
                 float deg = potSoil.soilDegradation;
@@ -1312,6 +1319,8 @@ public class ButtonClicker : MonoBehaviour
         }
         if (toggleQuickWinter != null)
             toggleQuickWinter.SetValueWithoutNotify(GameManager.quickWinter);
+        if (toggleAntiAliasing != null)
+            toggleAntiAliasing.SetValueWithoutNotify(QualitySettings.antiAliasing > 0);
 
         if (selectionRadiusSlider != null)
         {
@@ -2078,7 +2087,7 @@ public class ButtonClicker : MonoBehaviour
 
     void SelectRockSize(RockPlacer.RockSize size)
     {
-        var placer = FindFirstObjectByType<RockPlacer>();
+        var placer = FindAnyObjectByType<RockPlacer>();
         if (placer == null) return;
         placer.rockSize = size;
         placer.ApplyRockSize();
@@ -2778,7 +2787,14 @@ public class ButtonClicker : MonoBehaviour
     void RefreshModesTab()
     {
         var pm = PlayModeManager.Instance;
-        if (pm == null || calModeChips == null) return;
+        if (calModeChips == null) return;
+        if (pm == null)
+        {
+            Debug.LogWarning("[UI] PlayModeManager.Instance is null — add PlayModeManager to the scene.");
+            if (calModeAutoWater != null) calModeAutoWater.SetValueWithoutNotify(true);
+            if (calModeAutoFert  != null) calModeAutoFert.SetValueWithoutNotify(true);
+            return;
+        }
 
         // Rebuild mode chips
         calModeChips.Clear();

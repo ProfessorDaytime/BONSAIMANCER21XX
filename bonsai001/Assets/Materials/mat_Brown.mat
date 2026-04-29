@@ -16,8 +16,7 @@ Material:
   - _EMISSION
   - _NORMALMAP
   - _PARALLAXMAP
-  m_InvalidKeywords:
-  - _FORCEMATUREBARK_ON
+  m_InvalidKeywords: []
   m_LightmapFlags: 2
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 1
@@ -118,7 +117,7 @@ Material:
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
-    - _ForceMatureBark: 1
+    - _ForceMatureBark: 0
     - _GlossMapScale: 1
     - _Glossiness: 0.009
     - _GlossyReflections: 1

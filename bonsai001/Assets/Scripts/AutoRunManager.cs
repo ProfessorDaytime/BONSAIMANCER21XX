@@ -31,6 +31,9 @@ public class AutoRunManager : MonoBehaviour
     [Tooltip("Total number of loops to complete. 0 = run forever.")]
     [SerializeField] int loopCount = 0;
 
+    [Tooltip("When true, clears and restarts the tree at the start of each loop. When false, the tree keeps growing across loops.")]
+    [SerializeField] bool resetTreeOnLoop = false;
+
     [Tooltip("Species to cycle through, one per run. Leave empty to keep whatever is currently loaded.")]
     [SerializeField] List<TreeSpecies> speciesRotation = new List<TreeSpecies>();
 
@@ -52,8 +55,8 @@ public class AutoRunManager : MonoBehaviour
 
     void Start()
     {
-        if (skeleton    == null) skeleton    = FindFirstObjectByType<TreeSkeleton>();
-        if (cameraOrbit == null) cameraOrbit = FindFirstObjectByType<CameraOrbit>();
+        if (skeleton    == null) skeleton    = FindAnyObjectByType<TreeSkeleton>();
+        if (cameraOrbit == null) cameraOrbit = FindAnyObjectByType<CameraOrbit>();
 
         if (autoRunEnabled)
             BeginRun();
@@ -62,7 +65,8 @@ public class AutoRunManager : MonoBehaviour
     void Update()
     {
         if (!running || ending) return;
-        if (GameManager.year >= startYear + runDurationYears)
+        if (GameManager.year >= startYear + runDurationYears ||
+            GameManager.Instance?.state == GameState.TreeDead)
             StartCoroutine(EndRun());
     }
 
@@ -99,21 +103,30 @@ public class AutoRunManager : MonoBehaviour
             }
         }
 
-        // Reset tree to bare seed
-        skeleton.ClearForRestart();
-        GameManager.waterings = -1;
+        bool treeExists = skeleton.root != null;
 
-        // Trigger InitTree via the Water state (same path as the player pressing Water)
-        if (gm.state == GameState.Water)
-            gm.UpdateGameState(GameState.Idle);   // ensure guard doesn't skip re-fire
-        gm.UpdateGameState(GameState.Water);
+        if (resetTreeOnLoop && treeExists)
+        {
+            // Clear the existing tree before re-initialising
+            skeleton.ClearForRestart();
+            GameManager.waterings = -1;
+            treeExists = false;
+        }
 
-        yield return null;  // let InitTree complete before advancing
+        if (!treeExists)
+        {
+            // Tree needs initialising — trigger InitTree via the Water state
+            if (gm.state == GameState.Water)
+                gm.UpdateGameState(GameState.Idle);   // ensure guard doesn't skip re-fire
+            gm.UpdateGameState(GameState.Water);
+
+            yield return null;  // let InitTree complete before advancing
+        }
 
         // Unfreeze time — game may have been paused before AutoRun started.
         Time.timeScale = 1f;
 
-        // Restore normal time-advancing state for the current month
+        // Advance to the correct time-advancing state for the current month
         gm.UpdateGameState(gm.StateForMonth(GameManager.month));
 
         // Activate cinematic camera

@@ -79,7 +79,9 @@
      <Compile Include="Assets\Scripts\Leaf.cs" />
      <Compile Include="Assets\Scripts\MainMenu.cs" />
      <Compile Include="Assets\Scripts\ProceduralGrid.cs" />
+     <Compile Include="Assets\Scripts\Tree\StyleDefinition.cs" />
      <Compile Include="Assets\Scripts\ProceduralConeBackup.cs" />
+     <Compile Include="Assets\Scripts\Tree\AutoStyler.cs" />
      <Compile Include="Assets\Scripts\GameManager.cs" />
      <Compile Include="Assets\Scripts\Tree\RootRakeManager.cs" />
      <Compile Include="Assets\Scripts\Tree\IshitsukiWire.cs" />

@@ -1,0 +1,107 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b8ef179e5c610f4bacb25ffd2845eee, type: 3}
+  m_Name: Moyogi
+  m_EditorClassIdentifier: Assembly-CSharp::StyleDefinition
+  styleName: Moyogi
+  styleType: 0
+  wireThresholdDeg: 12
+  trunkWaypoints:
+  - heightAboveSoil: 0.05
+    targetLeanAngleDeg: 0
+    leanAxisDeg: 0
+  - heightAboveSoil: 0.2
+    targetLeanAngleDeg: 18
+    leanAxisDeg: 0
+  - heightAboveSoil: 0.45
+    targetLeanAngleDeg: 12
+    leanAxisDeg: 45
+  - heightAboveSoil: 0.7
+    targetLeanAngleDeg: 8
+    leanAxisDeg: 315
+  - heightAboveSoil: 0.95
+    targetLeanAngleDeg: 4
+    leanAxisDeg: 10
+  branchTiers:
+  - minHeightNorm: 0.05
+    maxHeightNorm: 0.25
+    maxBranches: 2
+    targetAngleDeg: 80
+    maxAngleTolerance: 35
+  - minHeightNorm: 0.25
+    maxHeightNorm: 0.5
+    maxBranches: 3
+    targetAngleDeg: 65
+    maxAngleTolerance: 35
+  - minHeightNorm: 0.5
+    maxHeightNorm: 0.75
+    maxBranches: 4
+    targetAngleDeg: 50
+    maxAngleTolerance: 30
+  - minHeightNorm: 0.75
+    maxHeightNorm: 1
+    maxBranches: 5
+    targetAngleDeg: 35
+    maxAngleTolerance: 30
+  maxCanopyRadius: 0.6
+  canopySilhouette:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.15
+      value: 0.55
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.4
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.75
+      value: 0.7
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0.15
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  pinchOvershootFactor: 1.2

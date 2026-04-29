@@ -237,11 +237,12 @@ public class GameManager : MonoBehaviour
 
     void Awake(){
         Instance = this;
-        month = 3;
-        day   = 1;
-        year  = 2123;
+        month = 2;
+        day   = 27;
+        year  = 2026;
         hour  = 12f;
         LoadTimescalePrefs();
+        QualitySettings.antiAliasing = PlayerPrefs.GetInt("antiAliasing", 1) > 0 ? 4 : 0;
         // If any named saves exist, show the load menu; otherwise go straight to species pick.
         UpdateGameState(SaveManager.HasAnySave() ? GameState.LoadMenu : GameState.SpeciesSelect);
     }

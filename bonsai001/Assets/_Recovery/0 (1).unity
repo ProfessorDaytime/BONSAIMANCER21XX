@@ -3484,7 +3484,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.3
-  far clip plane: 10000
+  far clip plane: 1000
   field of view: 60
   orthographic: 0
   orthographic size: 5
@@ -3622,7 +3622,6 @@ GameObject:
   - component: {fileID: 980914155}
   - component: {fileID: 980914157}
   - component: {fileID: 980914158}
-  - component: {fileID: 980914159}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -3703,25 +3702,9 @@ MonoBehaviour:
   runDurationYears: 10
   beautyShotSeconds: 5
   loopCount: 5
-  resetTreeOnLoop: 0
   speciesRotation: []
   skeleton: {fileID: 0}
   cameraOrbit: {fileID: 0}
---- !u!114 &980914159
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 980914154}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d1e6ccc28ec574441b2a72231b6db2a2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayModeManager
-  skeleton: {fileID: 1486295570}
-  modes: []
-  activeModeIndex: 0
 --- !u!1 &986802792
 GameObject:
   m_ObjectHideFlags: 0
@@ -6036,9 +6019,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1486295598}
-    - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1486295599}
   m_SourcePrefab: {fileID: 100100000, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
 --- !u!1 &1486295552 stripped
 GameObject:
@@ -6131,7 +6111,7 @@ MonoBehaviour:
   consecutiveCriticalSeasons: 0
   treeInDanger: 0
   hasLongRoot: 0
-  species: {fileID: 11400000, guid: 0017a85f7d355b94aba9304026bfe1eb, type: 2}
+  species: {fileID: 0}
   treeOrigin: 0
   baseGrowSpeed: 0.07
   depthSpeedDecay: 0.85
@@ -6195,13 +6175,6 @@ MonoBehaviour:
   nutrientReserve: 1
   autoFertilizeEnabled: 0
   autoFertilizeJustFired: 0
-  autoHerbicideEnabled: 0
-  autoHerbicideDelayDays: 5
-  autoHerbicideJustFired: 0
-  autoFungicideEnabled: 0
-  autoFungicideThreshold: 0.25
-  autoFungicideDelayDays: 3
-  autoFungicideJustFired: 0
   fungalSpreadChance: 0.25
   fungalLoadIncrease: 0.2
   fungalDamagePerLoad: 0.05
@@ -6244,8 +6217,6 @@ MonoBehaviour:
   rockCollider: {fileID: 1644556599}
   isIshitsukiMode: 0
   rockInfluenceRadius: 0.4
-  snapshotLogIntervalDays: 5
-  branchSpawnMaxDelay: 50
   debugSoilYOverride: 0
   debugSoilY: 80
   airLayerWrapPrefab: {fileID: 0}
@@ -6451,22 +6422,6 @@ MonoBehaviour:
   worldY: 82
   metreColor: {r: 1, g: 0.85, b: 0.1, a: 0.85}
   feetColor: {r: 1, g: 0.45, b: 0.75, a: 0.7}
---- !u!114 &1486295599
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1486295552}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5f0e368342fccdb45aeb9aceab89757d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AutoStyler
-  style: {fileID: 11400000, guid: 051582429a490f34da9690bbcab413df, type: 2}
-  autoStyleEnabled: 1
-  verboseLog: 1
-  trimPreviewDays: 10
 --- !u!1 &1496661667
 GameObject:
   m_ObjectHideFlags: 0

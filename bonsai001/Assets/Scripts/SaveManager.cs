@@ -638,7 +638,7 @@ public static class SaveManager
             soilSeasonsSinceRepot = potSoil?.seasonsSinceRepot ?? 0,
             soilPreset            = (int)(potSoil?.preset   ?? PotSoil.SoilPreset.ClassicBonsai),
             potSize               = (int)(potSoil?.potSize  ?? PotSoil.PotSize.M),
-            rockSize              = (int)(UnityEngine.Object.FindFirstObjectByType<RockPlacer>()?.rockSize ?? RockPlacer.RockSize.M),
+            rockSize              = (int)(UnityEngine.Object.FindAnyObjectByType<RockPlacer>()?.rockSize ?? RockPlacer.RockSize.M),
 
             startYear       = skeleton.SaveStartYear,
             startMonth      = skeleton.SaveStartMonth,

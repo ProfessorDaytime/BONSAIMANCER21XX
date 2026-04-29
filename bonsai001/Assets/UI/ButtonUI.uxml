@@ -182,6 +182,10 @@
                     <ui:Toggle name="ToggleQuickWinter" value="true" style="flex: 1;" />
                 </ui:VisualElement>
                 <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
+                    <ui:Label text="Anti-Aliasing" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
+                    <ui:Toggle name="ToggleAntiAliasing" value="true" style="flex: 1;" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 14px;">
                     <ui:Label text="Selection Radius" style="width: 150px; color: rgb(200,200,200); font-size: 13px;" />
                     <ui:Slider name="SelectionRadiusSlider" low-value="0" high-value="0.5" value="0.5" style="flex: 1; margin-right: 10px;" />
                     <ui:Label name="LabelSelectionRadius" text="0.50" style="width: 40px; color: rgb(229,179,16); font-size: 13px; -unity-text-align: middle-right;" />

@@ -362,6 +362,27 @@ public class TreeSkeleton : MonoBehaviour
     /// <summary>Set true for one frame when auto-fertilize fires; buttonClicker reads and clears it.</summary>
     [HideInInspector] public bool autoFertilizeJustFired = false;
 
+    /// <summary>When true, applies herbicide automatically after weeds go unattended for autoHerbicideDelayDays.</summary>
+    public bool autoHerbicideEnabled = false;
+
+    [Tooltip("In-game days weeds must be present before auto-herbicide fires. Gives the player time to pull them manually.")]
+    public float autoHerbicideDelayDays = 5f;
+
+    [HideInInspector] public bool  autoHerbicideJustFired = false;
+    float autoHerbicidePendingDays = 0f;
+
+    /// <summary>When true, applies fungicide automatically when infection exceeds autoFungicideThreshold.</summary>
+    public bool autoFungicideEnabled = false;
+
+    [Tooltip("fungalLoad level on any node that triggers the auto-fungicide countdown.")]
+    public float autoFungicideThreshold = 0.25f;
+
+    [Tooltip("In-game days after fungal threshold is hit before auto-fungicide fires.")]
+    public float autoFungicideDelayDays = 3f;
+
+    [HideInInspector] public bool  autoFungicideJustFired = false;
+    float autoFungicidePendingDays = 0f;
+
     [Header("Fungal System")]
     [Tooltip("Chance per season that an infected node spreads fungalLoad to each adjacent node.")]
     [SerializeField] [Range(0f, 1f)] float fungalSpreadChance = 0.25f;
@@ -523,6 +544,12 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("World-unit radius around the rock surface within which roots deflect to follow it.")]
     [SerializeField] float rockInfluenceRadius = 0.4f;
 
+    [Tooltip("How many in-game days between [Tree5] snapshot log entries. Lower = more detail; higher = less spam.")]
+    [SerializeField] int   snapshotLogIntervalDays = 5;
+
+    [Tooltip("Max in-game days to randomly delay a new lateral branch before it starts elongating. Spreads branch activation across the growing season. 0 = old instant behaviour.")]
+    [SerializeField] float branchSpawnMaxDelay = 50f;
+
     [Tooltip("Enable to override the auto-computed soil Y with the value below. Useful for testing root draping.")]
     [SerializeField] bool  debugSoilYOverride = false;
 
@@ -577,6 +604,8 @@ public class TreeSkeleton : MonoBehaviour
     public event Action<List<TreeNode>> OnSubtreeTrimmed;
     /// <summary>Fired the first time any wire on this tree turns gold (set complete).</summary>
     public event Action OnWireSetGold;
+    /// <summary>Fired at the end of StartNewGrowingSeason each spring, after all branching and bud-break logic completes.</summary>
+    public event Action OnNewGrowingSeason;
 
     // Tree Data
 
@@ -735,7 +764,7 @@ public class TreeSkeleton : MonoBehaviour
             potSoil.ComputeDerivedProperties();
             potSoil.ApplyPotSize(rootAreaTransform);
         }
-        var rockPlacer = UnityEngine.Object.FindFirstObjectByType<RockPlacer>();
+        var rockPlacer = UnityEngine.Object.FindAnyObjectByType<RockPlacer>();
         if (rockPlacer != null)
         {
             rockPlacer.rockSize = (RockPlacer.RockSize)data.rockSize;
@@ -925,7 +954,7 @@ public class TreeSkeleton : MonoBehaviour
         public bool       isSeverable;       // true when rootGrowSeasons >= threshold
     }
 
-    float debugLogTimer  = 0f;
+    int   lastSnapshotAbsDay = -1;
 
     readonly Stopwatch growthTimer = new Stopwatch();
     long totalGrowthMs = 0;
@@ -1175,12 +1204,61 @@ public class TreeSkeleton : MonoBehaviour
                 if (Fertilize())
                     autoFertilizeJustFired = true;
             }
+
+            // Auto-herbicide: count up days while weeds are present; fire after delay
+            if (autoHerbicideEnabled)
+            {
+                var wm = GetComponent<WeedManager>();
+                if (wm != null && wm.ActiveWeedCount > 0)
+                {
+                    autoHerbicidePendingDays += inGameDays;
+                    if (autoHerbicidePendingDays >= autoHerbicideDelayDays)
+                    {
+                        wm.HerbicideAll();
+                        autoHerbicideJustFired   = true;
+                        autoHerbicidePendingDays = 0f;
+                    }
+                }
+                else
+                {
+                    autoHerbicidePendingDays = 0f;  // player pulled them — reset countdown
+                }
+            }
+
+            // Auto-fungicide: fire after delay once any node exceeds the threshold
+            if (autoFungicideEnabled)
+            {
+                bool infected = false;
+                foreach (var n in allNodes)
+                    if (n.fungalLoad > autoFungicideThreshold) { infected = true; break; }
+
+                if (infected)
+                {
+                    autoFungicidePendingDays += inGameDays;
+                    if (autoFungicidePendingDays >= autoFungicideDelayDays)
+                    {
+                        ApplyFungicide();
+                        autoFungicideJustFired   = true;
+                        autoFungicidePendingDays = 0f;
+                    }
+                }
+                else
+                {
+                    autoFungicidePendingDays = 0f;
+                }
+            }
         }
 
         if (!isGrowing || root == null) return;
 
         float rate = GameManager.SeasonalGrowthRate;
         if (rate <= 0f) return;
+
+        // Tick down branch activation delays regardless of rate (calendar time, not growth rate)
+        if (branchSpawnMaxDelay > 0f)
+            foreach (var node in allNodes)
+                if (node.growthStartDelay > 0f)
+                    node.growthStartDelay = Mathf.Max(0f, node.growthStartDelay - inGameDays);
 
         bool structureChanged = false;
         bool anyGrew          = false;
@@ -1208,16 +1286,16 @@ public class TreeSkeleton : MonoBehaviour
         var snapshot = new List<TreeNode>(allNodes.Count);
         foreach (var node in allNodes)
         {
-            if (node.isGrowing && !node.isTrimmed)
+            if (node.isGrowing && !node.isTrimmed && node.growthStartDelay <= 0f)
                 snapshot.Add(node);
         }
 
-        // Log once per real second
-        debugLogTimer += Time.deltaTime;
-        bool doLog = debugLogTimer >= 1f;
+        // Log every 5 in-game days — filter console by [Tree5]
+        int absDay = GameManager.year * 365 + GameManager.dayOfYear;
+        bool doLog = absDay - lastSnapshotAbsDay >= snapshotLogIntervalDays;
         if (doLog)
         {
-            debugLogTimer = 0f;
+            lastSnapshotAbsDay = absDay;
             int maxNodeDepth = 0;
             int rootNodes = 0, branchNodes = 0;
             foreach (var n in allNodes)
@@ -1226,9 +1304,9 @@ public class TreeSkeleton : MonoBehaviour
                 if (n.isRoot) rootNodes++; else branchNodes++;
             }
             long avgGrowth = growthFrames > 0 ? totalGrowthMs / growthFrames : 0;
-            Debug.Log($"[Tree] {GameManager.month}/{GameManager.day}/{GameManager.year} | " +
+            Debug.Log($"[Tree5] {GameManager.month}/{GameManager.day}/{GameManager.year} | " +
                       $"rate={rate:F2} growing={snapshot.Count} " +
-                      $"total={allNodes.Count} (branches={branchNodes} roots={rootNodes}) maxDepth={maxNodeDepth} | " +
+                      $"total={allNodes.Count} (branches={branchNodes} roots={rootNodes}) maxDepth={maxNodeDepth} depthCap={SeasonDepthCap} | " +
                       $"growthLoop avg={avgGrowth}ms over {growthFrames} frames");
 
             totalGrowthMs = 0;
@@ -1392,7 +1470,7 @@ public class TreeSkeleton : MonoBehaviour
 
         bool wasGrowing = isGrowing;
         isGrowing = (state == GameState.BranchGrow);
-        Debug.Log($"[Tree] State -> {state} | isGrowing={isGrowing} | year={GameManager.year} lastGrownYear={lastGrownYear}");
+        Debug.Log($"[TreeState] State -> {state} | isGrowing={isGrowing} | year={GameManager.year} lastGrownYear={lastGrownYear}");
 
         // Season just ended — freeze all still-growing segments at their current length.
         // Only on TimeGo (the true season end), not on temporary tool states like Wiring.
@@ -1655,6 +1733,11 @@ public class TreeSkeleton : MonoBehaviour
             if (go != null) Destroy(go);
         lateralBudObjects.Clear();
 
+        // Flush any growth-start delays carried over from the previous season.
+        // Nodes that were waiting to activate in autumn get their chance at spring start.
+        foreach (var node in allNodes)
+            node.growthStartDelay = 0f;
+
         // Resume any non-root segments that were stopped mid-chord in autumn
         // (stopped while isGrowing but before reaching targetLength, no children yet).
         // This covers both mid-subdivision chains and any segment that didn't finish in time.
@@ -1862,6 +1945,7 @@ public class TreeSkeleton : MonoBehaviour
                     cont.isRoot = false;
                     if (subdivs > 1)
                         cont.subdivisionsLeft = subdivs - 1;
+                    cont.growthStartDelay = Random.Range(0f, branchSpawnMaxDelay * 0.3f);
                     currentBranchCount++;
 
                     if (currentBranchCount < maxBranchNodes && Random.value < springLateralChance * vigorFactor * treeEnergy * terminal.branchVigor)
@@ -1871,6 +1955,7 @@ public class TreeSkeleton : MonoBehaviour
                         lat.isRoot = false;
                         if (subdivs > 1)
                             lat.subdivisionsLeft = subdivs - 1;
+                        lat.growthStartDelay = Random.Range(0f, branchSpawnMaxDelay);
                         currentBranchCount++;
                         GameManager.branches++;
                     }
@@ -2372,6 +2457,8 @@ public class TreeSkeleton : MonoBehaviour
         {
             KillTree("root loss");
         }
+
+        OnNewGrowingSeason?.Invoke();
     }
 
     /// <summary>Human-readable cause of death — read by ButtonClicker to populate the death screen.</summary>
@@ -2486,6 +2573,7 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     public void ClearForRestart()
     {
+        GetComponent<LeafManager>()?.ClearAllLeaves();
         foreach (var go in budObjects.Values)    if (go != null) Destroy(go);
         budObjects.Clear();
         foreach (var go in lateralBudObjects)    if (go != null) Destroy(go);
@@ -2515,10 +2603,11 @@ public class TreeSkeleton : MonoBehaviour
         woundObjects.Clear();
 
         allNodes.Clear();
-        nextId        = 0;
-        startYear     = GameManager.year;
-        startMonth    = GameManager.month;
-        lastGrownYear = GameManager.year - 1;  // ensure OnGameStateChanged(BranchGrow) fires StartNewGrowingSeason
+        nextId               = 0;
+        startYear            = GameManager.year;
+        startMonth           = GameManager.month;
+        lastGrownYear        = GameManager.year - 1;  // ensure OnGameStateChanged(BranchGrow) fires StartNewGrowingSeason
+        lastSnapshotAbsDay  = -1;
 
         if (species != null) ApplySpecies();
 
@@ -3117,9 +3206,11 @@ public class TreeSkeleton : MonoBehaviour
             var forkA = CreateNode(node.tipPosition, dirA, nodeRadius, segLength, node);
             forkA.isRoot = false;
             if (nodeSubdivs > 1) forkA.subdivisionsLeft = nodeSubdivs - 1;
+            forkA.growthStartDelay = Random.Range(0f, branchSpawnMaxDelay * 0.3f);
             var forkB = CreateNode(node.tipPosition, dirB, nodeRadius, segLength, node);
             forkB.isRoot = false;
             if (nodeSubdivs > 1) forkB.subdivisionsLeft = nodeSubdivs - 1;
+            forkB.growthStartDelay = Random.Range(0f, branchSpawnMaxDelay);
             GameManager.branches++;
         }
         else
@@ -3128,6 +3219,7 @@ public class TreeSkeleton : MonoBehaviour
             cont.isRoot = false;
             if (nodeSubdivs > 1)
                 cont.subdivisionsLeft = nodeSubdivs - 1;
+            cont.growthStartDelay = Random.Range(0f, branchSpawnMaxDelay * 0.3f);
 
             float lateralChanceBranch = baseBranchChance * Mathf.Pow(branchChanceDepthDecay, node.depth);
             if (Random.value < lateralChanceBranch)
@@ -3137,6 +3229,7 @@ public class TreeSkeleton : MonoBehaviour
                 lat.isRoot = false;
                 if (nodeSubdivs > 1)
                     lat.subdivisionsLeft = nodeSubdivs - 1;
+                lat.growthStartDelay = Random.Range(0f, branchSpawnMaxDelay);
                 GameManager.branches++;
             }
         }

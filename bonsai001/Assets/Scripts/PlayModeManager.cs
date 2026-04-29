@@ -35,6 +35,8 @@ public class PlayMode
     public GameManager.SpeedMode defaultSpeed;
     public bool   autoWater;
     public bool   autoFertilize;
+    public bool   autoHerbicide;
+    public bool   autoFungicide;
     public bool   idleOrbit;
     public float  idleOrbitDelaySecs;
     public List<SpeedRule> rules = new List<SpeedRule>();
@@ -60,10 +62,22 @@ public class PlayModeManager : MonoBehaviour
     float lastInputInGameDay;
     bool  wireGoldFired;
 
+    // Auto-creates the manager if it wasn't placed in the scene.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    static void EnsureExists()
+    {
+        if (Instance != null) return;
+        if (FindAnyObjectByType<PlayModeManager>() != null) return;
+        var go = new GameObject("PlayModeManager [auto]");
+        go.AddComponent<PlayModeManager>();
+        Debug.Log("[PlayMode] Auto-created PlayModeManager — add it to your scene to avoid this.");
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     void Awake()
     {
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         LoadOrCreateDefaultModes();
     }
@@ -135,12 +149,15 @@ public class PlayModeManager : MonoBehaviour
         if (GameManager.CurrentSpeed != resolved)
             gm.SetSpeedMode(resolved);
 
-        // Sync auto-care flags to skeleton
-        var sk = skeleton != null ? skeleton : FindFirstObjectByType<TreeSkeleton>();
+        // Sync auto-care flags to skeleton; late-bind skeleton reference if not set in Inspector
+        var sk = skeleton != null ? skeleton : FindAnyObjectByType<TreeSkeleton>();
         if (sk != null)
         {
-            sk.autoWaterEnabled    = mode.autoWater;
-            sk.autoFertilizeEnabled = mode.autoFertilize;
+            if (skeleton == null) { skeleton = sk; skeleton.OnWireSetGold += OnWireSetGold; }
+            sk.autoWaterEnabled      = mode.autoWater;
+            sk.autoFertilizeEnabled  = mode.autoFertilize;
+            sk.autoHerbicideEnabled  = mode.autoHerbicide;
+            sk.autoFungicideEnabled  = mode.autoFungicide;
         }
 
         // Idle orbit
@@ -157,7 +174,7 @@ public class PlayModeManager : MonoBehaviour
 
     bool IsTriggerActive(SpeedRule rule)
     {
-        var sk = skeleton != null ? skeleton : FindFirstObjectByType<TreeSkeleton>();
+        var sk = skeleton != null ? skeleton : FindAnyObjectByType<TreeSkeleton>();
 
         switch (rule.trigger)
         {
@@ -231,33 +248,36 @@ public class PlayModeManager : MonoBehaviour
     // ── Persistence ───────────────────────────────────────────────────────────
 
     // Bump this when CreateDefaultModes() changes so saved prefs auto-reset.
-    const int DEFAULTS_VERSION = 2;
+    const int DEFAULTS_VERSION = 4;
 
     void LoadOrCreateDefaultModes()
     {
+        // Always rebuild built-in modes from code so defaults are never stale.
+        // Custom (user-created) modes are preserved from saved prefs.
+        CreateDefaultModes();
+
         string json = PlayerPrefs.GetString("playModes", "");
-        int savedVersion = PlayerPrefs.GetInt("playModesVersion", 1);
-        if (!string.IsNullOrEmpty(json) && savedVersion == DEFAULTS_VERSION)
+        if (!string.IsNullOrEmpty(json))
         {
             try
             {
                 var saved = JsonUtility.FromJson<PlayModeList>(json);
-                if (saved?.modes != null && saved.modes.Count > 0)
+                if (saved?.modes != null)
                 {
-                    modes = saved.modes;
-                    activeModeIndex = Mathf.Clamp(
-                        PlayerPrefs.GetInt("activeModeIndex", 0), 0, modes.Count - 1);
-                    return;
+                    foreach (var m in saved.modes)
+                        if (!m.isBuiltIn) modes.Add(m);
                 }
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[PlayMode] Failed to load saved modes: {e.Message}. Using defaults.");
+                Debug.LogWarning($"[PlayMode] Failed to load saved custom modes: {e.Message}.");
             }
         }
-        CreateDefaultModes();
+
+        activeModeIndex = Mathf.Clamp(
+            PlayerPrefs.GetInt("activeModeIndex", 0), 0, modes.Count - 1);
         PlayerPrefs.SetInt("playModesVersion", DEFAULTS_VERSION);
-        PlayerPrefs.Save();
+        SaveModes();
     }
 
     void CreateDefaultModes()
@@ -268,7 +288,7 @@ public class PlayModeManager : MonoBehaviour
         {
             name = "Screensaver", isBuiltIn = true,
             defaultSpeed = GameManager.SpeedMode.Fast,
-            autoWater = true, autoFertilize = true,
+            autoWater = true, autoFertilize = true, autoHerbicide = true, autoFungicide = true,
             idleOrbit = true, idleOrbitDelaySecs = 30f,
             rules = new List<SpeedRule>
             {
@@ -282,7 +302,7 @@ public class PlayModeManager : MonoBehaviour
         {
             name = "Active Play", isBuiltIn = true,
             defaultSpeed = GameManager.SpeedMode.Med,
-            autoWater = false, autoFertilize = false,
+            autoWater = true, autoFertilize = true, autoHerbicide = true, autoFungicide = true,
             idleOrbit = false, idleOrbitDelaySecs = 0f,
             rules = new List<SpeedRule>
             {
@@ -296,7 +316,7 @@ public class PlayModeManager : MonoBehaviour
         {
             name = "Hands-Off", isBuiltIn = true,
             defaultSpeed = GameManager.SpeedMode.Fast,
-            autoWater = true, autoFertilize = true,
+            autoWater = true, autoFertilize = true, autoHerbicide = true, autoFungicide = true,
             idleOrbit = false, idleOrbitDelaySecs = 0f,
             rules = new List<SpeedRule>
             {
@@ -308,7 +328,7 @@ public class PlayModeManager : MonoBehaviour
         {
             name = "Focused", isBuiltIn = true,
             defaultSpeed = GameManager.SpeedMode.Slow,
-            autoWater = false, autoFertilize = false,
+            autoWater = true, autoFertilize = true, autoHerbicide = false, autoFungicide = false,
             idleOrbit = false, idleOrbitDelaySecs = 0f,
             rules = new List<SpeedRule>()
         });

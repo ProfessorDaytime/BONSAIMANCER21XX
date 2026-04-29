@@ -27,6 +27,7 @@ public class TreeNode
 
     public float targetLength;      // the length this segment grows toward before branching
     public bool  isGrowing;         // true while length < targetLength
+    public float growthStartDelay;  // in-game days before elongation begins (spreads branch activation over the season)
     public float age;               // accumulated grow-time (seconds, scaled by seasonal rate)
 
     // ── State ─────────────────────────────────────────────────────────────────
