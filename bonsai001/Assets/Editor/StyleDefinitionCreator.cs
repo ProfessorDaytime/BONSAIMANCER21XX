@@ -41,13 +41,14 @@ public static class StyleDefinitionCreator
             new TrunkWaypoint { heightAboveSoil = 0.95f, targetLeanAngleDeg =  4f, leanAxisDeg =  10f },
         };
 
-        // Tiers: bottom branches wide, upper branches progressively more upward
+        // Tiers: bottom branches wide, upper branches progressively more upward.
+        // azimuthOffsetDeg spirals ~60° each tier for a natural alternating pattern.
         s.branchTiers = new BranchTier[]
         {
-            new BranchTier { minHeightNorm = 0.05f, maxHeightNorm = 0.25f, maxBranches = 2, targetAngleDeg = 80f, maxAngleTolerance = 35f },
-            new BranchTier { minHeightNorm = 0.25f, maxHeightNorm = 0.50f, maxBranches = 3, targetAngleDeg = 65f, maxAngleTolerance = 35f },
-            new BranchTier { minHeightNorm = 0.50f, maxHeightNorm = 0.75f, maxBranches = 4, targetAngleDeg = 50f, maxAngleTolerance = 30f },
-            new BranchTier { minHeightNorm = 0.75f, maxHeightNorm = 1.00f, maxBranches = 5, targetAngleDeg = 35f, maxAngleTolerance = 30f },
+            new BranchTier { minHeightNorm = 0.05f, maxHeightNorm = 0.25f, maxBranches = 2, targetAngleDeg = 80f, maxAngleTolerance = 35f, azimuthOffsetDeg = 30f  },
+            new BranchTier { minHeightNorm = 0.25f, maxHeightNorm = 0.50f, maxBranches = 3, targetAngleDeg = 65f, maxAngleTolerance = 35f, azimuthOffsetDeg = 90f  },
+            new BranchTier { minHeightNorm = 0.50f, maxHeightNorm = 0.75f, maxBranches = 4, targetAngleDeg = 50f, maxAngleTolerance = 30f, azimuthOffsetDeg = 150f },
+            new BranchTier { minHeightNorm = 0.75f, maxHeightNorm = 1.00f, maxBranches = 5, targetAngleDeg = 35f, maxAngleTolerance = 30f, azimuthOffsetDeg = 45f  },
         };
 
         // Oval canopy, widest at 40% height
@@ -85,13 +86,14 @@ public static class StyleDefinitionCreator
             new TrunkWaypoint { heightAboveSoil = 0.95f, targetLeanAngleDeg =  6f, leanAxisDeg =   0f },
         };
 
-        // Tiers: tighter control, fewer branches per tier for a cleaner commercial look
+        // Tiers: tighter control, fewer branches per tier for a cleaner commercial look.
+        // azimuthOffsetDeg spirals to prevent branches stacking on the same side.
         s.branchTiers = new BranchTier[]
         {
-            new BranchTier { minHeightNorm = 0.05f, maxHeightNorm = 0.30f, maxBranches = 2, targetAngleDeg = 75f, maxAngleTolerance = 30f },
-            new BranchTier { minHeightNorm = 0.30f, maxHeightNorm = 0.55f, maxBranches = 3, targetAngleDeg = 60f, maxAngleTolerance = 28f },
-            new BranchTier { minHeightNorm = 0.55f, maxHeightNorm = 0.78f, maxBranches = 3, targetAngleDeg = 45f, maxAngleTolerance = 25f },
-            new BranchTier { minHeightNorm = 0.78f, maxHeightNorm = 1.00f, maxBranches = 4, targetAngleDeg = 30f, maxAngleTolerance = 25f },
+            new BranchTier { minHeightNorm = 0.05f, maxHeightNorm = 0.30f, maxBranches = 2, targetAngleDeg = 75f, maxAngleTolerance = 30f, azimuthOffsetDeg = 0f   },
+            new BranchTier { minHeightNorm = 0.30f, maxHeightNorm = 0.55f, maxBranches = 3, targetAngleDeg = 60f, maxAngleTolerance = 28f, azimuthOffsetDeg = 60f  },
+            new BranchTier { minHeightNorm = 0.55f, maxHeightNorm = 0.78f, maxBranches = 3, targetAngleDeg = 45f, maxAngleTolerance = 25f, azimuthOffsetDeg = 120f },
+            new BranchTier { minHeightNorm = 0.78f, maxHeightNorm = 1.00f, maxBranches = 4, targetAngleDeg = 30f, maxAngleTolerance = 25f, azimuthOffsetDeg = 30f  },
         };
 
         // Rounded conical canopy, widest at 35% height

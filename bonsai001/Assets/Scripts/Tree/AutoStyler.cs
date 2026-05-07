@@ -3,55 +3,82 @@ using System.Linq;
 using UnityEngine;
 
 /// <summary>
-/// Automatically trims and wires the tree each season toward a target StyleDefinition.
+/// Structural, plan-based bonsai styler.
 ///
-/// Seasonal passes:
-///   February  — branch tier management: schedules trims with a preview period.
-///   Spring    — trunk + scaffold branch wiring; removes fully-set wires.
-///   April–May — canopy pinching: contains terminals extending past the silhouette.
-///   June      — ramification: proactively pinches interior terminals to build pad density.
+/// Each BranchTier defines N branch SLOTS at evenly-spaced azimuths starting at
+/// azimuthOffsetDeg. Each spring AutoStyler matches living scaffold branches (depth=1)
+/// to the nearest open slot; unmatched branches are scheduled for removal; empty slots
+/// stimulate back-budding on the nearest trunk node in February.
 ///
-/// GL overlay (when showTargetShape = true): cyan silhouette rings, orange tier bands,
-/// yellow trunk waypoint arrows.
+/// Per-slot state machine:
+///   Empty → Growing → Training → Established → Maintaining
 ///
-/// Attach to the same GameObject as TreeSkeleton.
+/// Seasonal schedule:
+///   February  — stimulate empty slots
+///   Spring    — refresh slot matching; trunk wiring; remove set wires
+///   October   — schedule scaffold branch wires for Growing/Training slots
+///   Apr–May   — schedule overextended-tip pinches (silhouette containment)
+///   June      — schedule ramification pinches (interior pad density)
+///
+/// GL overlay (showTargetShape):
+///   Cyan rings        — canopy silhouette
+///   Orange rings      — tier boundary bands
+///   Yellow cross+arrow— trunk waypoints with lean direction
+///   Colored diamond   — branch slots, color = state
+///   Orange X          — scheduled trim     (GL, appears actionPreviewDays before firing)
+///   Cyan circle       — scheduled wire     (GL)
+///   Green spike       — scheduled pinch    (GL)
 /// </summary>
 [RequireComponent(typeof(TreeSkeleton))]
 public class AutoStyler : MonoBehaviour
 {
-    [Tooltip("Style to grow toward. Drag a StyleDefinition asset here.")]
+    public static AutoStyler Instance { get; private set; }
+
+    [Tooltip("Style to grow toward.")]
     public StyleDefinition style;
-
-    [Tooltip("When false, AutoStyler does nothing — handy for comparing styled vs. free growth.")]
+    [Tooltip("When false, AutoStyler does nothing.")]
     public bool autoStyleEnabled = true;
-
-    [Tooltip("Log each action to the console for debugging.")]
+    [Tooltip("Log each action to the console.")]
     public bool verboseLog = false;
-
-    [Tooltip("In-game days the orange preview sphere shows before a scheduled trim fires.")]
-    public float trimPreviewDays = 10f;
-
-    [Tooltip("Draw the target canopy silhouette and tier bands as GL lines in the Game/Scene view.")]
+    [Tooltip("In-game days an indicator is visible before its action fires.")]
+    public float actionPreviewDays = 20f;
+    [Tooltip("Draw target shape and slot plan as GL lines in Game/Scene view.")]
     public bool showTargetShape = true;
 
     TreeSkeleton skeleton;
     Material      glMat;
 
-    // Nodes whose AutoStyler trunk wire is active (removed when set).
-    readonly HashSet<int> autoWiredNodeIds  = new HashSet<int>();
-    // Nodes whose AutoStyler scaffold wire is active (removed when set).
-    readonly HashSet<int> shapedBranchIds   = new HashSet<int>();
-    // Nodes whose AutoStyler wire fully set — never re-wire these.
-    readonly HashSet<int> shapedNodeIds     = new HashSet<int>();
+    List<BranchSlot> slots = new List<BranchSlot>();
 
-    // Scheduled trims: nodeId → in-game day when the trim fires.
-    readonly Dictionary<int, float>      pendingTrims   = new Dictionary<int, float>();
-    readonly Dictionary<int, GameObject> trimIndicators = new Dictionary<int, GameObject>();
+    readonly HashSet<int> shapedNodeIds      = new HashSet<int>();
+    readonly HashSet<int> autoWiredTrunkIds  = new HashSet<int>();
+    readonly HashSet<int> autoWiredBranchIds = new HashSet<int>();
+
+    // Scheduled actions: nodeId → fire day
+    readonly Dictionary<int, float>   pendingTrims   = new Dictionary<int, float>();
+    readonly Dictionary<int, float>   pendingWires   = new Dictionary<int, float>();
+    readonly Dictionary<int, Vector3> pendingWireDir = new Dictionary<int, Vector3>();
+    readonly Dictionary<int, float>   pendingPinches = new Dictionary<int, float>();
+
+    // nodeId → in-game day when wireSetProgress first reached 1.0 (gold)
+    readonly Dictionary<int, float>   wireGoldDay    = new Dictionary<int, float>();
+
+    [Tooltip("In-game days after a wire turns gold before AutoStyler removes it.")]
+    public float unwireDelayDays = 20f;
+
+    // ── Public accessors for UI ───────────────────────────────────────────────
+
+    public IReadOnlyList<BranchSlot> Slots => slots;
+    public int PendingTrimCount  => pendingTrims.Count;
+    public int PendingWireCount  => pendingWires.Count;
+    public int PendingPinchCount => pendingPinches.Count;
+    public int ShapedCount       => shapedNodeIds.Count;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     void Awake()
     {
+        Instance = this;
         skeleton = GetComponent<TreeSkeleton>();
         glMat = new Material(Shader.Find("Hidden/Internal-Colored"));
         glMat.hideFlags = HideFlags.HideAndDontSave;
@@ -67,45 +94,57 @@ public class AutoStyler : MonoBehaviour
     {
         skeleton.OnNewGrowingSeason -= HandleNewGrowingSeason;
         GameManager.OnMonthChanged  -= HandleMonthChanged;
-        ClearAllIndicators();
+        pendingTrims.Clear(); pendingWires.Clear(); pendingWireDir.Clear(); pendingPinches.Clear();
+        wireGoldDay.Clear();
     }
 
     void OnDestroy()
     {
+        if (Instance == this) Instance = null;
         if (glMat != null) Destroy(glMat);
     }
 
     // ── Update ────────────────────────────────────────────────────────────────
 
-    void Update()
-    {
-        UpdatePendingTrims();
-    }
+    void Update() { UpdatePendingActions(); RemoveSetWires(); }
 
-    void UpdatePendingTrims()
+    void UpdatePendingActions()
     {
-        if (pendingTrims.Count == 0) return;
-
         float now = InGameDay();
-        var ids = new List<int>(pendingTrims.Keys);
 
-        foreach (int id in ids)
+        if (pendingTrims.Count > 0)
         {
-            TreeNode node = FindNodeById(id);
-
-            if (node == null || node.isTrimmed || node.isDead)
+            foreach (int id in new List<int>(pendingTrims.Keys))
             {
-                DestroyIndicator(id);
-                pendingTrims.Remove(id);
-                continue;
+                var n = FindNodeById(id);
+                if (n == null || n.isTrimmed || n.isDead) { pendingTrims.Remove(id); continue; }
+                if (now >= pendingTrims[id]) { Log($"[AutoStyle] Trim fired node={id}"); skeleton.TrimNode(n); pendingTrims.Remove(id); }
             }
+        }
 
-            if (now >= pendingTrims[id])
+        if (pendingWires.Count > 0)
+        {
+            foreach (int id in new List<int>(pendingWires.Keys))
             {
-                Log($"[AutoStyle] Pending trim fired node={id}");
-                skeleton.TrimNode(node);
-                DestroyIndicator(id);
-                pendingTrims.Remove(id);
+                var n = FindNodeById(id);
+                if (n == null || n.isDead || n.isTrimmed || n.hasWire)
+                { pendingWires.Remove(id); pendingWireDir.Remove(id); continue; }
+                if (now >= pendingWires[id])
+                {
+                    Log($"[AutoStyle] Wire fired node={id}");
+                    ApplyWire(n, pendingWireDir[id], autoWiredBranchIds);
+                    pendingWires.Remove(id); pendingWireDir.Remove(id);
+                }
+            }
+        }
+
+        if (pendingPinches.Count > 0)
+        {
+            foreach (int id in new List<int>(pendingPinches.Keys))
+            {
+                var n = FindNodeById(id);
+                if (n == null || n.isDead || n.isTrimmed || !n.isTerminal) { pendingPinches.Remove(id); continue; }
+                if (now >= pendingPinches[id]) { Log($"[AutoStyle] Pinch fired node={id}"); skeleton.PinchNode(n); pendingPinches.Remove(id); }
             }
         }
     }
@@ -115,29 +154,21 @@ public class AutoStyler : MonoBehaviour
     void HandleNewGrowingSeason()
     {
         if (!IsReady()) return;
-        Log($"[AutoStyle] Spring — ShapeTrunk + ShapeBranches | year={GameManager.year}");
-        RemoveSetWires();
+        Log($"[AutoStyle] Spring — RefreshSlots + ShapeTrunk | year={GameManager.year}");
+        RefreshSlots();
         ShapeTrunk();
-        ShapeBranches();
     }
 
     void HandleMonthChanged(int month)
     {
         if (!IsReady()) return;
-        if (month == 2)
+        switch (month)
         {
-            Log($"[AutoStyle] February — ManageBranchTiers | year={GameManager.year}");
-            ManageBranchTiers();
-        }
-        if (month == 4 || month == 5)
-        {
-            Log($"[AutoStyle] Month {month} — PinchOverextended | year={GameManager.year}");
-            PinchOverextended();
-        }
-        if (month == 6 && style.enableRamification)
-        {
-            Log($"[AutoStyle] June — DevelopRamification | year={GameManager.year}");
-            DevelopRamification();
+            case 2:  StimulateEmptySlots(); break;
+            case 4:
+            case 5:  PlanPinches(overextendedOnly: true); break;
+            case 6:  if (style.enableRamification) PlanPinches(overextendedOnly: false); break;
+            case 10: PlanScaffoldWires(); break;
         }
     }
 
@@ -145,30 +176,142 @@ public class AutoStyler : MonoBehaviour
 
     void RemoveSetWires()
     {
-        RemoveSetWiresFromSet(autoWiredNodeIds);
-        RemoveSetWiresFromSet(shapedBranchIds);
+        // Gold-day tracking: note the day each auto-wire first turns gold
+        TrackWireGoldDays(autoWiredTrunkIds);
+        TrackWireGoldDays(autoWiredBranchIds);
+
+        // Unwire any node whose gold timer has expired
+        float now = InGameDay();
+        UnwireGoldExpired(autoWiredTrunkIds,  now);
+        UnwireGoldExpired(autoWiredBranchIds, now);
     }
 
-    void RemoveSetWiresFromSet(HashSet<int> set)
+    void TrackWireGoldDays(HashSet<int> set)
+    {
+        foreach (int id in set)
+        {
+            if (wireGoldDay.ContainsKey(id)) continue;
+            var n = FindNodeById(id);
+            if (n != null && n.hasWire && n.wireSetProgress >= 1f)
+                wireGoldDay[id] = InGameDay();
+        }
+    }
+
+    void UnwireGoldExpired(HashSet<int> set, float now)
     {
         var toRemove = new List<int>();
         foreach (int id in set)
         {
-            TreeNode node = FindNodeById(id);
-            if (node == null) { toRemove.Add(id); continue; }
+            var n = FindNodeById(id);
+            if (n == null) { toRemove.Add(id); wireGoldDay.Remove(id); continue; }
+            if (!n.hasWire) { toRemove.Add(id); wireGoldDay.Remove(id); continue; }
 
-            if (!node.hasWire || node.wireSetProgress >= 1f)
+            // Wire is gold and delay has elapsed → remove it
+            if (wireGoldDay.TryGetValue(id, out float goldDay) && now >= goldDay + unwireDelayDays)
             {
-                if (node.hasWire && node.wireSetProgress >= 1f)
-                {
-                    skeleton.UnwireNode(node);
-                    shapedNodeIds.Add(id);
-                    Log($"[AutoStyle] Wire removed (set) node={id} — marked shaped");
-                }
+                skeleton.UnwireNode(n);
+                shapedNodeIds.Add(id);
+                wireGoldDay.Remove(id);
                 toRemove.Add(id);
+                Log($"[AutoStyle] Unwire (gold+{unwireDelayDays}d) node={id}");
             }
         }
         foreach (int id in toRemove) set.Remove(id);
+    }
+
+    // ── Slot Management ───────────────────────────────────────────────────────
+
+    void RefreshSlots()
+    {
+        if (style.branchTiers == null || style.branchTiers.Length == 0) return;
+
+        float soilY = SoilWorldY();
+        float treeH = Mathf.Max(0.01f, skeleton.CachedTreeHeight);
+
+        slots.Clear();
+        for (int ti = 0; ti < style.branchTiers.Length; ti++)
+        {
+            var tier = style.branchTiers[ti]; int count = Mathf.Max(1, tier.maxBranches);
+            float step = 360f / count;
+            for (int i = 0; i < count; i++)
+                slots.Add(new BranchSlot(ti, (tier.azimuthOffsetDeg + i * step) % 360f));
+        }
+
+        var available = new List<TreeNode>();
+        foreach (var n in skeleton.allNodes)
+        {
+            if (n.depth != 1 || n.isRoot || n.isDead || n.isTrimmed || n.length <= 0.001f) continue;
+            available.Add(n);
+        }
+
+        // Prefer already-shaped nodes when greedy-matching (stability)
+        available.Sort((a, b) => (shapedNodeIds.Contains(a.id) ? 0 : 1).CompareTo(shapedNodeIds.Contains(b.id) ? 0 : 1));
+
+        // Wide tolerance: match any branch in the right height band to its closest slot.
+        // The branch will be wired toward the slot's target azimuth — don't trim it just
+        // because it grew in the wrong direction. 150° covers everything except the opposite side.
+        foreach (var slot in slots)
+        {
+            var tier = style.branchTiers[slot.tierIndex]; float bestDiff = 150f; TreeNode best = null;
+            foreach (var n in available)
+            {
+                float nodeY = (skeleton.transform.TransformPoint(n.worldPosition).y - soilY) / treeH;
+                if (nodeY < tier.minHeightNorm - 0.05f || nodeY > tier.maxHeightNorm + 0.05f) continue;
+                float diff = Mathf.Abs(Mathf.DeltaAngle(GetBranchAzimuth(n), slot.azimuthDeg));
+                if (diff < bestDiff) { bestDiff = diff; best = n; }
+            }
+            if (best != null)
+            { slot.assignedNodeId = best.id; slot.state = ComputeSlotState(slot, best); available.Remove(best); }
+        }
+
+        // Only trim a branch if its tier already has enough matched branches (the tier is truly full).
+        // Count depth=1 scaffold branches only — not trunk segments.
+        int depth1Count = 0;
+        foreach (var x in skeleton.allNodes)
+            if (x.depth == 1 && !x.isRoot && !x.isDead && !x.isTrimmed && x.length > 0.001f) depth1Count++;
+
+        if (depth1Count > slots.Count)
+        {
+            // Per-tier slot capacity: count how many slots each tier has and how many are filled.
+            var tierCapacity  = new int[style.branchTiers.Length];
+            var tierOccupied  = new int[style.branchTiers.Length];
+            for (int ti = 0; ti < style.branchTiers.Length; ti++)
+                tierCapacity[ti] = style.branchTiers[ti].maxBranches;
+            foreach (var slot in slots)
+                if (slot.assignedNodeId >= 0) tierOccupied[slot.tierIndex]++;
+
+            foreach (var n in available)
+            {
+                float nodeY = (skeleton.transform.TransformPoint(n.worldPosition).y - soilY) / treeH;
+                int tierIdx = -1;
+                for (int ti = 0; ti < style.branchTiers.Length; ti++)
+                {
+                    var t = style.branchTiers[ti];
+                    if (nodeY >= t.minHeightNorm - 0.05f && nodeY <= t.maxHeightNorm + 0.05f)
+                    { tierIdx = ti; break; }
+                }
+                // Only trim if its tier is full (no open slots left for it)
+                if (tierIdx >= 0 && tierOccupied[tierIdx] < tierCapacity[tierIdx]) continue;
+                if (pendingTrims.ContainsKey(n.id)) continue;
+                pendingTrims[n.id] = InGameDay() + actionPreviewDays;
+                Log($"[AutoStyle] Excess branch queued node={n.id} tier={tierIdx}");
+            }
+        }
+
+        int occ = slots.Count(s => s.assignedNodeId >= 0);
+        Log($"[AutoStyle] Slots {occ}/{slots.Count} — " +
+            string.Join(" ", slots.GroupBy(s => s.state).Select(g => $"{g.Key}:{g.Count()}")) +
+            $" | year={GameManager.year}");
+    }
+
+    SlotState ComputeSlotState(BranchSlot slot, TreeNode node)
+    {
+        if (node.hasWire && node.wireSetProgress < 1f) return SlotState.Training;
+        if (shapedNodeIds.Contains(node.id))
+            return node.children.Count > 0 ? SlotState.Maintaining : SlotState.Established;
+        var tier = style.branchTiers[slot.tierIndex];
+        return Vector3.Angle(node.growDirection, SlotTargetDirection(slot, tier)) >= style.wireThresholdDeg
+            ? SlotState.Growing : SlotState.Established;
     }
 
     // ── Trunk Shaping ─────────────────────────────────────────────────────────
@@ -176,238 +319,95 @@ public class AutoStyler : MonoBehaviour
     void ShapeTrunk()
     {
         if (style.trunkWaypoints == null || style.trunkWaypoints.Length == 0) return;
-
-        float soilY  = SoilWorldY();
-        float treeH  = Mathf.Max(0.01f, skeleton.CachedTreeHeight);
-        int wiredCount = 0, skippedWire = 0, skippedThreshold = 0;
-
-        foreach (var node in skeleton.allNodes)
+        float soilY = SoilWorldY(); float treeH = Mathf.Max(0.01f, skeleton.CachedTreeHeight); int wiredCount = 0;
+        foreach (var n in skeleton.allNodes)
         {
-            if (node.isRoot || node.isDead || node.isTrimmed) continue;
-            if (node.depth != 0) continue;
-            if (node.length <= 0.001f) continue;
-            if (shapedNodeIds.Contains(node.id)) continue;
-            if (node.hasWire) { skippedWire++; continue; }
-
-            float nodeWorldY = skeleton.transform.TransformPoint(node.worldPosition).y;
-            float heightNorm = (nodeWorldY - soilY) / treeH;
+            if (n.isRoot || n.isDead || n.isTrimmed || n.depth != 0 || n.length <= 0.001f) continue;
+            if (shapedNodeIds.Contains(n.id) || n.hasWire) continue;
+            float heightNorm = (skeleton.transform.TransformPoint(n.worldPosition).y - soilY) / treeH;
             if (heightNorm < 0f) continue;
-
-            TrunkWaypoint wp             = NearestWaypoint(heightNorm);
-            Vector3       targetLocalDir = WaypointDirection(wp);
-
-            float deviation = Vector3.Angle(node.growDirection, targetLocalDir);
-            if (deviation < style.wireThresholdDeg) { skippedThreshold++; continue; }
-
-            skeleton.WireNode(node, targetLocalDir);
-            Quaternion rot = Quaternion.FromToRotation(node.growDirection, targetLocalDir);
-            node.growDirection = targetLocalDir;
-            skeleton.RotateAndPropagateDescendants(node, rot, null);
-            skeleton.meshBuilder?.SetDirty();
-
-            autoWiredNodeIds.Add(node.id);
-            wiredCount++;
-            Log($"[AutoStyle] Wired trunk node={node.id} h={heightNorm:F2} dev={deviation:F1}°");
+            Vector3 targetDir = WaypointDirection(NearestWaypoint(heightNorm));
+            if (Vector3.Angle(n.growDirection, targetDir) < style.wireThresholdDeg) continue;
+            ApplyWire(n, targetDir, autoWiredTrunkIds); wiredCount++;
+            Log($"[AutoStyle] Trunk wire node={n.id} h={heightNorm:F2}");
         }
-
-        Log($"[AutoStyle] ShapeTrunk — wired={wiredCount} skipped(wire={skippedWire} threshold={skippedThreshold}) | year={GameManager.year}");
+        if (wiredCount > 0) Log($"[AutoStyle] ShapeTrunk — wired={wiredCount} | year={GameManager.year}");
     }
 
-    // ── Scaffold Branch Shaping ───────────────────────────────────────────────
+    // ── Scaffold Branch Wires (October) ───────────────────────────────────────
 
-    void ShapeBranches()
+    void PlanScaffoldWires()
     {
-        if (style.branchTiers == null || style.branchTiers.Length == 0) return;
-
-        float soilY  = SoilWorldY();
-        float treeH  = Mathf.Max(0.01f, skeleton.CachedTreeHeight);
-        int wiredCount = 0;
-
-        foreach (var node in skeleton.allNodes)
+        int scheduled = 0;
+        foreach (var slot in slots)
         {
-            if (node.isRoot || node.isDead || node.isTrimmed) continue;
-            if (node.depth != 1) continue; // primary scaffold branches only
-            if (node.length <= 0.001f) continue;
-            if (node.hasWire) continue;
-            if (shapedNodeIds.Contains(node.id)) continue;
-
-            float nodeWorldY = skeleton.transform.TransformPoint(node.worldPosition).y;
-            float heightNorm = (nodeWorldY - soilY) / treeH;
-            if (heightNorm < 0f) continue;
-
-            BranchTier tier = TierForHeight(heightNorm);
-            if (tier == null) continue;
-
-            // Determine outward horizontal direction: azimuth of the branch from trunk center
-            Vector3 worldGrowDir = skeleton.transform.TransformDirection(node.growDirection);
-            Vector3 outward = new Vector3(worldGrowDir.x, 0f, worldGrowDir.z);
-            if (outward.sqrMagnitude < 0.01f)
-            {
-                // Nearly vertical branch — use radial direction from trunk base instead
-                Vector3 nodeWorld = skeleton.transform.TransformPoint(node.worldPosition);
-                outward = new Vector3(nodeWorld.x - skeleton.transform.position.x, 0f,
-                                      nodeWorld.z - skeleton.transform.position.z);
-            }
-            if (outward.sqrMagnitude < 0.001f) continue;
-            outward.Normalize();
-
-            float targetRad     = tier.targetAngleDeg * Mathf.Deg2Rad;
-            Vector3 targetWorldDir = Mathf.Cos(targetRad) * Vector3.up + Mathf.Sin(targetRad) * outward;
-            Vector3 targetLocalDir = skeleton.transform.InverseTransformDirection(targetWorldDir).normalized;
-
-            float deviation = Vector3.Angle(node.growDirection, targetLocalDir);
-            if (deviation < style.wireThresholdDeg) continue;
-
-            skeleton.WireNode(node, targetLocalDir);
-            Quaternion rot = Quaternion.FromToRotation(node.growDirection, targetLocalDir);
-            node.growDirection = targetLocalDir;
-            skeleton.RotateAndPropagateDescendants(node, rot, null);
-            skeleton.meshBuilder?.SetDirty();
-
-            shapedBranchIds.Add(node.id);
-            wiredCount++;
-            Log($"[AutoStyle] Wired branch node={node.id} h={heightNorm:F2} tier={tier.targetAngleDeg:F0}° dev={deviation:F1}°");
+            if (slot.state != SlotState.Growing && slot.state != SlotState.Training) continue;
+            if (slot.assignedNodeId < 0) continue;
+            var n = FindNodeById(slot.assignedNodeId);
+            if (n == null || n.hasWire || n.isDead || n.isTrimmed || shapedNodeIds.Contains(n.id)) continue;
+            if (n.length <= 0.001f || pendingWires.ContainsKey(n.id)) continue;
+            var tier = style.branchTiers[slot.tierIndex]; Vector3 targetDir = SlotTargetDirection(slot, tier);
+            if (Vector3.Angle(n.growDirection, targetDir) < style.wireThresholdDeg) continue;
+            pendingWires[n.id] = InGameDay() + actionPreviewDays; pendingWireDir[n.id] = targetDir;
+            scheduled++; Log($"[AutoStyle] Wire scheduled node={n.id} az={slot.azimuthDeg:F0}°");
         }
-
-        Log($"[AutoStyle] ShapeBranches — wired={wiredCount} | year={GameManager.year}");
+        if (scheduled > 0) Log($"[AutoStyle] October — {scheduled} wires | year={GameManager.year}");
     }
 
-    // ── Branch Tier Management ─────────────────────────────────────────────────
+    // ── Empty Slot Stimulation (February) ────────────────────────────────────
 
-    void ManageBranchTiers()
+    void StimulateEmptySlots()
     {
-        if (style.branchTiers == null || style.branchTiers.Length == 0) return;
-
-        int totalBranchNodes = 0;
-        foreach (var n in skeleton.allNodes) if (!n.isRoot) totalBranchNodes++;
-        if (totalBranchNodes < 10) return;
-
-        float soilY    = SoilWorldY();
-        float treeH    = Mathf.Max(0.01f, skeleton.CachedTreeHeight);
-        int schedCount = 0;
-
-        foreach (var tier in style.branchTiers)
+        float soilY = SoilWorldY(); float treeH = Mathf.Max(0.01f, skeleton.CachedTreeHeight); int count = 0;
+        foreach (var slot in slots)
         {
-            float minY = soilY + tier.minHeightNorm * treeH;
-            float maxY = soilY + tier.maxHeightNorm * treeH;
-
-            var candidates = new List<TreeNode>();
-            foreach (var node in skeleton.allNodes)
+            if (slot.assignedNodeId >= 0) continue;
+            var tier = style.branchTiers[slot.tierIndex];
+            float targetY = soilY + (tier.minHeightNorm + tier.maxHeightNorm) * 0.5f * treeH;
+            TreeNode best = null; float bestDist = float.MaxValue;
+            foreach (var n in skeleton.allNodes)
             {
-                if (node.isRoot || node.isDead || node.isTrimmed || node.parent == null) continue;
-                if (node.parent.depth != 0) continue;
-                if (node.parent.children.Count(c => !c.isRoot) <= 1) continue;
-
-                float baseWorldY = skeleton.transform.TransformPoint(node.worldPosition).y;
-                if (baseWorldY < minY || baseWorldY > maxY) continue;
-                candidates.Add(node);
+                if (n.depth != 0 || n.isRoot || n.isDead || n.isTrimmed) continue;
+                float d = Mathf.Abs(skeleton.transform.TransformPoint(n.worldPosition).y - targetY);
+                if (d < bestDist) { bestDist = d; best = n; }
             }
-
-            if (candidates.Count <= tier.maxBranches) continue;
-
-            candidates.Sort((a, b) => BranchScore(a, tier).CompareTo(BranchScore(b, tier)));
-
-            int toTrim = candidates.Count - tier.maxBranches;
-            for (int i = 0; i < toTrim; i++)
-            {
-                int id = candidates[i].id;
-                if (pendingTrims.ContainsKey(id)) continue;
-
-                float fireDay = InGameDay() + trimPreviewDays;
-                pendingTrims[id] = fireDay;
-                SpawnTrimIndicator(candidates[i]);
-                Log($"[AutoStyle] Tier trim scheduled node={id} score={BranchScore(candidates[i], tier):F2} fires in {trimPreviewDays} days");
-                schedCount++;
-            }
+            if (best != null) { best.backBudStimulated = true; count++; }
         }
-
-        if (schedCount > 0)
-            Log($"[AutoStyle] February tier trim — scheduled {schedCount} branches | year={GameManager.year}");
+        if (count > 0) Log($"[AutoStyle] February — stimulated {count} empty slots | year={GameManager.year}");
     }
 
-    float BranchScore(TreeNode node, BranchTier tier)
+    // ── Pinch Planning ────────────────────────────────────────────────────────
+
+    void PlanPinches(bool overextendedOnly)
     {
-        float verticalAngle = Vector3.Angle(node.growDirection, Vector3.up);
-        float angleDev      = Mathf.Abs(verticalAngle - tier.targetAngleDeg) / 90f;
-        float anglePenalty  = angleDev > (tier.maxAngleTolerance / 90f) ? 2f : 0f;
-        return node.radius * 10f + node.branchVigor - anglePenalty;
-    }
-
-    // ── Canopy Pinching ───────────────────────────────────────────────────────
-
-    void PinchOverextended()
-    {
-        float soilY    = SoilWorldY();
-        float treeH    = Mathf.Max(0.01f, skeleton.CachedTreeHeight);
-        int pinchCount = 0;
-
+        float soilY = SoilWorldY(); float treeH = Mathf.Max(0.01f, skeleton.CachedTreeHeight); int queued = 0;
         Vector3 trunkXZ = new Vector3(skeleton.transform.position.x, 0f, skeleton.transform.position.z);
-
-        foreach (var node in skeleton.allNodes)
+        foreach (var n in skeleton.allNodes)
         {
-            if (!node.isTerminal || node.isRoot || node.isDead || node.isTrimmed) continue;
-            if (!node.isGrowing) continue;
-
-            Vector3 tipWorld   = skeleton.transform.TransformPoint(node.tipPosition);
-            float   heightNorm = Mathf.Clamp01((tipWorld.y - soilY) / treeH);
-
-            float silhouetteR = style.canopySilhouette.Evaluate(heightNorm) * style.maxCanopyRadius * treeH;
-            if (silhouetteR <= 0f) continue;
-
+            if (!n.isTerminal || n.isRoot || n.isDead || n.isTrimmed || !n.isGrowing) continue;
+            if (pendingPinches.ContainsKey(n.id)) continue;
+            Vector3 tipWorld = skeleton.transform.TransformPoint(n.tipPosition);
+            float h = Mathf.Clamp01((tipWorld.y - soilY) / treeH);
+            float silR = style.canopySilhouette.Evaluate(h) * style.maxCanopyRadius * treeH;
+            if (silR <= 0f) continue;
             float horizDist = Vector3.Distance(new Vector3(tipWorld.x, 0f, tipWorld.z), trunkXZ);
-            if (horizDist > silhouetteR * style.pinchOvershootFactor)
+            bool outside = horizDist > silR * style.pinchOvershootFactor;
+            if (overextendedOnly)
             {
-                skeleton.PinchNode(node);
-                pinchCount++;
-                Log($"[AutoStyle] Pinched node={node.id} h={heightNorm:F2} dist={horizDist:F2} limit={silhouetteR:F2}");
+                if (!outside) continue;
             }
+            else
+            {
+                if (outside) continue;
+                if (h < 0.05f || h > style.ramificationMaxHeight) continue;
+                float targetRef = style.ramificationTargetLevel * (1f - h * 0.4f);
+                if (n.refinementLevel >= targetRef) continue;
+                if (n.targetLength > 0f && n.length < n.targetLength * 0.85f) continue;
+            }
+            pendingPinches[n.id] = InGameDay() + actionPreviewDays * 0.5f;
+            queued++;
         }
-
-        if (pinchCount > 0)
-            Log($"[AutoStyle] Canopy pinch — {pinchCount} tips | month={GameManager.month} year={GameManager.year}");
-    }
-
-    // ── Ramification ──────────────────────────────────────────────────────────
-
-    void DevelopRamification()
-    {
-        float soilY    = SoilWorldY();
-        float treeH    = Mathf.Max(0.01f, skeleton.CachedTreeHeight);
-        int pinchCount = 0;
-
-        Vector3 trunkXZ = new Vector3(skeleton.transform.position.x, 0f, skeleton.transform.position.z);
-
-        foreach (var node in skeleton.allNodes)
-        {
-            if (!node.isTerminal || node.isRoot || node.isDead || node.isTrimmed) continue;
-            if (!node.isGrowing) continue;
-
-            Vector3 tipWorld   = skeleton.transform.TransformPoint(node.tipPosition);
-            float   heightNorm = Mathf.Clamp01((tipWorld.y - soilY) / treeH);
-
-            // Only ramify within the body of the tree — skip base and apex
-            if (heightNorm < 0.05f || heightNorm > style.ramificationMaxHeight) continue;
-
-            // Skip terminals outside the silhouette — PinchOverextended handles those
-            float silhouetteR = style.canopySilhouette.Evaluate(heightNorm) * style.maxCanopyRadius * treeH;
-            if (silhouetteR <= 0f) continue;
-            float horizDist = Vector3.Distance(new Vector3(tipWorld.x, 0f, tipWorld.z), trunkXZ);
-            if (horizDist >= silhouetteR * style.pinchOvershootFactor) continue;
-
-            // Target refinement decreases toward the apex (lower pads are denser)
-            float targetRef = style.ramificationTargetLevel * (1f - heightNorm * 0.4f);
-            if (node.refinementLevel >= targetRef) continue;
-
-            // Only pinch terminals that have grown to at least 85% of their target length
-            if (node.targetLength > 0f && node.length < node.targetLength * 0.85f) continue;
-
-            skeleton.PinchNode(node);
-            pinchCount++;
-            Log($"[AutoStyle] Ramification node={node.id} h={heightNorm:F2} ref={node.refinementLevel:F1}/{targetRef:F1}");
-        }
-
-        if (pinchCount > 0)
-            Log($"[AutoStyle] Ramification — {pinchCount} tips | year={GameManager.year}");
+        if (queued > 0) Log($"[AutoStyle] Pinch ({(overextendedOnly ? "silhouette" : "ramification")}) — {queued} | month={GameManager.month}");
     }
 
     // ── GL Visualization ──────────────────────────────────────────────────────
@@ -425,23 +425,19 @@ public class AutoStyler : MonoBehaviour
         GL.PushMatrix();
         GL.MultMatrix(Matrix4x4.identity);
 
-        // -- Canopy silhouette rings (cyan) at 20 height steps
-        GL.Begin(GL.LINES);
-        GL.Color(new Color(0f, 0.9f, 0.9f, 0.6f));
+        // Canopy silhouette (cyan)
+        GL.Begin(GL.LINES); GL.Color(new Color(0f, 0.9f, 0.9f, 0.55f));
         for (int i = 1; i <= 20; i++)
         {
-            float h = (float)i / 20f;
-            float r = style.canopySilhouette.Evaluate(h) * style.maxCanopyRadius * treeH;
-            if (r < 0.01f) continue;
-            DrawCircleGL(new Vector3(treeBase.x, soilY + h * treeH, treeBase.z), r, 24);
+            float h = i / 20f; float r = style.canopySilhouette.Evaluate(h) * style.maxCanopyRadius * treeH;
+            if (r > 0.01f) DrawCircleGL(new Vector3(treeBase.x, soilY + h * treeH, treeBase.z), r, 24);
         }
         GL.End();
 
-        // -- Tier boundary rings (orange)
-        if (style.branchTiers != null && style.branchTiers.Length > 0)
+        // Tier rings (orange)
+        if (style.branchTiers != null)
         {
-            GL.Begin(GL.LINES);
-            GL.Color(new Color(1f, 0.5f, 0f, 0.5f));
+            GL.Begin(GL.LINES); GL.Color(new Color(1f, 0.5f, 0f, 0.45f));
             foreach (var tier in style.branchTiers)
             {
                 float rMin = Mathf.Max(0.05f, style.canopySilhouette.Evaluate(tier.minHeightNorm) * style.maxCanopyRadius * treeH * 1.1f);
@@ -452,30 +448,99 @@ public class AutoStyler : MonoBehaviour
             GL.End();
         }
 
-        // -- Trunk waypoint markers + lean arrows (yellow)
-        if (style.trunkWaypoints != null && style.trunkWaypoints.Length > 0)
+        // Trunk waypoints (yellow)
+        if (style.trunkWaypoints != null)
         {
-            GL.Begin(GL.LINES);
-            GL.Color(new Color(1f, 0.95f, 0f, 0.85f));
+            GL.Begin(GL.LINES); GL.Color(new Color(1f, 0.95f, 0f, 0.85f));
             foreach (var wp in style.trunkWaypoints)
             {
-                float   worldY    = soilY + wp.heightAboveSoil * treeH;
-                Vector3 markerPos = new Vector3(treeBase.x, worldY, treeBase.z);
-                float   crossR    = 0.05f;
-
-                // Small crosshair at waypoint height
-                GL.Vertex(markerPos + Vector3.right   * crossR);   GL.Vertex(markerPos - Vector3.right   * crossR);
-                GL.Vertex(markerPos + Vector3.forward * crossR);   GL.Vertex(markerPos - Vector3.forward * crossR);
-
-                // Lean direction arrow
+                Vector3 pos = new Vector3(treeBase.x, soilY + wp.heightAboveSoil * treeH, treeBase.z); float cx = 0.05f;
+                GL.Vertex(pos + Vector3.right * cx);   GL.Vertex(pos - Vector3.right * cx);
+                GL.Vertex(pos + Vector3.forward * cx); GL.Vertex(pos - Vector3.forward * cx);
                 if (wp.targetLeanAngleDeg > 0.5f)
-                {
-                    Vector3 localLean  = WaypointDirection(wp);
-                    Vector3 worldLean  = skeleton.transform.TransformDirection(localLean);
-                    float   arrowLen   = Mathf.Max(0.08f, treeH * 0.12f);
-                    GL.Vertex(markerPos);
-                    GL.Vertex(markerPos + worldLean * arrowLen);
-                }
+                { Vector3 lean = skeleton.transform.TransformDirection(WaypointDirection(wp)); GL.Vertex(pos); GL.Vertex(pos + lean * Mathf.Max(0.08f, treeH * 0.12f)); }
+            }
+            GL.End();
+        }
+
+        // Slot diamonds + spokes (color = state)
+        if (slots.Count > 0)
+        {
+            GL.Begin(GL.LINES);
+            foreach (var slot in slots)
+            {
+                var tier = style.branchTiers[slot.tierIndex];
+                float h = (tier.minHeightNorm + tier.maxHeightNorm) * 0.5f;
+                float r = Mathf.Max(style.canopySilhouette.Evaluate(h) * style.maxCanopyRadius * treeH * 0.85f, 0.06f);
+                float az = slot.azimuthDeg * Mathf.Deg2Rad;
+                Vector3 pos = new Vector3(treeBase.x + Mathf.Sin(az) * r, soilY + h * treeH, treeBase.z + Mathf.Cos(az) * r);
+                Vector3 hub = new Vector3(treeBase.x, pos.y, treeBase.z); float m = 0.035f;
+                GL.Color(SlotColor(slot.state));
+                GL.Vertex(pos + new Vector3(m, 0, 0));  GL.Vertex(pos + new Vector3(0, 0, m));
+                GL.Vertex(pos + new Vector3(0, 0, m));  GL.Vertex(pos + new Vector3(-m, 0, 0));
+                GL.Vertex(pos + new Vector3(-m, 0, 0)); GL.Vertex(pos + new Vector3(0, 0, -m));
+                GL.Vertex(pos + new Vector3(0, 0, -m)); GL.Vertex(pos + new Vector3(m, 0, 0));
+                GL.Vertex(pos - new Vector3(0, m, 0));  GL.Vertex(pos + new Vector3(0, m, 0));
+                GL.Vertex(hub); GL.Vertex(pos);
+            }
+            GL.End();
+        }
+
+        // ── Action indicators (intent-based, always visible) ──────────────────
+
+        // Build set of slot-assigned node IDs so we know which branches are "kept"
+        var assignedIds = new HashSet<int>();
+        foreach (var slot in slots) if (slot.assignedNodeId >= 0) assignedIds.Add(slot.assignedNodeId);
+
+        // Trim candidates — orange X on every unmatched depth=1 branch (will be removed next spring)
+        GL.Begin(GL.LINES); GL.Color(new Color(1f, 0.35f, 0f, 0.95f));
+        foreach (var n in skeleton.allNodes)
+        {
+            if (n.depth != 1 || n.isRoot || n.isDead || n.isTrimmed || n.length <= 0.001f) continue;
+            if (assignedIds.Contains(n.id)) continue;
+            Vector3 mid = skeleton.transform.TransformPoint(n.worldPosition + n.growDirection * (n.length * 0.5f));
+            float s = Mathf.Clamp(n.radius * 14f, 0.06f, 0.22f);
+            // 3-plane X cross
+            GL.Vertex(mid + new Vector3(-s, -s,  0)); GL.Vertex(mid + new Vector3( s,  s,  0));
+            GL.Vertex(mid + new Vector3(-s,  s,  0)); GL.Vertex(mid + new Vector3( s, -s,  0));
+            GL.Vertex(mid + new Vector3( 0, -s, -s)); GL.Vertex(mid + new Vector3( 0,  s,  s));
+            GL.Vertex(mid + new Vector3( 0,  s, -s)); GL.Vertex(mid + new Vector3( 0, -s,  s));
+            GL.Vertex(mid + new Vector3(-s,  0, -s)); GL.Vertex(mid + new Vector3( s,  0,  s));
+            GL.Vertex(mid + new Vector3(-s,  0,  s)); GL.Vertex(mid + new Vector3( s,  0, -s));
+        }
+        GL.End();
+
+        // Wire candidates — cyan circle on Growing/Training assigned branches
+        GL.Begin(GL.LINES); GL.Color(new Color(0f, 0.7f, 1f, 0.95f));
+        foreach (var slot in slots)
+        {
+            if (slot.state != SlotState.Growing && slot.state != SlotState.Training) continue;
+            if (slot.assignedNodeId < 0) continue;
+            var n = FindNodeById(slot.assignedNodeId);
+            if (n == null || n.isDead || n.isTrimmed || n.hasWire || n.length <= 0.001f) continue;
+            Vector3 mid = skeleton.transform.TransformPoint(n.worldPosition + n.growDirection * (n.length * 0.5f));
+            float r = Mathf.Clamp(n.radius * 10f, 0.06f, 0.20f);
+            DrawCircleGL(mid, r, 16);
+            // cross-hair to make it obvious
+            GL.Vertex(mid + Vector3.right * r); GL.Vertex(mid - Vector3.right * r);
+            GL.Vertex(mid + Vector3.up    * r); GL.Vertex(mid - Vector3.up    * r);
+        }
+        GL.End();
+
+        // Pending pinches — green spike at tip (seasonal; shown when queued)
+        if (pendingPinches.Count > 0)
+        {
+            GL.Begin(GL.LINES); GL.Color(new Color(0.15f, 0.95f, 0.15f, 0.95f));
+            foreach (var kv in pendingPinches)
+            {
+                var n = FindNodeById(kv.Key); if (n == null) continue;
+                Vector3 tip = skeleton.transform.TransformPoint(n.tipPosition);
+                float s = Mathf.Clamp(n.radius * 11f, 0.05f, 0.14f);
+                GL.Vertex(tip + new Vector3( s, 0,  0)); GL.Vertex(tip + new Vector3( 0, 0,  s));
+                GL.Vertex(tip + new Vector3( 0, 0,  s)); GL.Vertex(tip + new Vector3(-s, 0,  0));
+                GL.Vertex(tip + new Vector3(-s, 0,  0)); GL.Vertex(tip + new Vector3( 0, 0, -s));
+                GL.Vertex(tip + new Vector3( 0, 0, -s)); GL.Vertex(tip + new Vector3( s, 0,  0));
+                GL.Vertex(tip - new Vector3(0, s * 2.5f, 0)); GL.Vertex(tip + new Vector3(0, s * 2.5f, 0));
             }
             GL.End();
         }
@@ -483,11 +548,23 @@ public class AutoStyler : MonoBehaviour
         GL.PopMatrix();
     }
 
-    // Must be called inside GL.Begin(GL.LINES) / GL.End()
-    void DrawCircleGL(Vector3 center, float radius, int segments)
+    static Color SlotColor(SlotState s)
     {
-        float step = 2f * Mathf.PI / segments;
-        for (int i = 0; i < segments; i++)
+        switch (s)
+        {
+            case SlotState.Empty:       return new Color(1f,   0.2f, 0.2f, 0.9f);
+            case SlotState.Growing:     return new Color(1f,   0.85f, 0f,  0.9f);
+            case SlotState.Training:    return new Color(0f,   0.6f,  1f,  0.9f);
+            case SlotState.Established: return new Color(0.2f, 1f,   0.2f, 0.9f);
+            case SlotState.Maintaining: return new Color(0.5f, 1f,   0.5f, 0.8f);
+            default: return Color.white;
+        }
+    }
+
+    void DrawCircleGL(Vector3 center, float radius, int segs)
+    {
+        float step = 2f * Mathf.PI / segs;
+        for (int i = 0; i < segs; i++)
         {
             float a0 = i * step, a1 = (i + 1) * step;
             GL.Vertex(center + new Vector3(Mathf.Cos(a0) * radius, 0f, Mathf.Sin(a0) * radius));
@@ -495,45 +572,16 @@ public class AutoStyler : MonoBehaviour
         }
     }
 
-    // ── Indicator Helpers ─────────────────────────────────────────────────────
+    // ── Wire Apply ────────────────────────────────────────────────────────────
 
-    void SpawnTrimIndicator(TreeNode node)
+    void ApplyWire(TreeNode node, Vector3 targetLocalDir, HashSet<int> trackingSet)
     {
-        if (trimIndicators.ContainsKey(node.id)) return;
-
-        var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        go.name = $"TrimPreview_{node.id}";
-        go.transform.SetParent(skeleton.transform, worldPositionStays: true);
-
-        Vector3 mid = node.worldPosition + node.growDirection * (node.length * 0.5f);
-        go.transform.position = skeleton.transform.TransformPoint(mid);
-        go.transform.localScale = Vector3.one * Mathf.Clamp(node.radius * 6f, 0.04f, 0.15f);
-
-        Object.Destroy(go.GetComponent<Collider>());
-
-        var mr  = go.GetComponent<MeshRenderer>();
-        var mat = mr.material;
-        mat.color = new Color(1f, 0.35f, 0f);
-        mr.material = mat;
-
-        trimIndicators[node.id] = go;
-    }
-
-    void DestroyIndicator(int nodeId)
-    {
-        if (trimIndicators.TryGetValue(nodeId, out var go))
-        {
-            if (go != null) Object.Destroy(go);
-            trimIndicators.Remove(nodeId);
-        }
-    }
-
-    void ClearAllIndicators()
-    {
-        foreach (var kv in trimIndicators)
-            if (kv.Value != null) Object.Destroy(kv.Value);
-        trimIndicators.Clear();
-        pendingTrims.Clear();
+        skeleton.WireNode(node, targetLocalDir);
+        Quaternion rot = Quaternion.FromToRotation(node.growDirection, targetLocalDir);
+        node.growDirection = targetLocalDir;
+        skeleton.RotateAndPropagateDescendants(node, rot, null);
+        skeleton.meshBuilder?.SetDirty();
+        trackingSet.Add(node.id);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -548,44 +596,67 @@ public class AutoStyler : MonoBehaviour
         return y != 0f ? y : skeleton.transform.position.y;
     }
 
-    TrunkWaypoint NearestWaypoint(float heightNorm)
+    float GetBranchAzimuth(TreeNode node)
     {
-        var wps  = style.trunkWaypoints;
-        var best = wps[0];
-        float bestDist = float.MaxValue;
-        foreach (var wp in wps)
+        Vector3 worldDir = skeleton.transform.TransformDirection(node.growDirection);
+        Vector3 horiz    = new Vector3(worldDir.x, 0f, worldDir.z);
+        if (horiz.sqrMagnitude < 0.01f)
         {
-            float d = Mathf.Abs(wp.heightAboveSoil - heightNorm);
-            if (d < bestDist) { bestDist = d; best = wp; }
+            Vector3 w = skeleton.transform.TransformPoint(node.worldPosition);
+            horiz = new Vector3(w.x - skeleton.transform.position.x, 0f, w.z - skeleton.transform.position.z);
         }
+        if (horiz.sqrMagnitude < 0.001f) return 0f;
+        horiz.Normalize();
+        return (Mathf.Atan2(horiz.x, horiz.z) * Mathf.Rad2Deg + 360f) % 360f;
+    }
+
+    Vector3 SlotTargetDirection(BranchSlot slot, BranchTier tier)
+    {
+        float rad = tier.targetAngleDeg * Mathf.Deg2Rad; float az = slot.azimuthDeg * Mathf.Deg2Rad;
+        Vector3 outward = new Vector3(Mathf.Sin(az), 0f, Mathf.Cos(az));
+        Vector3 world   = Mathf.Cos(rad) * Vector3.up + Mathf.Sin(rad) * outward;
+        return skeleton.transform.InverseTransformDirection(world).normalized;
+    }
+
+    TrunkWaypoint NearestWaypoint(float h)
+    {
+        var wps = style.trunkWaypoints; var best = wps[0]; float bestDst = float.MaxValue;
+        foreach (var wp in wps) { float d = Mathf.Abs(wp.heightAboveSoil - h); if (d < bestDst) { bestDst = d; best = wp; } }
         return best;
     }
 
-    BranchTier TierForHeight(float heightNorm)
+    BranchTier TierForHeight(float h)
     {
         if (style.branchTiers == null) return null;
-        foreach (var tier in style.branchTiers)
-            if (heightNorm >= tier.minHeightNorm && heightNorm <= tier.maxHeightNorm)
-                return tier;
+        foreach (var t in style.branchTiers) if (h >= t.minHeightNorm && h <= t.maxHeightNorm) return t;
         return null;
     }
 
     Vector3 WaypointDirection(TrunkWaypoint wp)
     {
         if (wp.targetLeanAngleDeg < 0.5f) return Vector3.up;
-        Vector3 leanDir  = Quaternion.Euler(0f, wp.leanAxisDeg, 0f) * Vector3.forward;
-        Vector3 tiltAxis = Vector3.Cross(Vector3.up, leanDir).normalized;
-        return Quaternion.AngleAxis(wp.targetLeanAngleDeg, tiltAxis) * Vector3.up;
+        Vector3 leanDir = Quaternion.Euler(0f, wp.leanAxisDeg, 0f) * Vector3.forward;
+        return Quaternion.AngleAxis(wp.targetLeanAngleDeg, Vector3.Cross(Vector3.up, leanDir).normalized) * Vector3.up;
     }
 
-    TreeNode FindNodeById(int id)
-    {
-        foreach (var node in skeleton.allNodes)
-            if (node.id == id) return node;
-        return null;
-    }
+    TreeNode FindNodeById(int id) { foreach (var n in skeleton.allNodes) if (n.id == id) return n; return null; }
 
     static float InGameDay() => GameManager.dayOfYear + GameManager.year * 366f;
-
     void Log(string msg) { if (verboseLog) Debug.Log(msg); }
+}
+
+public enum SlotState { Empty, Growing, Training, Established, Maintaining }
+
+public class BranchSlot
+{
+    public int       tierIndex;
+    public float     azimuthDeg;
+    public int       assignedNodeId = -1;
+    public SlotState state          = SlotState.Empty;
+
+    public BranchSlot(int tierIndex, float azimuthDeg)
+    {
+        this.tierIndex  = tierIndex;
+        this.azimuthDeg = azimuthDeg;
+    }
 }

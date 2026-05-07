@@ -148,6 +148,29 @@
         <ui:Label text="Right-click to clear target." style="color: rgb(80,80,80); font-size: 9px; margin-top: 6px; -unity-font-style: italic;" />
     </ui:VisualElement>
 
+    <!-- ── Auto Style Panel ───────────────────────────────────────────────── -->
+    <ui:VisualElement name="StylePanel" style="position: absolute; left: 10px; bottom: 120px; width: 170px; padding: 10px; background-color: rgb(14,20,18); border-radius: 6px; display: none; flex-direction: column;">
+        <ui:Label text="AUTO STYLE" style="color: rgb(140,200,180); font-size: 11px; -unity-font-style: bold; margin-bottom: 5px;" />
+        <ui:Label name="StylePanelStyleName" text="—" style="color: rgb(220,220,220); font-size: 12px; -unity-font-style: bold; margin-bottom: 5px; border-bottom-color: rgb(40,60,50); border-bottom-width: 1px; padding-bottom: 4px;" />
+        <ui:VisualElement style="flex-direction: row; justify-content: space-between; margin-bottom: 2px;">
+            <ui:Label text="Match" style="color: rgb(140,170,155); font-size: 10px;" />
+            <ui:Label name="StylePanelScore" text="—" style="color: rgb(100,220,160); font-size: 10px; -unity-font-style: bold;" />
+        </ui:VisualElement>
+        <ui:VisualElement style="flex-direction: row; justify-content: space-between; margin-bottom: 2px;">
+            <ui:Label text="Slots" style="color: rgb(140,170,155); font-size: 10px;" />
+            <ui:Label name="StylePanelSlots" text="—" style="color: rgb(200,200,200); font-size: 10px;" />
+        </ui:VisualElement>
+        <ui:Label name="StylePanelSlotBreakdown" text="—" style="color: rgb(160,160,160); font-size: 9px; margin-bottom: 3px; -unity-font-style: italic;" />
+        <ui:VisualElement style="flex-direction: row; justify-content: space-between; margin-bottom: 2px;">
+            <ui:Label text="Pending" style="color: rgb(140,170,155); font-size: 10px;" />
+            <ui:Label name="StylePanelPending" text="—" style="color: rgb(200,200,200); font-size: 10px;" />
+        </ui:VisualElement>
+        <ui:VisualElement style="flex-direction: row; justify-content: space-between;">
+            <ui:Label text="Shaped" style="color: rgb(140,170,155); font-size: 10px;" />
+            <ui:Label name="StylePanelShaped" text="—" style="color: rgb(200,200,200); font-size: 10px;" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+
     <ui:VisualElement name="RootHealthPanel" style="position: absolute; left: 10px; bottom: 10px; width: 160px; padding: 10px; background-color: rgb(18,28,18); border-radius: 6px; display: none;">
         <ui:Label text="ROOT HEALTH" name="RootHealthHeader" style="color: rgb(160,200,160); font-size: 11px; -unity-font-style: bold; margin-bottom: 2px;" />
         <ui:Label text="—" name="RootHealthScoreLabel" style="color: rgb(255,255,255); font-size: 32px; -unity-font-style: bold; margin-bottom: 4px;" />

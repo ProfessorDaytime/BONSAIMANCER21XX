@@ -6059,6 +6059,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ringSegments: 8
   debugHealthRings: 0
+  debugRainbowRoots: 1
   debugRootVisibility: 0
   renderRoots: 0
   rockCollider: {fileID: 0}
@@ -6466,7 +6467,9 @@ MonoBehaviour:
   style: {fileID: 11400000, guid: 051582429a490f34da9690bbcab413df, type: 2}
   autoStyleEnabled: 1
   verboseLog: 1
-  trimPreviewDays: 10
+  actionPreviewDays: 20
+  showTargetShape: 1
+  unwireDelayDays: 20
 --- !u!1 &1496661667
 GameObject:
   m_ObjectHideFlags: 0

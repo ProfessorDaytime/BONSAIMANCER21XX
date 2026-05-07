@@ -77,6 +77,14 @@ public class ButtonClicker : MonoBehaviour
     Label         rootHealthScoreLabel;
     VisualElement rootHealthSectors;
 
+    VisualElement stylePanel;
+    Label         stylePanelStyleName;
+    Label         stylePanelScore;
+    Label         stylePanelSlots;
+    Label         stylePanelSlotBreakdown;
+    Label         stylePanelPending;
+    Label         stylePanelShaped;
+
     Label         debugStateLabel;
     bool          debugStateVisible = false;
 
@@ -508,6 +516,14 @@ public class ButtonClicker : MonoBehaviour
         rootHealthPanel      = root.Q("RootHealthPanel");
         rootHealthScoreLabel = root.Q("RootHealthScoreLabel") as Label;
         rootHealthSectors    = root.Q("RootHealthSectors");
+
+        stylePanel             = root.Q("StylePanel");
+        stylePanelStyleName    = root.Q("StylePanelStyleName")    as Label;
+        stylePanelScore        = root.Q("StylePanelScore")        as Label;
+        stylePanelSlots        = root.Q("StylePanelSlots")        as Label;
+        stylePanelSlotBreakdown = root.Q("StylePanelSlotBreakdown") as Label;
+        stylePanelPending      = root.Q("StylePanelPending")      as Label;
+        stylePanelShaped       = root.Q("StylePanelShaped")       as Label;
 
         // ── Scroll sensitivity ────────────────────────────────────────────────
         const float scrollSpeed = 400f;
@@ -1127,6 +1143,8 @@ public class ButtonClicker : MonoBehaviour
             treeStatsPanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
         if (rootHealthPanel != null)
             rootHealthPanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
+        if (stylePanel != null)
+            stylePanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
 
         if (uiToggleButton != null)
             uiToggleButton.style.color = uiToggleState switch
@@ -1172,6 +1190,7 @@ public class ButtonClicker : MonoBehaviour
     {
         if (skeleton == null || treeStatsPanel == null) return;
         UpdateRootHealthDisplay();
+        UpdateStylePanelDisplay();
 
         // Moisture
         float moist = skeleton.soilMoisture;
@@ -2300,6 +2319,75 @@ public class ButtonClicker : MonoBehaviour
             var   col = Color.Lerp(new Color(0.15f, 0.15f, 0.15f), new Color(0.3f, 0.75f, 0.3f), t);
             rootHealthSectors[i].style.backgroundColor = new StyleColor(col);
         }
+    }
+
+    void UpdateStylePanelDisplay()
+    {
+        if (stylePanel == null) return;
+        var styler = AutoStyler.Instance;
+        if (styler == null || styler.style == null)
+        {
+            if (stylePanelStyleName != null) stylePanelStyleName.text = "None";
+            if (stylePanelScore     != null) stylePanelScore.text     = "—";
+            if (stylePanelSlots     != null) stylePanelSlots.text     = "—";
+            if (stylePanelSlotBreakdown != null) stylePanelSlotBreakdown.text = "";
+            if (stylePanelPending   != null) stylePanelPending.text   = "—";
+            if (stylePanelShaped    != null) stylePanelShaped.text    = "—";
+            return;
+        }
+
+        var slots = styler.Slots;
+        int total       = slots.Count;
+        int empty       = 0, growing = 0, training = 0, established = 0, maintaining = 0;
+        foreach (var s in slots)
+        {
+            switch (s.state)
+            {
+                case SlotState.Empty:       empty++;       break;
+                case SlotState.Growing:     growing++;     break;
+                case SlotState.Training:    training++;    break;
+                case SlotState.Established: established++; break;
+                case SlotState.Maintaining: maintaining++; break;
+            }
+        }
+        int occupied  = total - empty;
+        int matchScore = total > 0 ? Mathf.RoundToInt((established + maintaining) * 100f / total) : 0;
+
+        if (stylePanelStyleName != null) stylePanelStyleName.text = styler.style.styleName;
+
+        if (stylePanelScore != null)
+        {
+            stylePanelScore.text = $"{matchScore}%";
+            var col = matchScore >= 80 ? new Color(0.3f, 0.95f, 0.55f)
+                    : matchScore >= 50 ? new Color(0.95f, 0.85f, 0.3f)
+                    :                    new Color(0.95f, 0.45f, 0.35f);
+            stylePanelScore.style.color = new StyleColor(col);
+        }
+
+        if (stylePanelSlots != null)
+            stylePanelSlots.text = $"{occupied}/{total}";
+
+        if (stylePanelSlotBreakdown != null)
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            if (empty       > 0) parts.Add($"E:{empty}");
+            if (growing     > 0) parts.Add($"G:{growing}");
+            if (training    > 0) parts.Add($"T:{training}");
+            if (established > 0) parts.Add($"Est:{established}");
+            if (maintaining > 0) parts.Add($"M:{maintaining}");
+            stylePanelSlotBreakdown.text = parts.Count > 0 ? string.Join("  ", parts) : "no slots";
+        }
+
+        if (stylePanelPending != null)
+        {
+            int trims   = styler.PendingTrimCount;
+            int wires   = styler.PendingWireCount;
+            int pinches = styler.PendingPinchCount;
+            stylePanelPending.text = $"✂{trims}  ⌇{wires}  ✦{pinches}";
+        }
+
+        if (stylePanelShaped != null)
+            stylePanelShaped.text = styler.ShapedCount.ToString();
     }
 
     public void OnQuickWinterButtonClick(ClickEvent evt)

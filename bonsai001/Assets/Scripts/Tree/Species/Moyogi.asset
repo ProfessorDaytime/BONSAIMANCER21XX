@@ -37,21 +37,25 @@ MonoBehaviour:
     maxBranches: 2
     targetAngleDeg: 80
     maxAngleTolerance: 35
+    azimuthOffsetDeg: 30
   - minHeightNorm: 0.25
     maxHeightNorm: 0.5
     maxBranches: 3
     targetAngleDeg: 65
     maxAngleTolerance: 35
+    azimuthOffsetDeg: 90
   - minHeightNorm: 0.5
     maxHeightNorm: 0.75
     maxBranches: 4
     targetAngleDeg: 50
     maxAngleTolerance: 30
+    azimuthOffsetDeg: 150
   - minHeightNorm: 0.75
     maxHeightNorm: 1
     maxBranches: 5
     targetAngleDeg: 35
     maxAngleTolerance: 30
+    azimuthOffsetDeg: 45
   maxCanopyRadius: 0.6
   canopySilhouette:
     serializedVersion: 2
@@ -105,3 +109,6 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   pinchOvershootFactor: 1.2
+  enableRamification: 1
+  ramificationTargetLevel: 3
+  ramificationMaxHeight: 0.75

@@ -1,6 +1,6 @@
 # BONSAIMANCER — Systems Reference
 
-Last updated: 2026-04-23 (added §42 Sibling Branch Fusion, §41 rock size updated, §43 Bark Texture System added)
+Last updated: 2026-04-29 (added §44 AutoStyler System)
 
 A concise technical reference for every implemented game system. Read this
 before touching a system's code — each entry explains the mental model, the
@@ -37,6 +37,7 @@ key data flow, and the things most likely to go wrong.
 41. [Pot Size Selection](#41-pot-size-selection)
 42. [Sibling Branch Fusion](#42-sibling-branch-fusion)
 43. [Bark Texture System](#43-bark-texture-system)
+44. [AutoStyler System](#44-autostyler-system)
 
 ---
 
@@ -1661,3 +1662,85 @@ Optional pixel-art texture tiers layered on top of the existing procedural bark.
 - Adjacent tiers don't need to share a color language — the noise transition handles it.
 - Groove darkening is still applied on top of the texture sample, so bark geometry reads through even with textures.
 - `barkVTiling` defaults to `0.4f` which preserves the UV scale that the procedural bark patterns were tuned for. Raise it only when switching to textures.
+
+---
+
+## 44. AutoStyler System
+
+**Files:** `AutoStyler.cs`, `StyleDefinition.cs`, `Assets/Editor/StyleDefinitionCreator.cs`
+
+### What it does
+`AutoStyler` is a plan-based autonomous bonsai styler. Rather than reacting geometrically each season, it maintains a **branch slot plan** and drives all operations (wire, trim, pinch) toward filling those slots correctly. Two built-in styles ship as ScriptableObject assets: Moyogi (informal upright) and S-Curve (commercial).
+
+### Architecture: Slot System
+Each `BranchTier` in the `StyleDefinition` defines N branch slots at evenly-spaced azimuths starting at `azimuthOffsetDeg`. Each spring, AutoStyler matches living depth=1 branches to the nearest open slot by a greedy algorithm (shaped branches get priority for stability). Unmatched branches are scheduled for removal.
+
+**`BranchSlot` state machine:**
+
+| State | Meaning |
+|---|---|
+| `Empty` | No branch in this slot — back-budding stimulated in February |
+| `Growing` | Branch assigned but angle deviation > `wireThresholdDeg` |
+| `Training` | Branch has wire currently setting |
+| `Established` | Branch at correct angle; wire set or within threshold |
+| `Maintaining` | Established + has sub-branching |
+
+**Match % displayed in Style Panel** = `(Established + Maintaining) / total slots`.
+
+### Seasonal schedule
+| Month | Action |
+|---|---|
+| March (spring) | `RefreshSlots()` — rematches branches; `ShapeTrunk()` — wires trunk toward waypoints |
+| February | `StimulateEmptySlots()` — sets `backBudStimulated=true` on trunk nodes near empty slots |
+| April / May | `PlanPinches(overextendedOnly:true)` — silhouette containment |
+| June | `PlanPinches(overextendedOnly:false)` — ramification (if `enableRamification`) |
+| October | `PlanScaffoldWires()` — schedules wires for Growing/Training slots |
+| Every frame | `UpdatePendingActions()` — fires scheduled trims/wires/pinches when their day arrives; `RemoveSetWires()` — unwires gold wires after `unwireDelayDays` |
+
+### Auto-unwire timing
+When a wire turns gold (`wireSetProgress >= 1f`), the day is recorded in `wireGoldDay`. After `unwireDelayDays` (default 20) in-game days, the wire is automatically removed and the node added to `shapedNodeIds`. This runs every frame in `Update()` — not just at season boundaries — so wires come off promptly. Checked independently of season.
+
+### GL Overlay (`showTargetShape = true`)
+| Colour | Meaning |
+|---|---|
+| Cyan rings | Canopy silhouette at each 5% height band |
+| Orange rings | Tier boundary bands |
+| Yellow cross + arrow | Trunk waypoints with lean direction |
+| Coloured diamond + spoke | Branch slot (red=Empty, yellow=Growing, blue=Training, bright green=Established, pale green=Maintaining) |
+| Orange X cross (6 lines) | Unmatched depth=1 branch — will be trimmed next spring |
+| Cyan circle + crosshair | Growing/Training slot branch — will be wired in October |
+| Green spike | Queued pinch at tip (seasonal) |
+
+All indicators are **intent-based** (always visible year-round) except pinch spikes which are queue-based.
+
+### Style Panel UI (Stats toggle)
+Shown above the Root Health Panel when the Stats overlay is open. Displays: style name, match %, slot count (occupied/total), slot-state breakdown (E/G/T/Est/M), pending action counts, shaped trunk node count. Reads from `AutoStyler.Instance` public accessors.
+
+### Key Inspector fields
+| Field | Default | Meaning |
+|---|---|---|
+| `style` | — | `StyleDefinition` asset to grow toward |
+| `autoStyleEnabled` | true | Master enable |
+| `actionPreviewDays` | 20 | Days before a scheduled action fires |
+| `unwireDelayDays` | 20 | Days after wire turns gold before auto-removal |
+| `showTargetShape` | true | GL overlay enable |
+| `verboseLog` | false | Per-action console logging |
+
+### `StyleDefinition` fields
+| Header | Key fields |
+|---|---|
+| Identity | `styleName`, `styleType` |
+| Trunk Waypoints | `wireThresholdDeg`, `trunkWaypoints[]` (heightAboveSoil, targetLeanAngleDeg, leanAxisDeg) |
+| Branch Tiers | `branchTiers[]` (minHeightNorm, maxHeightNorm, maxBranches, targetAngleDeg, maxAngleTolerance, azimuthOffsetDeg) |
+| Canopy Silhouette | `maxCanopyRadius`, `canopySilhouette` AnimationCurve |
+| Pinching | `pinchOvershootFactor` |
+| Ramification | `enableRamification`, `ramificationTargetLevel`, `ramificationMaxHeight` |
+
+### `StyleDefinitionCreator` (Editor)
+Menu `Bonsai → Create Default Styles` regenerates `Moyogi.asset` and `SCurve.asset` in `Assets/Scripts/Tree/Species/`. Run this any time `StyleDefinition` fields are added.
+
+### Gotchas
+- `AutoStyler.Instance` is set in `Awake` — any UI accessing it before the scene loads will get null; guard with `if (AutoStyler.Instance != null)`.
+- `shapedNodeIds` is not serialized — reloading resets it. Wires re-apply on the next spring but nodes re-enter `Growing` state briefly.
+- GL indicators are drawn in `OnRenderObject()` which fires for every camera. In multi-camera setups (e.g. Scene view + Game view) you may see doubled lines; this is cosmetic only.
+- `actionPreviewDays` controls how far ahead trims/wires/pinches are scheduled, not how long indicators stay visible — intent indicators are always on.

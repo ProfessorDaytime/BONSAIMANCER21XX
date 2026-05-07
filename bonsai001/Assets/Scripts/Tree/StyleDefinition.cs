@@ -109,4 +109,9 @@ public class BranchTier
 
     [Tooltip("Branches deviating more than this from targetAngleDeg are flagged for removal.")]
     [Range(10f, 90f)] public float maxAngleTolerance;
+
+    [Tooltip("Compass bearing of the first slot in this tier (0=+Z, 90=+X). Remaining slots " +
+             "are evenly distributed from this starting angle. Spiral the offset across tiers " +
+             "to get a natural alternating branch pattern.")]
+    [Range(0f, 360f)] public float azimuthOffsetDeg;
 }

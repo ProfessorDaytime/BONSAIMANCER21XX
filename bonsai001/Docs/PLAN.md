@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-04-23 · Items 1–34 complete + Branch Saw + Bark Shader System + Branch Promotion Advisor + Tutorial/Seasonal Tooltips + Calendar (all 6 parts) + Idle Camera Orbit + Autosave + Root Containment + Repot Root Raking + Pot & Rock Size Selection + Sibling Branch Fusion + Bark Texture System; priority queue items 1–18 done; many backlog items also confirmed complete
+Last updated: 2026-04-29 · Items 1–34 complete + Branch Saw + Bark Shader System + Branch Promotion Advisor + Tutorial/Seasonal Tooltips + Calendar (all 6 parts) + Idle Camera Orbit + Autosave + Root Containment + Repot Root Raking + Pot & Rock Size Selection + Sibling Branch Fusion + Bark Texture System + AutoStyler (slot-based plan engine, Moyogi & S-Curve, GL intent indicators, Style Panel UI, auto-unwire gold timer, rainbow root debug); priority queue items 1–18 done; many backlog items also confirmed complete
 
 ---
 
@@ -8,19 +8,65 @@ Last updated: 2026-04-23 · Items 1–34 complete + Branch Saw + Bark Shader Sys
 
 Ordered by current priority. Work top-to-bottom.
 
+### ✅ DONE — Auto-Style Engine (Moyogi / S-Curve)
+
+Plan-based slot engine. `StyleDefinition` ScriptableObject (waypoints, tiers, canopy curve, ramification). `AutoStyler.cs` greedy slot matching, intent-based GL indicators (trim X / wire circle / pinch spike, always visible year-round), seasonal schedule (spring slots+trunk, Feb back-bud, Apr/May pinch silhouette, Jun ramification, Oct scaffold wires). Auto-unwire after `unwireDelayDays` (20d) from gold. Style Panel in Stats UI (match %, slot breakdown E/G/T/Est/M, pending counts). Rainbow root debug overlay on by default. See §44 SYSTEMS.md.
+
+---
+
 ### 🔴 NEW — High Priority
 
-**A. Auto-Style Engine (Moyogi / S-Curve)**
+**A. AutoStyler Pacing & Convergence**
 
-A fully automated system that trims and wires the tree each season to grow it toward a target bonsai style, with no player input required. Phase 1 targets Ficus with Informal Upright (moyogi) and commercial S-curve styles.
+At default settings the tree reaches only ~17% style match after 30 in-game years. Needs to converge to a recognisable form within 10–15 years so testers and players can actually see the result.
 
-- **`StyleDefinition` ScriptableObject** — encodes the target form: trunk curve as a list of waypoints (world-space Y height → target lean angle), branch tier parameters (height band, target angle from vertical, max count per tier), and a canopy silhouette radius curve. Separate assets for moyogi and S-curve.
-- **`AutoStyler.cs` MonoBehaviour** — runs once per growing season after `StartNewGrowingSeason`. Reads the current `TreeSkeleton` against the active `StyleDefinition` and queues a list of `StyleAction` (Trim, Pinch, Wire, WireAngle) for execution that season.
-- **Trunk shaping** — compares current trunk node angles against the curve waypoints; selects the lowest-deviation wirable node and applies wire + target bend angle. For S-curve: alternates left/right lean per waypoint pair.
-- **Branch tier management** — for each height band, counts live branches; trims excess beyond max-per-tier; pinches branches that are growing out of the target angle range.
-- **Season gating** — structural wire/bend fires in spring; heavy trims fire in late winter (month 2); pinching fires in April–May only.
-- **Wire follow-through** — AutoStyler tracks which wires it placed; removes them after `wireSetProgress >= 1` so wire bite doesn't accumulate.
-- **Scope:** new `StyleDefinition.cs`, new `AutoStyler.cs`, two `.asset` files (moyogi, S-curve), hook into `TreeSkeleton.StartNewGrowingSeason`.
+> **Max safe speed reference:** At TIMESCALE=200 (Fast), 1 in-game day = 0.12 real seconds; 1 year ≈ 44 real seconds; 30 years ≈ 22 real minutes. The Calendar Speed Config tab goes up to 500 (≈18 real seconds/year; 30 years in ~9 min). Values above ~600 risk skipping `OnMonthChanged` events if multiple months tick in a single frame — the calendar accumulates fractional hours so month rollover is safe, but verify at your target rate. For testing: TIMESCALE=400–500 is a safe ceiling. For a true stress test at 1000+ use the AutoRunManager with `resetTreeOnLoop=false`.
+
+- **Root cause audit:** Most empty slots come from azimuth mismatch — branches grow randomly and `backBudStimulated` is non-directional. A tree may never grow a branch at the right compass bearing even after decades.
+- **Directional back-bud stimulation** — when stimulating empty slots in February, also nudge the nearest trunk node's lateral spawn direction toward the slot's azimuth. Requires a `preferredLateralAzimuth` field on `TreeNode` read by `SpawnChildren` to bias the first lateral's direction ±30° toward target.
+- **Faster wire convergence** — add `autoStyleWireSpeedMult` (default 1.5×) on `AutoStyler` that scales the effective `wireDaysToSet` for auto-placed wires only, so auto-wires set in ~1.3 seasons rather than 2.
+- **Match % counting** — count all assigned slots (not just Established/Maintaining) as partial credit in the % display. Occupied slots at any state = progress toward the style.
+- **Debug / test mode** — add a `fastConverge` toggle that sets `wireSpeedMult=4`, `actionPreviewDays=3`, `depthsPerYear×2` so a tester can see the end result in ~5 years at fast speed.
+
+---
+
+**B. AutoStyler Extended Care (Paste / Defoliate / Repot)**
+
+AutoStyler should manage the full care cycle, not just wiring and trimming.
+
+- **Wound paste** — after every auto-trim that creates a wound, immediately call `ApplyPaste(node)` on the parent (same API as the player's paste tool). No UI interaction needed — the system just always pastes its own cuts.
+- **Defoliation** — in late June (after ramification), if the tree's canopy is dense enough (terminal nodes > defoliateThreshold, e.g. 80 tips), trigger a full defoliation pass. Defoliating mid-summer forces finer back-budding and reduces shading on interior branches. Call existing `skeleton.DefoliateNode` per terminal.
+- **Auto-repot / pot sizing** — the tree starts in the smallest pot (XS) and AutoStyler advances the pot size on a schedule based on style phase:
+  - **Phase 1 (years 1–5):** XS pot — tight restriction encourages trunk thickening and compact root mass.
+  - **Phase 2 (years 6–12):** S pot — give roots room once trunk base is established.
+  - **Phase 3 (years 13–25):** M pot — mid-development, branches thickening.
+  - **Phase 4 (25+):** L pot — maintaining mature form.
+  - Pot advancement fires at spring when `GameManager.year - startYear >= phaseThreshold`. Calls `PotSoil.ApplyPotSize(rootAreaTransform)` directly — no repot mini-game (auto-care bypasses that). Log the pot change.
+  - `StyleDefinition` can optionally override the phase thresholds.
+
+---
+
+**C. 45-Degree Branch Cut Angle**
+
+In real bonsai, cuts are made at ~45° relative to the branch axis so water runs off the wound face rather than pooling. A flush flat cut retains moisture and invites fungal infection.
+
+- **Wound face normal** — `TreeNode.woundFaceNormal` is already stored (currently set to `removedBranch.growDirection`). Change `TrimNode` to set `woundFaceNormal = Quaternion.AngleAxis(45f, perpendicularAxis) * removedBranch.growDirection` where `perpendicularAxis` is the cross product of `growDirection` and the parent's `growDirection`. This tilts the cut face 45° toward the direction growth was coming from.
+- **Visual** — `AddWoundCap` in `TreeMeshBuilder` uses `woundFaceNormal` to orient the cap ring. With the angled normal the callus cap will render at 45° on the branch, which is visually correct and subtly different from a flat cross-cut.
+- **Health benefit** — optionally reduce `woundDrainRate × 0.7` when `woundFaceAngle > 30°` (angled cuts heal faster).
+- **Scope:** `TreeSkeleton.TrimNode`, `TreeMeshBuilder.AddWoundCap`, `TreeNode` (no new fields needed — `woundFaceNormal` already exists).
+
+---
+
+**D. AutoStyler Narrative / Care Log**  *(medium priority — foundation first)*
+
+A running log of why each auto-care action was taken, and a plain-English summary of the tree's current health state.
+
+- **Action log** — each auto-trim/wire/pinch/paste/defoliate/repot records a `CareLogEntry { date, action, nodeId, reason }`. Reason is a short templated string: `"Branch at 240° exceeds tier-2 slot limit (3 branches → trimming to 2)"`, `"Wire set after 1.4 seasons — removing before bite"`, `"Defoliated 94 tips to improve interior light penetration"`.
+- **Health narrative** — at season end, generate a 2–3 sentence summary of tree health: highest-impact positive and negative factors (moisture, fungal, nutrients, recent damage, pot-bound pressure). E.g. `"The tree is thriving — moisture is stable at 72% and 3 new scaffold branches established this season. Two open wounds are draining health slowly; consider applying paste."`
+- **UI** — small scrollable log panel shown in the Stats overlay, or accessible via a new "Log" tab in the existing stats/style area. Latest entry shown inline; tap to expand full history.
+- **Scope:** new `CareLog.cs` (singleton with `List<CareLogEntry>`, last 200 entries, serialized in `SaveData`), `AutoStyler.cs` (`LogAction()` helper), `TreeSkeleton.cs` (season-end narrative builder), `ButtonUI.uxml` + `buttonClicker.cs` (log panel).
+
+---
 
 ---
 
@@ -68,6 +114,13 @@ A hands-off loop that boots the game, grows a tree using the Auto-Style Engine f
 ---
 
 ## Completed This Phase
+
+- **AutoStyler — slot-based plan engine** ✓ — `StyleDefinition` ScriptableObject (trunk waypoints, branch tiers with `azimuthOffsetDeg`, canopy silhouette curve, ramification settings). `AutoStyler.cs` greedy slot-matching (depth=1 branches matched to nearest azimuth slot); `BranchSlot` + `SlotState` (Empty/Growing/Training/Established/Maintaining); seasonal schedule (spring: slot refresh + trunk wire; Feb: back-bud stimulation; Apr/May: silhouette pinch; Jun: ramification; Oct: scaffold wires). `AutoStyler.Instance` static accessor + public slot/pending accessors.
+- **AutoStyler — GL intent indicators** ✓ — All indicators are intent-based (always visible year-round, not queue-based). Orange X (6 lines, 3 planes) on every unmatched depth=1 branch = trim candidate. Cyan circle + crosshair on every Growing/Training assigned branch = wire candidate. Green spike at tip for queued pinches. Colored slot diamonds with trunk spoke. Canopy silhouette rings (cyan), tier boundary rings (orange), trunk waypoint crosses + lean arrows (yellow).
+- **AutoStyler — auto-unwire gold timer** ✓ — `wireGoldDay` dictionary tracks the in-game day when each auto-wired node first reaches `wireSetProgress >= 1f`. `RemoveSetWires()` now runs every frame in `Update()`; unwires nodes whose gold day + `unwireDelayDays` (default 20) has elapsed. No longer waits until spring or until damage starts.
+- **Style Panel UI** ✓ — `StylePanel` VisualElement in `ButtonUI.uxml`, positioned above Root Health Panel. Shows: style name, match % (color-coded green/yellow/red), occupied/total slots, state breakdown (E:n G:n T:n Est:n M:n), pending trim/wire/pinch counts, shaped trunk node count. Wired in `buttonClicker.cs` via `AutoStyler.Instance`; shown/hidden with Stats toggle.
+- **Rainbow root debug overlay** ✓ — `debugRainbowRoots = true` field on `TreeMeshBuilder`; depth-coded color lines drawn in existing `OnRenderObject()` for all root nodes. Enabled by default for debugging. Toggle in Inspector.
+- **StyleDefinitionCreator** ✓ — Editor script `Bonsai → Create Default Styles` regenerates Moyogi.asset and SCurve.asset with all new fields (azimuthOffsetDeg, ramification). Run after any `StyleDefinition` field additions.
 
 - **Phototropism coordinate space fix** ✓ — `SunDirection()` in `TreeSkeleton` was returning world `Vector3.up`; `growDirection` is tree-local, so Slerping the two produced wrong results when the tree was tilted on a rock. Fixed to `transform.InverseTransformDirection(Vector3.up)`.
 - **PinchNode bud-system fix (critical)** ✓ — `PinchNode()` was setting `node.isTrimmed = true`, which excluded the node from autumn `SetBuds()`. With `budSystemActive = true` in year 2+, only `hasBud` nodes can spawn — so all pinched nodes were permanently frozen with no path back. Fix: removed `isTrimmed = true`; use `node.length = node.targetLength` instead to halt extension while keeping the node alive for the bud cycle. Growth resumes next spring via normal bud break.

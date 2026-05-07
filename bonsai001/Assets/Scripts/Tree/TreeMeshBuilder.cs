@@ -55,6 +55,9 @@ public class TreeMeshBuilder : MonoBehaviour
     [Tooltip("Draw green→yellow→red rings on each branch node to visualise node health. Toggle at runtime.")]
     public bool debugHealthRings = false;
 
+    [Tooltip("Draw rainbow lines along every root segment (depth-coded colour). Toggle at runtime for root debugging.")]
+    public bool debugRainbowRoots = true;
+
     [Tooltip("Draw colored lines on every root node to diagnose root visibility bugs.\n" +
              "Green  = included in mesh  (passes visibility check)\n" +
              "Red    = excluded by depth threshold (y < rootVisibilityDepth)\n" +
@@ -1035,6 +1038,19 @@ public class TreeMeshBuilder : MonoBehaviour
                 else
                     col = Color.red;
 
+                col.a = 1f;
+                GL.Color(col);
+                GL.Vertex(node.worldPosition);
+                GL.Vertex(node.tipPosition);
+            }
+        }
+
+        if (debugRainbowRoots)
+        {
+            foreach (var node in skeleton.allNodes)
+            {
+                if (!node.isRoot || node.isTrimmed) continue;
+                Color col = RootRainbowColor(RootDepthFromTip(node));
                 col.a = 1f;
                 GL.Color(col);
                 GL.Vertex(node.worldPosition);
