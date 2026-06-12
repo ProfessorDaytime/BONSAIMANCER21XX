@@ -35,6 +35,9 @@ public class GameManager : MonoBehaviour
     public static bool canPromote       = false;
     public static float selectionRadius = 0.5f;
 
+    [Tooltip("Log game-state transitions, time events, and speed changes. Off by default.")]
+    [SerializeField] bool verboseLog = false;
+
     // Saved state to restore when exiting RootPrune mode.
     static GameState preRootPruneState = GameState.Idle;
 
@@ -260,13 +263,11 @@ public class GameManager : MonoBehaviour
             CalculateTime();
 
             if(state == GameState.BranchGrow){
-                if(branches % 3 == 0 && branches != 0 && canLeaf){
-                    
-                    Debug.Log("Can Leaf");
+                // if(branches % 3 == 0 && branches != 0 && canLeaf){
+                    // Debug.Log("Can Leaf");  // fired every frame — left for reference
                     // UpdateGameState(GameState.LeafGrow);
                     // canLeaf = false;
-
-                }
+                // }
             }
 
         }
@@ -373,7 +374,7 @@ public class GameManager : MonoBehaviour
     }
 
     void SetMonthText(){
-        Debug.Log($"[Time] SetMonthText month={month} state={state} year={year}");
+        if (verboseLog) Debug.Log($"[Time] SetMonthText month={month} state={state} year={year}");
         switch(month){
             case 1:
                 monthName = "January";
@@ -383,10 +384,10 @@ public class GameManager : MonoBehaviour
                 break;
             case 3:
                 monthName = "March";
-                Debug.Log($"[Time] March trigger — state before={state}");
+                if (verboseLog) Debug.Log($"[Time] March trigger — state before={state}");
                 UpdateGameState(GameState.BranchGrow);
                 AudioManager.Instance.PlayMusic("SpringSong");
-                Debug.Log($"[Time] March trigger — state after={state}");
+                if (verboseLog) Debug.Log($"[Time] March trigger — state after={state}");
                 break;
             case 4:
                 monthName = "April";
@@ -437,7 +438,7 @@ public class GameManager : MonoBehaviour
         // Rake mode is its own interaction block (handled separately in TreeInteraction).
         canRootRake = (newState == GameState.RootRake);
 
-        Debug.Log("GAME STATE: " + newState);
+        if (verboseLog) Debug.Log("GAME STATE: " + newState);
 
         switch(newState){
             case GameState.Menu:
@@ -542,7 +543,7 @@ public class GameManager : MonoBehaviour
         {
             // Fire BEFORE the state change so TreeSkeleton can lock in the new Y
             // before OnGameStateChanged resets liftTarget to 0.
-            Debug.Log("[GM] Firing OnRockOrientConfirmed frame=" + Time.frameCount + " subscribers=" + (OnRockOrientConfirmed == null ? 0 : OnRockOrientConfirmed.GetInvocationList().Length));
+            if (verboseLog) Debug.Log("[GM] Firing OnRockOrientConfirmed frame=" + Time.frameCount + " subscribers=" + (OnRockOrientConfirmed == null ? 0 : OnRockOrientConfirmed.GetInvocationList().Length));
             OnRockOrientConfirmed?.Invoke();
 
             // Exit root mode directly — skip the RootPrune detour so the tree
@@ -550,7 +551,7 @@ public class GameManager : MonoBehaviour
             GameState restore = IsTimeTickingState(preRootPruneState)
                 ? preRootPruneState
                 : GameState.LeafFall;
-            Debug.Log($"[Rock] ConfirmRockOrient — restoring to {restore} (skipping lower anim)");
+            if (verboseLog) Debug.Log($"[Rock] ConfirmRockOrient — restoring to {restore} (skipping lower anim)");
             UpdateGameState(restore);
         }
     }

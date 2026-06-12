@@ -56,10 +56,17 @@ public class Leaf : MonoBehaviour
     // Number of in-game days for a speed-1 leaf to go fully green→brown.
     const float FALL_COLOR_DAYS = 25f;
 
-    // ── Scale-in ──────────────────────────────────────────────────────────────
+    // ── Grow-in ───────────────────────────────────────────────────────────────
+    // Leaves emerge at GROW_START_FRACTION of full size in a paler green and expand
+    // over GROW_DAYS in-game days — real leaves unfurl small and pale, they don't
+    // pop in full-size. (Species-tunable growth + bud unfurl: PLAN item E.)
 
-    const float SCALE_DURATION = 1.5f;
-    float scaleTimer = 0f;
+    const float GROW_START_FRACTION = 0.15f;
+    const float GROW_DAYS           = 20f;
+    // Pale yellow-green tint blended over the species spring color while young
+    static readonly Color YoungLeafTint = new Color(0.72f, 0.88f, 0.38f);
+
+    float growProgress = 0f;   // 0 = just emerged, 1 = full size + full color
 
     // ── Fall animation ────────────────────────────────────────────────────────
 
@@ -80,6 +87,9 @@ public class Leaf : MonoBehaviour
         leafRenderer = GetComponentInChildren<Renderer>();
         propBlock    = new MaterialPropertyBlock();
 
+        // Start small immediately — no full-size flash on the spawn frame
+        transform.localScale = targetScale * GROW_START_FRACTION;
+
         // If the leaf prefab has a Rigidbody, make it kinematic so the physics
         // engine doesn't override our manual transform.position changes.
         var rb = GetComponentInChildren<Rigidbody>();
@@ -98,11 +108,14 @@ public class Leaf : MonoBehaviour
         if (!isFalling && ownerNode != null)
             transform.localPosition = ownerNode.tipPosition + tipOffset;
 
-        // Spring scale-in (skip once falling so the fall animation keeps the correct scale)
-        if (!isFalling && scaleTimer < SCALE_DURATION)
+        // Grow-in over in-game days (skip once falling so the fall keeps the correct scale)
+        if (!isFalling && growProgress < 1f)
         {
-            scaleTimer += Time.deltaTime;
-            transform.localScale = targetScale * Mathf.SmoothStep(0f, 1f, scaleTimer / SCALE_DURATION);
+            float growDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
+            growProgress   = Mathf.Min(1f, growProgress + growDays / GROW_DAYS);
+            float s = Mathf.Lerp(GROW_START_FRACTION, 1f, Mathf.SmoothStep(0f, 1f, growProgress));
+            transform.localScale = targetScale * s;
+            UpdateLeafColor();   // young pale green darkens to the species color as it grows
         }
 
         // Autumn colour progression
@@ -147,7 +160,10 @@ public class Leaf : MonoBehaviour
         }
         else
         {
-            color = Color.Lerp(springColor, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
+            // Young leaves are paler; the species spring color develops as the leaf grows
+            Color spring = Color.Lerp(Color.Lerp(springColor, YoungLeafTint, 0.65f), springColor,
+                                      Mathf.SmoothStep(0f, 1f, growProgress));
+            color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
         }
 
         leafRenderer.GetPropertyBlock(propBlock);
@@ -234,10 +250,10 @@ public class Leaf : MonoBehaviour
         if (isFalling) return;
         isFalling = true;
 
-        // Snap to full size if the leaf hasn't finished scaling in yet
-        if (scaleTimer < SCALE_DURATION)
+        // Snap to full size if the leaf hasn't finished growing in yet
+        if (growProgress < 1f)
         {
-            scaleTimer           = SCALE_DURATION;
+            growProgress         = 1f;
             transform.localScale = targetScale;
         }
 

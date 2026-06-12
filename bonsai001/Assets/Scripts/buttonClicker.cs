@@ -1097,6 +1097,10 @@ public class ButtonClicker : MonoBehaviour
     void OnSpeedToggleClick()
     {
         GameManager.Instance.ToggleSpeed();
+        // Keep PlayModeManager's defaultSpeed in sync so it doesn't immediately override
+        // the manual choice back to whatever the active mode's baseline was.
+        if (PlayModeManager.Instance?.ActiveMode != null)
+            PlayModeManager.Instance.ActiveMode.defaultSpeed = GameManager.CurrentSpeed;
         RefreshSpeedToggleButton();
     }
 
@@ -2351,7 +2355,9 @@ public class ButtonClicker : MonoBehaviour
             }
         }
         int occupied  = total - empty;
-        int matchScore = total > 0 ? Mathf.RoundToInt((established + maintaining) * 100f / total) : 0;
+        // Partial credit: occupied slots count toward the match even before fully trained
+        // (Growing 50%, Training 75%, Established/Maintaining 100%) — see AutoStyler.MatchPercent.
+        int matchScore = styler.MatchPercent;
 
         if (stylePanelStyleName != null) stylePanelStyleName.text = styler.style.styleName;
 

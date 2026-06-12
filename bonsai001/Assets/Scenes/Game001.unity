@@ -3566,6 +3566,7 @@ MonoBehaviour:
   cinematicPanLerpSpeed: 1.2
   cinematicMinPitch: 20
   debugCinematicZoom: 0
+  verboseLog: 0
 --- !u!114 &963194233
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3643,6 +3644,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   state: 0
+  verboseLog: 0
   cityDay: {fileID: 532352316}
   skyLight: {fileID: 705507993}
   calendar: {fileID: 1292431385}
@@ -6063,6 +6065,7 @@ MonoBehaviour:
   debugRootVisibility: 0
   renderRoots: 0
   rockCollider: {fileID: 0}
+  verboseLog: 0
   rootVisibilityDepth: -0.5
   thinRadius: 0.04
   thickRadius: 0.14
@@ -6104,7 +6107,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be6fcd7f97665bb42a8361888ac4570a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  branchWeightEnabled: 0
+  branchWeightEnabled: 1
   woodDensity: 12
   woodHardness: 1
   sagThreshold: 1
@@ -6212,11 +6215,14 @@ MonoBehaviour:
   mycorrhizalHealthySeasonsRequired: 3
   maxEnergyMultiplier: 1.5
   sawRadiusThreshold: 0.08
+  useBevelCut: 1
+  cutAngleDeg: 45
+  bevelCutDrainMult: 0.7
   woundDrainRate: 0.05
   seasonsToHealPerUnit: 20
   trimTraumaDamage: 0.05
   trimTraumaRecoveryPerSeason: 0.04
-  woundMaterialOverride: {fileID: 0}
+  woundMaterialOverride: {fileID: -876546973899608171, guid: eb692e6c2e11357479bb5b074cd5e836, type: 3}
   maxRootDepth: 8
   rootLateralChance: 8
   rootLateralDepthDecay: 0.85
@@ -6246,6 +6252,7 @@ MonoBehaviour:
   isIshitsukiMode: 0
   rockInfluenceRadius: 0.4
   snapshotLogIntervalDays: 5
+  verboseLog: 0
   branchSpawnMaxDelay: 50
   debugSoilYOverride: 0
   debugSoilY: 80
@@ -6303,6 +6310,7 @@ MonoBehaviour:
   leavesPerNodeRange: 0
   clusterRadius: 0.18
   baseLeafScale: 700
+  verboseLog: 0
   rootPressureLeafShrink: 1
   refinementLeafShrink: 1
   baseFallChancePerDay: 0.15
@@ -6356,6 +6364,7 @@ MonoBehaviour:
   dandelionWeight: 0.15
   trunkExclusionMultiplier: 4
   rockCheckRadius: 0.15
+  verboseLog: 0
 --- !u!114 &1486295586
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6385,6 +6394,7 @@ MonoBehaviour:
   seasonsSinceRepot: 0
   potSize: 2
   preset: 1
+  verboseLog: 0
   rootRotDamagePerSeason: 0.04
   repotBaseDamage: 0.1
   degradationSlowdownSeasons: 4
@@ -6469,6 +6479,11 @@ MonoBehaviour:
   verboseLog: 1
   actionPreviewDays: 20
   showTargetShape: 1
+  autoStyleWireSpeedMult: 1.5
+  fastConverge: 1
+  autoPaste: 1
+  defoliateThreshold: 80
+  autoRepot: 1
   unwireDelayDays: 20
 --- !u!1 &1496661667
 GameObject:

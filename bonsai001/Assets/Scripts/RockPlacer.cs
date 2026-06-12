@@ -218,13 +218,10 @@ public class RockPlacer : MonoBehaviour
         }
         else
         {
+            // Any left-click starts the grab — no precise hit on the narrow mesh required.
+            // CameraOrbit is unconditionally blocked in TreeOrient, so left-drag is free.
             if (Mouse.current.leftButton.wasPressedThisFrame)
-            {
-                Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
-                if (Physics.Raycast(ray, out RaycastHit hit) &&
-                    (hit.transform == treeTransform || hit.transform.IsChildOf(treeTransform)))
-                    treeGrabbed = true;
-            }
+                treeGrabbed = true;
         }
     }
 

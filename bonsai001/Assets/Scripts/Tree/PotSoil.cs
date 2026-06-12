@@ -131,6 +131,9 @@ public class PotSoil : MonoBehaviour
     // ── Inspector validation ──────────────────────────────────────────────────
 
     [Header("Settings")]
+    [Tooltip("Enable per-season debug logs for soil state. Off by default.")]
+    [SerializeField] bool verboseLog = false;
+
     [Tooltip("Health damage applied to each root node per season when saturationLevel > 0.5.")]
     [SerializeField] float rootRotDamagePerSeason = 0.04f;
 
@@ -262,7 +265,7 @@ public class PotSoil : MonoBehaviour
                 skeleton.ApplyDamage(node, DamageType.RootRot, rotDmg);
                 rotCount++;
             }
-            Debug.Log($"[Soil] Root rot dmg={rotDmg:F3} on {rotCount} root nodes | saturation={saturationLevel:F2} | year={GameManager.year}");
+            if (verboseLog) Debug.Log($"[Soil] Root rot dmg={rotDmg:F3} on {rotCount} root nodes | saturation={saturationLevel:F2} | year={GameManager.year}");
         }
 
         // Species soil mismatch penalty
@@ -281,11 +284,11 @@ public class PotSoil : MonoBehaviour
                 foreach (var node in skeleton.allNodes)
                     if (!node.isTrimmed)
                         skeleton.ApplyDamage(node, DamageType.NutrientLack, penalty);
-                Debug.Log($"[Soil] Soil mismatch penalty={penalty:F4} (delta={maxDelta:F2}, tol={sp.soilToleranceRange:F2}) | year={GameManager.year}");
+                if (verboseLog) Debug.Log($"[Soil] Soil mismatch penalty={penalty:F4} (delta={maxDelta:F2}, tol={sp.soilToleranceRange:F2}) | year={GameManager.year}");
             }
         }
 
-        Debug.Log($"[Soil] SeasonTick | degradation={soilDegradation:F2} saturation={saturationLevel:F2} " +
+        if (verboseLog) Debug.Log($"[Soil] SeasonTick | degradation={soilDegradation:F2} saturation={saturationLevel:F2} " +
                   $"effectiveDrain={EffectiveDrainageRate:F2} drainMult={DrainRateMultiplier:F2} | year={GameManager.year}");
     }
 

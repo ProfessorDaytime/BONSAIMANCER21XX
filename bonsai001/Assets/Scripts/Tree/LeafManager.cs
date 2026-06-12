@@ -32,6 +32,8 @@ public class LeafManager : MonoBehaviour
 
     [Tooltip("Species-default world-space scale for leaves. Season scale is computed from this.")]
     [SerializeField] float baseLeafScale = 0.25f;
+    [Tooltip("Enable per-leaf and per-tick debug logs. Off by default.")]
+    [SerializeField] bool verboseLog = false;
 
     [Tooltip("How much full pot-bound pressure shrinks leaves. 0 = no effect, 1 = shrinks to 40% of base.")]
     [SerializeField] [Range(0f, 1f)] float rootPressureLeafShrink = 1f;
@@ -181,7 +183,7 @@ public class LeafManager : MonoBehaviour
                     var (_, sampleGo) = allLeaves[0];
                     if (sampleGo != null) prog = sampleGo.GetComponent<Leaf>()?.FallColorProgress ?? 0f;
                 }
-                Debug.Log($"[Leaves] LeafFall tick | allLeaves={allLeaves.Count} nodeLeaves={nodeLeaves.Count} sampleProgress={prog:F2}");
+                if (verboseLog) Debug.Log($"[Leaves] LeafFall tick | allLeaves={allLeaves.Count} nodeLeaves={nodeLeaves.Count} sampleProgress={prog:F2}");
             }
             RollLeafFall();
         }
@@ -543,7 +545,7 @@ public class LeafManager : MonoBehaviour
 
             if (Random.value < chance)
             {
-                Debug.Log($"[Leaves] Leaf falling! progress={leaf.FallColorProgress:F2} chance={chance:F4}");
+                if (verboseLog) Debug.Log($"[Leaves] Leaf falling! progress={leaf.FallColorProgress:F2} chance={chance:F4}");
                 leaf.StartFalling();
 
                 if (nodeLeaves.TryGetValue(nodeId, out var list))

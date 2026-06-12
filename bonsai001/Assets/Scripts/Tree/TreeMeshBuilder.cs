@@ -78,6 +78,9 @@ public class TreeMeshBuilder : MonoBehaviour
     // Set each ProcessNode call — tells AddRing whether to grip the rock surface.
     bool gripCurrentNode;
 
+    [Tooltip("Enable per-second mesh build stats log. Off by default.")]
+    [SerializeField] bool verboseLog = false;
+
     [Header("Root Visibility")]
     [Tooltip("Roots whose local-Y base position is at or above this value render in normal mode. " +
              "Roots below this depth are hidden unless RootPrune mode is active. " +
@@ -303,11 +306,14 @@ public class TreeMeshBuilder : MonoBehaviour
         if (meshLogTimer >= 1f)
         {
             meshLogTimer = 0f;
-            int nodes = skeleton.allNodes?.Count ?? 0;
-            Debug.Log($"[Mesh] nodes={nodes} verts={vertices.Count} tris={triangles.Count / 3} " +
-                      $"| builds/s={buildCount} " +
-                      $"avgBuild={( buildCount > 0 ? totalBuildMs / buildCount : 0)}ms " +
-                      $"avgCollider={( buildCount > 0 ? totalColliderMs / buildCount : 0)}ms");
+            if (verboseLog)
+            {
+                int nodes = skeleton.allNodes?.Count ?? 0;
+                Debug.Log($"[Mesh] nodes={nodes} verts={vertices.Count} tris={triangles.Count / 3} " +
+                          $"| builds/s={buildCount} " +
+                          $"avgBuild={( buildCount > 0 ? totalBuildMs / buildCount : 0)}ms " +
+                          $"avgCollider={( buildCount > 0 ? totalColliderMs / buildCount : 0)}ms");
+            }
             totalBuildMs    = 0;
             totalColliderMs = 0;
             buildCount      = 0;
@@ -601,6 +607,13 @@ public class TreeMeshBuilder : MonoBehaviour
     {
         float outerR = node.tipRadius;
 
+        // If a bevel cut was made, the stored woundFaceNormal is tilted relative to axisUp.
+        // We use it only for the depression direction (inner geometry) — the outer ring stays
+        // welded to the branch tip so no seam is introduced.
+        Vector3 faceNorm = node.woundFaceNormal.sqrMagnitude > 0.001f
+            ? node.woundFaceNormal.normalized
+            : axisUp;
+
         // Heal progress 0 = fresh, 1 = fully healed
         float seasonsToHeal = Mathf.Max(1f, node.woundRadius * skeleton.SeasonsToHealPerUnit);
         float healProg      = Mathf.Clamp01(node.woundAge / seasonsToHeal);
@@ -612,6 +625,14 @@ public class TreeMeshBuilder : MonoBehaviour
 
         Color faceCol = new Color(rootBit, woundIntensity, pasteB, baseCol.a);
         Color rimCol  = new Color(rootBit, woundIntensity * 0.4f, pasteB, baseCol.a);
+
+        // ── Bevel tilt: each ring vertex is offset along axisUp so the cap face
+        // forms an ellipse matching a cut made at cutAngleDeg to the branch axis.
+        // tiltDir  = the direction in the ring plane the face leans toward.
+        // tiltTan  = tan(cutAngle); at 45° = 1.0, so the high side rises by one radius.
+        Vector3 tiltInPlane = Vector3.ProjectOnPlane(faceNorm, axisUp);
+        Vector3 tiltDir     = tiltInPlane.sqrMagnitude > 0.001f ? tiltInPlane.normalized : Vector3.zero;
+        float   tiltTan     = Mathf.Clamp(Mathf.Tan(Vector3.Angle(axisUp, faceNorm) * Mathf.Deg2Rad), 0f, 3f);
 
         // ── Callus swell: push outer ring vertices outward ────────────────────
         // We DON'T move the existing ring — instead we add a duplicate swollen ring
@@ -625,7 +646,8 @@ public class TreeMeshBuilder : MonoBehaviour
             float t     = (float)i / ringSegments;
             float angle = t * Mathf.PI * 2f;
             Vector3 dir = (axisRight * Mathf.Cos(angle) + axisFwd * Mathf.Sin(angle)).normalized;
-            Vector3 pos = node.tipPosition + dir * (outerR + swellAmount);
+            float   lift = Vector3.Dot(dir, tiltDir) * (outerR + swellAmount) * tiltTan;
+            Vector3 pos  = node.tipPosition + dir * (outerR + swellAmount) + axisUp * lift;
             vertices.Add(pos);
             uvs.Add(new Vector2(t, heightV * 0.4f));
             colors.Add(rimCol);
@@ -642,7 +664,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
         // ── Concave face center ───────────────────────────────────────────────
         float depression  = outerR * 0.35f * (1f - healProg);    // fills in as healed
-        Vector3 faceCenter = node.tipPosition - axisUp * depression;
+        Vector3 faceCenter = node.tipPosition - faceNorm * depression;
 
         // ── Inner callus ring (appears once healing starts) ───────────────────
         // Radius shrinks inward as callus closes; absent when healProg = 0
@@ -660,7 +682,8 @@ public class TreeMeshBuilder : MonoBehaviour
                 float t     = (float)i / ringSegments;
                 float angle = t * Mathf.PI * 2f;
                 Vector3 dir = (axisRight * Mathf.Cos(angle) + axisFwd * Mathf.Sin(angle)).normalized;
-                Vector3 pos = node.tipPosition + dir * innerR - axisUp * (depression * 0.4f);
+                float   lift = Vector3.Dot(dir, tiltDir) * innerR * tiltTan;
+                Vector3 pos  = node.tipPosition + dir * innerR + axisUp * lift - faceNorm * (depression * 0.4f);
                 vertices.Add(pos);
                 uvs.Add(new Vector2(t, heightV * 0.4f));
                 colors.Add(innerCol);

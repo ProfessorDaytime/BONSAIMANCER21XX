@@ -51,6 +51,7 @@ public class SaveNode
     // Bud
     public bool hasBud;
     public bool backBudStimulated;
+    public float preferredLateralAzimuth = -1f;  // initializer = "no preference" for saves predating the field
 
     // Post-trim regrowth cap
     public bool isTrimCutPoint;
@@ -63,6 +64,8 @@ public class SaveNode
     // Branch weight
     public float branchLoad;
     public float sagAngleDeg;
+    public float pendingSagDeg;   // seasonal sag still bleeding in (0 in old saves)
+    public float sagDegPerDay;
 
     // Dieback
     public bool isDead;
@@ -82,6 +85,7 @@ public class SaveNode
     public float wireSetProgress;
     public float wireDamageProgress;
     public float wireAgeDays;
+    public float wireSetSpeedMult = 1f;  // initializer = player speed for saves predating the field
     public bool  isTrainingWire;
 
     // Pot-bound
@@ -700,6 +704,7 @@ public static class SaveManager
 
             hasBud              = node.hasBud,
             backBudStimulated   = node.backBudStimulated,
+            preferredLateralAzimuth = node.preferredLateralAzimuth,
             isTrimCutPoint      = node.isTrimCutPoint,
             trimCutDepth        = node.trimCutDepth,
             regrowthSeasonCount = node.regrowthSeasonCount,
@@ -707,6 +712,8 @@ public static class SaveManager
             health      = node.health,
             branchLoad  = node.branchLoad,
             sagAngleDeg = node.sagAngleDeg,
+            pendingSagDeg = node.pendingSagDeg,
+            sagDegPerDay  = node.sagDegPerDay,
 
             isDead        = node.isDead,
             isDeadwood    = node.isDeadwood,
@@ -723,6 +730,7 @@ public static class SaveManager
             wireSetProgress    = node.wireSetProgress,
             wireDamageProgress = node.wireDamageProgress,
             wireAgeDays        = node.wireAgeDays,
+            wireSetSpeedMult   = node.wireSetSpeedMult,
             isTrainingWire     = node.isTrainingWire,
 
             boundaryPressure = node.boundaryPressure,

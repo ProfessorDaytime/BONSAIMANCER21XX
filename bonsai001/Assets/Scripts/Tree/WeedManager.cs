@@ -47,6 +47,9 @@ public class WeedManager : MonoBehaviour
     [Tooltip("Overlap radius used when checking if a candidate spawn point sits on a rock.")]
     [SerializeField] float rockCheckRadius = 0.15f;
 
+    [Tooltip("Enable per-season and per-spawn debug logs. Off by default.")]
+    [SerializeField] bool verboseLog = false;
+
     // ── Runtime state ─────────────────────────────────────────────────────────
 
     readonly List<Weed> activeWeeds = new List<Weed>();
@@ -108,7 +111,7 @@ public class WeedManager : MonoBehaviour
             skeleton.soilMoisture    = Mathf.Max(0f, skeleton.soilMoisture    - md * mult);
             drainCount++;
         }
-        if (drainCount > 0)
+        if (verboseLog && drainCount > 0)
             Debug.Log($"[Weeds] {drainCount} weed(s) drained nutrients — " +
                       $"reserve={skeleton.nutrientReserve:F2} moisture={skeleton.soilMoisture:F2}");
 
@@ -322,7 +325,7 @@ public class WeedManager : MonoBehaviour
 
         activeWeeds.Add(weed);
         OnFirstWeedSpawned?.Invoke();
-        Debug.Log($"[Weeds] Spawned {go.name} at {pos} | " +
+        if (verboseLog) Debug.Log($"[Weeds] Spawned {go.name} at {pos} | " +
                   $"force={weed.forceRequired:F3} rip={weed.ripChance:F2}");
     }
 }

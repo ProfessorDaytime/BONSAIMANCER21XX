@@ -16,7 +16,9 @@ Plan-based slot engine. `StyleDefinition` ScriptableObject (waypoints, tiers, ca
 
 ### 🔴 NEW — High Priority
 
-**A. AutoStyler Pacing & Convergence**
+**A. AutoStyler Pacing & Convergence** ✅ done 2026-06-11
+
+All four bullets implemented: directional back-bud (`preferredLateralAzimuth` on `TreeNode`, steered ±30° in `LateralDirection`, one slot claim per trunk node per February pass), `autoStyleWireSpeedMult` 1.5× via per-node `wireSetSpeedMult` (player wires unaffected; persisted in saves), partial-credit `AutoStyler.MatchPercent` (Growing 50% / Training 75% / Est+M 100%), and `fastConverge` toggle (wire 4×, preview 3 d, `depthsPerYearMult` 2× on `TreeSkeleton`). **Bonus root-cause fix:** slot matching, excess-trim counting, and GL trim X markers now only consider scaffold BASE segments (`depth==1 && parent.depth==0`) — previously every subdivision segment of a branch's first chord competed for slots, so one physical branch could occupy several slots and trim markers appeared mid-branch.
 
 At default settings the tree reaches only ~17% style match after 30 in-game years. Needs to converge to a recognisable form within 10–15 years so testers and players can actually see the result.
 
@@ -30,7 +32,9 @@ At default settings the tree reaches only ~17% style match after 30 in-game year
 
 ---
 
-**B. AutoStyler Extended Care (Paste / Defoliate / Repot)**
+**B. AutoStyler Extended Care (Paste / Defoliate / Repot)** ✅ done 2026-06-11
+
+All three implemented: auto-paste on every auto-trim cut site (`autoPaste` toggle), late-June full defoliation via `LeafManager.DefoliateAll()` when leafy tips ≥ `defoliateThreshold` (default 80, scheduled June +20 d), and spring pot advancement XS→S→M→L at `StyleDefinition.potPhaseStartYears` (default {6, 13, 26}; only ever advances, never shrinks a player-chosen pot; calls `PotSoil.ApplyPotSize` directly).
 
 AutoStyler should manage the full care cycle, not just wiring and trimming.
 
@@ -68,9 +72,44 @@ A running log of why each auto-care action was taken, and a plain-English summar
 
 ---
 
+**E. Leaf Growth & Bud-Break Rework**
+
+Leaves currently pop in at full size and full color. Real leaves emerge small and pale from an opening bud, then expand and darken over days–weeks.
+
+- **Leaf maturation** ✓ first pass done 2026-06-11 — leaves emerge at **15%** scale in a paler yellow-green and grow to full size/color over 20 in-game days (`GROW_START_FRACTION` / `GROW_DAYS` / `YoungLeafTint` in `Leaf.cs`). Remaining: promote the constants to `TreeSpecies` fields (`leafGrowDays`, `leafBudBreakColor`).
+- **Bud-opening sequence** — instead of an instant full cluster: the autumn bud GameObject swells slightly in early March, opens (small scale pop + first leaf pair) at bud break, then the remaining leaves of the cluster unfurl one-by-one over the following days. The bud mesh is destroyed only after the last leaf emerges.
+- **Multiple leaves per bud** — cluster size already exists; reuse it as "leaves remaining to unfurl." Opposite-bud species unfurl in pairs, alternate species singly.
+- **Scope:** `LeafManager.cs` (spawn pipeline → staged unfurl state machine, per-cluster age), `Leaf.cs` (scale/color over age), `TreeSkeleton.cs` (bud-break hook passes the bud object instead of destroying it immediately), `TreeSpecies` (`leafGrowDays`, optional paler `leafBudBreakColor`).
+
 ---
 
-**B. Autonomous Run Loop (Screen Record Mode)**
+**F. Leaf Weight & Elastic Spring-Back** *(extends item 30 — Branch Weight & Strength)*
+
+Wood load and permanent sag exist (`ComputeLoad` → `ApplySagAndStress`, load = wood mass only). Branches should also carry seasonal LEAF load — and visibly lift a little when the leaves drop in autumn.
+
+- **Leaf mass in load** — `ComputeLoad` adds `leafClusterMass × (seasonLeafScale factor)` for each node with a live cluster (LeafManager exposes per-node cluster lookup). Summer load > winter load.
+- **Elastic vs permanent sag** — split sag into the existing permanent component (set wood — never recovers, current behavior) and a small **elastic** component proportional to current excess load, capped at ~5–6°. Elastic sag is applied as a transient rotation and **removed pro-rata as leaf load disappears** (LeafFall / defoliation) — the branch "springs back up a small amount" exactly like the real thing.
+- **Implementation sketch** — track `elasticSagDeg` per node; on each BranchWeightPass compute target elastic from load ratio, RotateTowards by the delta (positive or negative), reusing the bounded-degrees approach from the 2026-06 sag fix. No new save fields needed if recomputed each pass.
+- **Note:** permanent sag now bleeds in gradually (`pendingSagDeg` / `sagDegPerDay` over `sagSpreadDays`, default 100 in-game days, applied once per in-game day in `ApplyDailySag`) instead of snapping on the spring frame. Elastic sag should ride the same daily hook.
+- **Scope:** `TreeSkeleton.cs` (`ComputeLoad`, `ApplySagAndStress`), `LeafManager.cs` (cluster mass query), `TreeSpecies` (optional `leafClusterMass`).
+
+---
+
+**G. Repot Soil Compaction & Rake Rework**
+
+Real repotting: the old soil is compacted around the root ball; you rake/comb it out of the roots before setting the tree in fresh soil. The current rake mini-game only triggers when the tree is **pot-bound** (`OnRepotButtonClick` gates on `skeleton.IsPotBound()`), so normal repots skip it entirely — which is why it "doesn't seem to work."
+
+- **Always rake** — every repot enters the rake step; pot-bound just means MORE compacted soil and tangled roots (higher difficulty / more strokes).
+- **Tessellated soil ball** — replace the current visual with ~100 low-poly soil chunks (simple irregular wedges in a hemisphere around the root mass; a jittered grid is fine — no fancy Voronoi needed). Chunk meshes are **generated in code** (randomized squashed boxes / 6–10-vert blobs with vertex jitter, soil-colored vertex tint) — no prefabs or art assets. Rake strokes knock loose the chunks they cross: detach with a small impulse away from the stroke, **ballistic fall with light tumble (manual gravity, no Rigidbody needed), destroyed once world Y drops below 0** (under the table). Chunk count remaining is the progress meter.
+- **Compaction state** — fresh repots start with a "compacted ring" debuff (reduced aeration/water retention for the first season — fields already exist on PotSoil) that raking fully clears; lazy raking leaves some compaction.
+- **Arcade scoring** — % soil removed vs fine-root damage: over-raking through the same cell repeatedly snaps fine roots (small health hit, visible root count drop). Clean sweep = small health bonus on the repot.
+- **Scope:** `RootRakeManager.cs` (chunk field, stroke detection, scoring), `buttonClicker.cs` (remove the IsPotBound gate), `PotSoil.cs` (compaction debuff hook), small chunk prefab or procedural mesh.
+
+---
+
+---
+
+**B. Autonomous Run Loop (Screen Record Mode)** ✅ done — `AutoRunManager.cs` (run lifecycle via Water-state InitTree, Hands-Off play mode switch, cinematic camera, species rotation list, beauty-shot hold, loop count / infinite, `resetTreeOnLoop`)
 
 A hands-off loop that boots the game, grows a tree using the Auto-Style Engine for a configured number of years, then resets and repeats — indefinitely and without any player input. Designed for unattended screen recording of full tree life-cycles or highlight reels.
 
@@ -1024,6 +1063,40 @@ public BudBreakType budBreakType = BudBreakType.Leaf;
 ## Backlog
 
 Future features not yet scheduled. Expand to read the spec.
+
+---
+
+<details>
+<summary><strong>Auto-Style Training Data Recorder</strong> — capture player care actions as ML training data</summary>
+
+### Goal
+Record every player styling/care action together with a snapshot of the tree state, building a dataset to later train (or fine-tune) the auto-style system on real player technique instead of hand-written heuristics.
+
+### What gets recorded
+One JSONL line per action, written to `Application.persistentDataPath/training/<sessionId>.jsonl`:
+
+- **Context:** date (year/month/day), species, style asset name, tree age, treeHeight, node count, match %, moisture/nutrient/health aggregates
+- **Tree snapshot (compact):** per-node feature rows for the affected region (or full tree below a node-count cap): `id, depth, parentId, heightNorm, azimuthDeg, radius, length, vigor, health, isTerminal, hasWire, refinementLevel`
+- **Action:** type (`Trim | Pinch | Wire | Unwire | Paste | Defoliate | Fertilize | Water | Repot | Graft | RockPlace`), target nodeId, parameters (wire target direction as lean+azimuth, repot preset/size…)
+- **Outcome hooks (later):** optional season-end deltas (match %, health) appended for reward labeling
+
+### Implementation sketch
+- `TrainingRecorder.cs` singleton — subscribes to the same player-action entry points the tools already call (`TrimNode`, `WireNode`, `PinchNode`, `ApplyPaste`, `DefoliateNode/All`, `Repot`…), but ONLY when the action originates from player input (flag passed from `TreeInteraction` / `buttonClicker`, so AutoStyler's own actions are excluded or labeled `source=auto`)
+- Debug-tab toggle `Record Training Data` (off by default), session file rotated per play session
+- Keep it dumb and append-only — analysis/training happens outside the game
+
+### Fleet telemetry (phase 2)
+Eventually this should record **all players'** sessions and send them back for training — with eyes open about size:
+
+- **Consent first** — opt-in toggle at first launch ("share anonymous care data to improve the auto-stylist"), anonymous session GUID only, no PII.
+- **Size budget** — raw per-action JSONL gets big fast. Mitigations, in order: gzip the JSONL (~10× on this kind of data), cap per session (e.g. 2 MB compressed, then sample 1-in-N actions), record full node snapshots only on the FIRST action per season and deltas after, drop Water/Fertilize spam (keep counts per season instead of rows).
+- **Transport** — simplest viable: batched HTTPS POST of the gzipped session file to a dumb collector (S3 presigned URL or a tiny Cloudflare Worker/R2 bucket) on session end + retry on next launch if offline. Interim/zero-infra option: "Export training data" button that zips `training/` so playtesters can send it manually.
+- **Server side is out of scope for the game** — collector just stores blobs; dataset assembly/cleaning happens offline.
+
+### Why backlog
+Needs the AutoStyler behaviors to stabilize first so recorded context features match what a future model would consume.
+
+</details>
 
 ---
 

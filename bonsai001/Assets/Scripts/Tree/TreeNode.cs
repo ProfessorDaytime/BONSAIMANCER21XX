@@ -54,6 +54,11 @@ public class TreeNode
     public bool hasBud;              // terminal bud set; will activate next spring
     public bool backBudStimulated;   // tip ancestry was trimmed; boosted lateral chance next spring
 
+    /// <summary>World-space compass azimuth (degrees, 0=+Z, 90=+X) the next lateral spawned
+    /// from this node should aim toward. Set by AutoStyler when stimulating an empty branch
+    /// slot; consumed by the first lateral spawn. Negative = no preference (random splay).</summary>
+    public float preferredLateralAzimuth = -1f;
+
     public bool isTrimCutPoint;      // this node is the exposed tip of a pruning cut
     public int  trimCutDepth;        // node.depth at the moment the cut was made
     public int  regrowthSeasonCount; // growing seasons elapsed since the cut
@@ -124,6 +129,7 @@ public class TreeNode
     public float   wireSetProgress;        // 0→1: wood lignifying in new position
     public float   wireDamageProgress;     // 0→1: accumulates after fully set
     public float   wireAgeDays;            // total rate-adjusted in-game days on wire
+    public float   wireSetSpeedMult = 1f;  // setProgress rate multiplier; >1 for AutoStyler wires so the style converges in playable time
 
     // ── Pot-bound pressure ────────────────────────────────────────────────────
     // Increments each season a root terminal spends near a tray/pot wall.
@@ -144,7 +150,9 @@ public class TreeNode
 
     // ── Branch Weight & Sag ───────────────────────────────────────────────────
     public float branchLoad;       // accumulated downward force (own mass + children); computed each spring
-    public float sagAngleDeg;      // current accumulated sag in degrees; bleeds into growDirection each spring
+    public float sagAngleDeg;      // lifetime accumulated sag in degrees (bookkeeping cap, max maxSagAngleDeg)
+    public float pendingSagDeg;    // this season's sag rotation still to apply; bleeds into growDirection daily
+    public float sagDegPerDay;     // daily bleed rate for pendingSagDeg, set by BranchWeightPass each spring
 
     // ── Dieback ───────────────────────────────────────────────────────────────
     public bool isDead;            // health hit 0 — no growth, no leaves; may become deadwood or fall

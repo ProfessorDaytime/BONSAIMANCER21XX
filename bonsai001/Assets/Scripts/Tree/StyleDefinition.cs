@@ -74,6 +74,14 @@ public class StyleDefinition : ScriptableObject
 
     [Tooltip("Normalized height above which ramification is skipped — apex stays lighter and airier.")]
     [Range(0.3f, 1f)] public float ramificationMaxHeight = 0.75f;
+
+    // ── Pot Phases ────────────────────────────────────────────────────────────
+
+    [Header("Pot Phases")]
+    [Tooltip("Tree age in years (1-based) at which AutoStyler advances the pot to S / M / L. " +
+             "Small pots early restrict roots for trunk thickening; larger pots later give " +
+             "the maturing root mass room. AutoStyler only ever advances, never shrinks.")]
+    public int[] potPhaseStartYears = { 6, 13, 26 };
 }
 
 // ── Data Types ────────────────────────────────────────────────────────────────

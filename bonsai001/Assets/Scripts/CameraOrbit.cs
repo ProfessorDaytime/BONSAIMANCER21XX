@@ -101,6 +101,8 @@ public class CameraOrbit : MonoBehaviour
     [SerializeField] float cinematicMinPitch = 20f;
     [Tooltip("Log cinematic zoom state (height, radius, panY) to the console every ~2 real seconds.")]
     [SerializeField] bool debugCinematicZoom = false;
+    [Tooltip("Log camera drag, zoom, and click-block events. Off by default to reduce console spam.")]
+    [SerializeField] bool verboseLog = false;
 
     bool  cinematicActive;
     float cinematicElevPhase;
@@ -134,7 +136,7 @@ public class CameraOrbit : MonoBehaviour
         {
             skeleton = FindAnyObjectByType<TreeSkeleton>();
             if (skeleton != null)
-                Debug.Log("[CameraOrbit] Auto-found TreeSkeleton for cinematic zoom.");
+                if (verboseLog) Debug.Log("[CameraOrbit] Auto-found TreeSkeleton for cinematic zoom.");
             else
                 Debug.LogWarning("[CameraOrbit] No TreeSkeleton found — cinematic auto-zoom disabled. Drag it into the Inspector.");
         }
@@ -143,7 +145,7 @@ public class CameraOrbit : MonoBehaviour
 
         lastTargetPosition = target.position;
         activePitchMin = pitchMin;
-        Debug.Log($"[CameraOrbit] Initialised — target={target.name} radius={radius:F2} yaw={yaw:F1} pitch={pitch:F1} panY={panY:F2}");
+        if (verboseLog) Debug.Log($"[CameraOrbit] Initialised — target={target.name} radius={radius:F2} yaw={yaw:F1} pitch={pitch:F1} panY={panY:F2}");
     }
 
     void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
@@ -201,18 +203,19 @@ public class CameraOrbit : MonoBehaviour
         {
             radius = Mathf.Clamp(radius - scroll * zoomSpeed * radius, zoomMin, zoomMax);
             ApplyOrbit();
-            Debug.Log($"[CameraOrbit] zoom → startRadius={radius:F2} startPanY={panY:F2}");
+            if (verboseLog) Debug.Log($"[CameraOrbit] zoom → startRadius={radius:F2} startPanY={panY:F2}");
         }
 
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
         {
             bool blocked = false;
 
-            // Don't start a drag during wire, rock-placement, or when tree is grabbed.
+            // Don't start a drag during wire, rock-placement, tree-orient, or when tree is grabbed.
             if (GameManager.Instance != null &&
                 (GameManager.Instance.state == GameState.Wiring     ||
                  GameManager.Instance.state == GameState.WireAnimate ||
                  GameManager.Instance.state == GameState.RockPlace  ||
+                 GameManager.Instance.state == GameState.TreeOrient ||
                  RockPlacer.TreeGrabbed))
             {
                 blocked = true;
@@ -223,7 +226,7 @@ public class CameraOrbit : MonoBehaviour
             // "Raycast Target" flag is on don't block the camera.
             else if (IsPointerOverInteractableUI())
             {
-                Debug.Log("[CameraOrbit] Click blocked — over interactive UI");
+                if (verboseLog) Debug.Log("[CameraOrbit] Click blocked — over interactive UI");
                 blocked = true;
             }
             // Don't start a drag if the cursor is over an interactable physics collider
@@ -238,7 +241,7 @@ public class CameraOrbit : MonoBehaviour
                                   (hit.transform == target || hit.transform.IsChildOf(target));
                     if (isTree)
                     {
-                        Debug.Log($"[Camera] Click blocked — hit tree '{hit.collider.name}'");
+                        if (verboseLog) Debug.Log($"[Camera] Click blocked — hit tree '{hit.collider.name}'");
                         blocked = true;
                     }
                     // else: decorative collider, allow drag
@@ -248,13 +251,13 @@ public class CameraOrbit : MonoBehaviour
             if (!blocked)
             {
                 isDragging = true;
-                Debug.Log($"[Camera] isDragging=true | gameState={GameManager.Instance?.state}");
+                if (verboseLog) Debug.Log($"[Camera] isDragging=true | gameState={GameManager.Instance?.state}");
             }
         }
 
         if (Mouse.current != null && Mouse.current.middleButton.wasPressedThisFrame)  isPanning = true;
         if (Mouse.current != null && Mouse.current.middleButton.wasReleasedThisFrame) isPanning = false;
-        if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame && isDragging) { isDragging = false; Debug.Log($"[Camera] isDragging=false | gameState={GameManager.Instance?.state}"); }
+        if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame && isDragging) { isDragging = false; if (verboseLog) Debug.Log($"[Camera] isDragging=false | gameState={GameManager.Instance?.state}"); }
 
         // Safety: LMB not held but isDragging somehow stuck — force-clear it.
         if (isDragging && (Mouse.current == null || !Mouse.current.leftButton.isPressed))
@@ -408,14 +411,27 @@ public class CameraOrbit : MonoBehaviour
                 panY   = treeH * cinematicFramingFraction;
             }
             ApplyOrbit();
-            Debug.Log($"[CameraOrbit] Cinematic ON — yaw={yaw:F1} pitch={pitch:F1} → basePitch={cinematicBasePitch:F1} radius={radius:F2} panY={panY:F2}");
+            if (verboseLog) Debug.Log($"[CameraOrbit] Cinematic ON — yaw={yaw:F1} pitch={pitch:F1} → basePitch={cinematicBasePitch:F1} radius={radius:F2} panY={panY:F2}");
         }
         else
         {
             panY = cinematicSavedPanY;
             ApplyOrbit();
-            Debug.Log($"[CameraOrbit] Cinematic OFF — yaw={yaw:F1} pitch={pitch:F1}");
+            if (verboseLog) Debug.Log($"[CameraOrbit] Cinematic OFF — yaw={yaw:F1} pitch={pitch:F1}");
         }
+    }
+
+    /// <summary>
+    /// Snaps the camera to a comfortable viewing distance for a tree of the given height.
+    /// Used by debug generators that inject a static tree without triggering the normal
+    /// growth-based auto-zoom path.
+    /// </summary>
+    public void ResetViewForTree(float treeHeight)
+    {
+        radius = Mathf.Clamp(treeHeight * 2.2f, zoomMin, zoomMax);
+        panY   = treeHeight * 0.38f;
+        ApplyOrbit();
+        if (verboseLog) Debug.Log($"[CameraOrbit] ResetViewForTree — height={treeHeight:F2} radius={radius:F2} panY={panY:F2}");
     }
 
     /// <summary>

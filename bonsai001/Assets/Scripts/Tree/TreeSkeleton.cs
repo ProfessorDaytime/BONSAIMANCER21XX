@@ -44,6 +44,10 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Maximum sag angle in degrees a branch can accumulate over its lifetime.")]
     [SerializeField] float maxSagAngleDeg = 35f;
 
+    [Tooltip("In-game days over which each spring's new sag rotation creeps in. " +
+             "Spreads the droop through the season instead of snapping it on one frame.")]
+    [SerializeField] float sagSpreadDays = 100f;
+
     [Tooltip("How strongly accumulated sag blends the growDirection downward per spring. " +
              "1 = fully sagged at maxSagAngleDeg, 0 = no visual effect.")]
     [SerializeField] float sagBlend = 0.6f;
@@ -417,6 +421,17 @@ public class TreeSkeleton : MonoBehaviour
              "to remove. Thinner branches can be cut with a single click.")]
     [SerializeField] public float sawRadiusThreshold = 0.08f;
 
+    [Tooltip("Cut branches at an angle so water runs off the wound face rather than pooling. " +
+             "Traditional bonsai practice — angled cuts also heal faster.")]
+    [SerializeField] bool useBevelCut = true;
+
+    [Tooltip("Angle of the cut face relative to the branch axis (degrees). 45 = traditional.")]
+    [SerializeField] [Range(0f, 75f)] float cutAngleDeg = 45f;
+
+    [Tooltip("Wound drain rate multiplier applied when useBevelCut is true. " +
+             "0.7 = angled cuts drain 30% less health per season than flat cuts.")]
+    [SerializeField] float bevelCutDrainMult = 0.7f;
+
     [Tooltip("Health drained from a wounded node per growing season. Paste stops this drain.")]
     [SerializeField] float woundDrainRate = 0.05f;
 
@@ -545,7 +560,10 @@ public class TreeSkeleton : MonoBehaviour
     [SerializeField] float rockInfluenceRadius = 0.4f;
 
     [Tooltip("How many in-game days between [Tree5] snapshot log entries. Lower = more detail; higher = less spam.")]
-    [SerializeField] int   snapshotLogIntervalDays = 5;
+    [SerializeField] int   snapshotLogIntervalDays = 30;
+
+    [Tooltip("Enable high-frequency debug logs (per-spawn, per-node). Off by default to keep the console usable.")]
+    [SerializeField] bool  verboseLog = false;
 
     [Tooltip("Max in-game days to randomly delay a new lateral branch before it starts elongating. Spreads branch activation across the growing season. 0 = old instant behaviour.")]
     [SerializeField] float branchSpawnMaxDelay = 50f;
@@ -777,6 +795,14 @@ public class TreeSkeleton : MonoBehaviour
         treeOrigin             = (TreeOrigin)data.treeOrigin;
         plantingNormal         = new Vector3(data.planNX, data.planNY, data.planNZ);
         plantingSurfacePoint   = new Vector3(data.planPX, data.planPY, data.planPZ);
+        // Migrate saves that stored plantingSurfacePoint at world origin (0,0,0) while
+        // the tree is elevated.  Any save where the stored Y is more than 10 units from
+        // the tree's actual world Y was never intentionally set — reset to the tree pos.
+        if (Mathf.Abs(plantingSurfacePoint.y - transform.position.y) > 10f)
+        {
+            plantingSurfacePoint = transform.position;
+            Debug.Log($"[Migration] plantingSurfacePoint corrected to tree world pos y={transform.position.y:F1}");
+        }
         nextId                 = 0;
 
         // Pass 1: create TreeNode objects from save data
@@ -800,12 +826,15 @@ public class TreeSkeleton : MonoBehaviour
             node.branchVigor        = sn.branchVigor;
             node.hasBud             = sn.hasBud;
             node.backBudStimulated  = sn.backBudStimulated;
+            node.preferredLateralAzimuth = sn.preferredLateralAzimuth;
             node.isTrimCutPoint     = sn.isTrimCutPoint;
             node.trimCutDepth       = sn.trimCutDepth;
             node.regrowthSeasonCount= sn.regrowthSeasonCount;
             node.health             = sn.health;
             node.branchLoad  = sn.branchLoad;
             node.sagAngleDeg = sn.sagAngleDeg;
+            node.pendingSagDeg = sn.pendingSagDeg;
+            node.sagDegPerDay  = sn.sagDegPerDay;
             node.isDead        = sn.isDead;
             node.isDeadwood    = sn.isDeadwood;
             node.shadedSeasons = sn.shadedSeasons;
@@ -819,6 +848,7 @@ public class TreeSkeleton : MonoBehaviour
             node.wireSetProgress    = sn.wireSetProgress;
             node.wireDamageProgress = sn.wireDamageProgress;
             node.wireAgeDays        = sn.wireAgeDays;
+            node.wireSetSpeedMult   = sn.wireSetSpeedMult <= 0f ? 1f : sn.wireSetSpeedMult;
             node.isTrainingWire     = sn.isTrainingWire;
             node.boundaryPressure   = sn.boundaryPressure;
             node.isAirLayerRoot     = sn.isAirLayerRoot;
@@ -980,10 +1010,16 @@ public class TreeSkeleton : MonoBehaviour
     Vector3    prePlacementSurfacePoint;
     Vector3    prePlacementNormal;
 
+    /// <summary>Runtime scale on depthsPerYear. Driven by AutoStyler's fastConverge debug
+    /// toggle (2× while on); never serialized so it can't bake into the scene.</summary>
+    [System.NonSerialized] public float depthsPerYearMult = 1f;
+
+    int EffectiveDepthsPerYear => Mathf.Max(1, Mathf.RoundToInt(depthsPerYear * depthsPerYearMult));
+
     /// <summary>Maximum depth allowed to sprout children this season.</summary>
     int SeasonDepthCap => startYear < 0
-        ? depthsPerYear
-        : Mathf.Min(maxDepth, (GameManager.year - startYear + 1) * depthsPerYear);
+        ? EffectiveDepthsPerYear
+        : Mathf.Min(maxDepth, (GameManager.year - startYear + 1) * EffectiveDepthsPerYear);
 
     /// <summary>
     /// Returns the effective depth cap for a node, capped by any trim cut point
@@ -1000,12 +1036,12 @@ public class TreeSkeleton : MonoBehaviour
             {
                 // Suggestion 4: severe cuts (depth ratio > threshold) grow back more slowly
                 // for the first recovery season, scaling the per-season recovery rate down.
-                int dpy = depthsPerYear;
+                int dpy = EffectiveDepthsPerYear;
                 if (n.regrowthSeasonCount <= 1 && SeasonDepthCap > 0)
                 {
                     float severity = (float)n.trimCutDepth / SeasonDepthCap;
                     if (severity > severeCutSeverityThreshold)
-                        dpy = Mathf.Max(1, Mathf.RoundToInt(depthsPerYear * severeCutRecoveryScale));
+                        dpy = Mathf.Max(1, Mathf.RoundToInt(EffectiveDepthsPerYear * severeCutRecoveryScale));
                 }
                 return n.trimCutDepth + n.regrowthSeasonCount * dpy;
             }
@@ -1025,6 +1061,13 @@ public class TreeSkeleton : MonoBehaviour
         ApplySpecies();
 
         initY = transform.position.y;
+        // Default soil surface to the tree's actual world position.
+        // plantingSurfacePoint is world-space; if left at Vector3.zero and the tree
+        // is elevated, ContinuationDirection sees every root as 82+ units above soil
+        // and blends 85% toward Vector3.down — making all roots shoot straight down.
+        // LoadTree() will override this for saved games; InitNewTree() inherits it.
+        plantingSurfacePoint = transform.position;
+        plantingNormal       = Vector3.up;
 
         // Initialise WeedManager pot bounds — updated each spring with the real position.
         var wm = GetComponent<WeedManager>();
@@ -1425,7 +1468,7 @@ public class TreeSkeleton : MonoBehaviour
             {
                 float prev = node.wireSetProgress;
                 node.wireSetProgress = Mathf.Min(1f,
-                    node.wireSetProgress + inGameDays * rate / wireDaysToSet);
+                    node.wireSetProgress + inGameDays * rate * Mathf.Max(0.01f, node.wireSetSpeedMult) / wireDaysToSet);
                 // Fire once when a wire first turns gold
                 if (prev < 1f && node.wireSetProgress >= 1f)
                     OnWireSetGold?.Invoke();
@@ -1454,6 +1497,7 @@ public class TreeSkeleton : MonoBehaviour
             {
                 lastRecalcDay  = GameManager.day;
                 cachedTreeHeight = CalculateTreeHeight();  // keep cinematic zoom current during spring
+                ApplyDailySag();
             }
         }
 
@@ -1564,9 +1608,9 @@ public class TreeSkeleton : MonoBehaviour
                 if (wp.y > tallestY)    tallestY    = wp.y;
                 if (n.targetLength > longestSeg) longestSeg = n.targetLength;
             }
-            Debug.Log($"[SCALEDEBUG] year={GameManager.year} branchSegLen={branchSegmentLength:F4} " +
-                      $"depthCap={SeasonDepthCap} heightAboveSoil={tallestY - soilY:F3} " +
-                      $"longestSeg={longestSeg:F4} nodes={allNodes.Count}");
+            if (verboseLog) Debug.Log($"[SCALEDEBUG] year={GameManager.year} branchSegLen={branchSegmentLength:F4} " +
+                                      $"depthCap={SeasonDepthCap} heightAboveSoil={tallestY - soilY:F3} " +
+                                      $"longestSeg={longestSeg:F4} nodes={allNodes.Count}");
         }
 
         // Season tick: undo window expires — the tree has started responding to cuts
@@ -1638,7 +1682,7 @@ public class TreeSkeleton : MonoBehaviour
             {
                 if (!node.isTrimCutPoint) continue;
                 node.regrowthSeasonCount++;
-                if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
+                if (node.trimCutDepth + node.regrowthSeasonCount * EffectiveDepthsPerYear >= SeasonDepthCap)
                     node.isTrimCutPoint = false;
             }
             CheckCutCapAbsorption();
@@ -1708,7 +1752,7 @@ public class TreeSkeleton : MonoBehaviour
         //   (b) Existing mid-rock terminals from prior years get extended further.
         // Both cases prevent ContinuationDirection() from spawning children in random
         // air directions off the mid-rock positions.
-        Debug.Log($"[PreGrow] year={GameManager.year} StartNewGrowingSeason: isIshitsukiMode={isIshitsukiMode} rockCollider={(rockCollider != null ? rockCollider.name : "NULL")}");
+        if (verboseLog) Debug.Log($"[PreGrow] year={GameManager.year} StartNewGrowingSeason: isIshitsukiMode={isIshitsukiMode} rockCollider={(rockCollider != null ? rockCollider.name : "NULL")}");
         if (isIshitsukiMode)
             PreGrowRootsToSoil(animated: true);
 
@@ -2146,7 +2190,12 @@ public class TreeSkeleton : MonoBehaviour
             node.woundAge++;
 
             if (!node.pasteApplied)
-                ApplyDamage(node, DamageType.WoundDrain, woundDrainRate);
+            {
+                float drain = woundDrainRate;
+                if (useBevelCut && Vector3.Angle(node.woundFaceNormal, node.growDirection) > 10f)
+                    drain *= bevelCutDrainMult;
+                ApplyDamage(node, DamageType.WoundDrain, drain);
+            }
 
             float seasonsToHeal = Mathf.Max(1f, node.woundRadius * seasonsToHealPerUnit);
             float remaining     = 1f - node.woundAge / seasonsToHeal;
@@ -2262,6 +2311,7 @@ public class TreeSkeleton : MonoBehaviour
             float ratio = node.branchLoad / strength;
 
             // Accumulate sag angle
+            float prevSag = node.sagAngleDeg;
             if (ratio > sagThreshold)
             {
                 float deltaSag = (ratio - sagThreshold) * sagSensitivity;
@@ -2273,27 +2323,73 @@ public class TreeSkeleton : MonoBehaviour
                 node.sagAngleDeg = Mathf.Max(0f, node.sagAngleDeg - 0.5f);
             }
 
-            // Apply sag to growDirection: blend toward -up by sagAngleDeg
-            if (node.sagAngleDeg > 0.01f)
+            // Queue only THIS season's sag gain, in absolute DEGREES toward down — never as a
+            // Slerp fraction of the 180° up→down arc (the old math rotated a freshly
+            // overloaded whip 108° in one season, past horizontal and into the soil).
+            // Lifetime rotation stays bounded by maxSagAngleDeg×sagBlend (~21° at defaults).
+            // The rotation itself is NOT applied here: it bleeds in over sagSpreadDays via
+            // ApplyDailySag so the droop creeps through the season instead of snapping on
+            // the spring frame. sagAngleDeg recovery reduces bookkeeping only; set wood
+            // stays where it bent.
+            float sagGain = node.sagAngleDeg - prevSag;
+            if (sagGain > 0.01f)
             {
-                float t = (node.sagAngleDeg / maxSagAngleDeg) * sagBlend;
-                Vector3 sagged = Vector3.Slerp(node.growDirection, Vector3.down, t).normalized;
-                node.growDirection = sagged;
-                // Propagate position change down to all descendants
-                PropagatePositions(node);
+                node.pendingSagDeg += sagGain * sagBlend;
+                node.sagDegPerDay   = node.pendingSagDeg / Mathf.Max(1f, sagSpreadDays);
             }
 
             // Junction stress: damage parent when this child is very heavy relative to it
             if (node.parent != null && !node.parent.isRoot && ratio > junctionStressThreshold)
             {
                 ApplyDamage(node.parent, DamageType.JunctionStress, junctionStressDamage);
-                Debug.Log($"[Weight] Junction stress on node {node.parent.id} from child {node.id} ratio={ratio:F2} | year={GameManager.year}");
+                if (verboseLog) Debug.Log($"[Weight] Junction stress on node {node.parent.id} from child {node.id} ratio={ratio:F2} | year={GameManager.year}");
             }
         }
 
         foreach (var child in node.children)
             ApplySagAndStress(child);
     }
+
+    /// <summary>
+    /// Bleeds queued seasonal sag (pendingSagDeg) into growDirection a little each in-game
+    /// day, so droop creeps in over sagSpreadDays instead of snapping on the spring frame.
+    /// Cost: one allNodes scan plus, only on days where something rotated, a single
+    /// position propagation from the root and one mesh rebuild.
+    /// </summary>
+    void ApplyDailySag()
+    {
+        if (!branchWeightEnabled || root == null) return;
+
+        bool any = false;
+        Vector3 downLocal = transform.InverseTransformDirection(Vector3.down).normalized;
+        foreach (var node in allNodes)
+        {
+            if (node.pendingSagDeg <= 0f) continue;
+            if (node.isRoot || node.isTrimmed || node.isDead || node.isDeadwood)
+            { node.pendingSagDeg = 0f; continue; }
+
+            float step = Mathf.Min(node.sagDegPerDay, node.pendingSagDeg);
+            if (step <= 0f) { node.pendingSagDeg = 0f; continue; }
+
+            node.growDirection  = Vector3.RotateTowards(
+                node.growDirection, downLocal, step * Mathf.Deg2Rad, 0f).normalized;
+            node.pendingSagDeg -= step;
+            any = true;
+        }
+
+        if (any)
+        {
+            PropagatePositions(root);
+            meshBuilder?.SetDirty();
+        }
+    }
+
+    /// <summary>Roots anchored to the ground or a rock (everything except air-layer roots,
+    /// which physically hang from a branch). Their geometry must never be dragged along when
+    /// an ancestor trunk node is rotated, sagged, or moved — they're planted in the world,
+    /// not suspended from the canopy. Without this guard, wiring or sagging node 0 teleports
+    /// the entire root system to the first trunk segment's tip (the "root spider" bug).</summary>
+    static bool IsGroundAnchoredRoot(TreeNode n) => n.isRoot && !n.isAirLayerRoot;
 
     /// <summary>
     /// After a sag adjustment, walk all descendants and update worldPosition
@@ -2303,6 +2399,7 @@ public class TreeSkeleton : MonoBehaviour
     {
         foreach (var child in node.children)
         {
+            if (IsGroundAnchoredRoot(child)) continue;
             child.worldPosition = node.tipPosition;
             PropagatePositions(child);
         }
@@ -2336,11 +2433,11 @@ public class TreeSkeleton : MonoBehaviour
                 {
                     // Large branch — stays as deadwood
                     node.isDeadwood = true;
-                    Debug.Log($"[Dieback] Node {node.id} depth={node.depth} r={node.radius:F3} → DEADWOOD | year={GameManager.year}");
+                    if (verboseLog) Debug.Log($"[Dieback] Node {node.id} depth={node.depth} r={node.radius:F3} → DEADWOOD | year={GameManager.year}");
                 }
                 else
                 {
-                    Debug.Log($"[Dieback] Node {node.id} depth={node.depth} r={node.radius:F3} → dying (drops in {deadSeasonsToDrop} seasons) | year={GameManager.year}");
+                    if (verboseLog) Debug.Log($"[Dieback] Node {node.id} depth={node.depth} r={node.radius:F3} → dying (drops in {deadSeasonsToDrop} seasons) | year={GameManager.year}");
                 }
 
                 // Drop leaves from dead node immediately
@@ -2358,7 +2455,7 @@ public class TreeSkeleton : MonoBehaviour
                     {
                         float shadeDmg = shadingDamagePerSeason * (node.shadedSeasons - shadingToleranceSeasons);
                         ApplyDamage(node, DamageType.Shading, shadeDmg);
-                        Debug.Log($"[Dieback] Shading dmg={shadeDmg:F3} node={node.id} shadedSeasons={node.shadedSeasons} | year={GameManager.year}");
+                        if (verboseLog) Debug.Log($"[Dieback] Shading dmg={shadeDmg:F3} node={node.id} shadedSeasons={node.shadedSeasons} | year={GameManager.year}");
                     }
                 }
                 else
@@ -2505,7 +2602,7 @@ public class TreeSkeleton : MonoBehaviour
             {
                 if (!node.isTrimCutPoint) continue;
                 node.regrowthSeasonCount++;
-                if (node.trimCutDepth + node.regrowthSeasonCount * depthsPerYear >= SeasonDepthCap)
+                if (node.trimCutDepth + node.regrowthSeasonCount * EffectiveDepthsPerYear >= SeasonDepthCap)
                     node.isTrimCutPoint = false;
             }
             CheckCutCapAbsorption();
@@ -3074,6 +3171,19 @@ public class TreeSkeleton : MonoBehaviour
 
     void SpawnChildren(TreeNode node)
     {
+        // Branches never grow through the soil: a non-root tip inside the substrate volume
+        // (the rootArea box) spawns nothing. Drooping below the pot rim OUTSIDE the box is
+        // allowed (cascade styles); extending INTO the soil is not. The 0.45 top margin keeps
+        // the trunk base, which sits exactly on the surface, out of the check.
+        if (!node.isRoot && rootAreaTransform != null)
+        {
+            Vector3 tipWorld = transform.TransformPoint(node.tipPosition);
+            Vector3 boxLocal = rootAreaTransform.InverseTransformPoint(tipWorld);
+            bool insideSoil = Mathf.Abs(boxLocal.x) <= 0.5f && Mathf.Abs(boxLocal.z) <= 0.5f &&
+                              boxLocal.y < 0.45f && boxLocal.y >= -0.5f;
+            if (insideSoil) return;
+        }
+
         // Trunk elongation: depth-0 non-root nodes keep adding depth-0 segments
         // until we reach trunkSubdivisions. Only then does real branching begin.
         // This gives the player several independently-wireable trunk segments.
@@ -3095,7 +3205,7 @@ public class TreeSkeleton : MonoBehaviour
                 };
                 node.children.Add(trunkSeg);
                 allNodes.Add(trunkSeg);
-                Debug.Log($"[Tree] Trunk segment {trunkCount + 1}/{trunkSubdivisions} id={trunkSeg.id}");
+                if (verboseLog) Debug.Log($"[Tree] Trunk segment {trunkCount + 1}/{trunkSubdivisions} id={trunkSeg.id}");
                 return;
             }
             // All trunk segments grown -- fall through to first real branch
@@ -3124,7 +3234,12 @@ public class TreeSkeleton : MonoBehaviour
 
         float baseSegLen  = node.isRoot ? rootSegmentLength : branchSegmentLength;
         float decay       = node.isRoot ? rootSegmentLengthDecay : segmentLengthDecay;
+        // globalSegmentScale applies to branch chords here exactly as it already does in the
+        // back-bud and old-wood spawn paths — previously only those paths scaled, so normal
+        // chords came out ~7× longer than back-bud shoots and the year-1 tree grew as a pole
+        // several times taller than the pot.
         float childLength = baseSegLen * Mathf.Pow(decay, node.depth + 1);
+        if (!node.isRoot) childLength *= globalSegmentScale;
 
         // Each new branch chord is divided into however many segments are needed so
         // neither the fixed branchSubdivisions count nor maxSegmentLength is exceeded.
@@ -3175,7 +3290,7 @@ public class TreeSkeleton : MonoBehaviour
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), nodeRadius, segLength * 0.85f, node);
                 lat.isRoot         = true;
                 lat.isAirLayerRoot = node.isAirLayerRoot;
-                Debug.Log($"[GRoot] SpawnChildren lateral | node={node.id} depth={node.depth} distRatio={distRatio:F2} -> lat id={lat.id}");
+                if (verboseLog) Debug.Log($"[GRoot] SpawnChildren lateral | node={node.id} depth={node.depth} distRatio={distRatio:F2} -> lat id={lat.id}");
             }
             return;
         }
@@ -3303,7 +3418,7 @@ public class TreeSkeleton : MonoBehaviour
         float balanceScore = Mathf.Clamp01(1f - com.magnitude / rootHealthBalanceRadius);
 
         RootHealthScore = (angularScore * 0.5f + girthScore * 0.3f + balanceScore * 0.2f) * 100f;
-        Debug.Log($"[RootHealth] score={RootHealthScore:F1} angular={angularScore:F2} girth={girthScore:F2} balance={balanceScore:F2} sectors={coveredSectors}/8 nodes={count}");
+        if (verboseLog) Debug.Log($"[RootHealth] score={RootHealthScore:F1} angular={angularScore:F2} girth={girthScore:F2} balance={balanceScore:F2} sectors={coveredSectors}/8 nodes={count}");
     }
 
     /// <summary>
@@ -3638,6 +3753,19 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     Vector3 LateralDirection(TreeNode node)
     {
+        // AutoStyler steering: an empty branch slot wants the next lateral at a specific
+        // compass azimuth. Build the direction from that azimuth (±30° jitter) instead of
+        // random splay, then consume the preference so only the first lateral is steered.
+        if (!node.isRoot && node.preferredLateralAzimuth >= 0f)
+        {
+            float az   = (node.preferredLateralAzimuth + Random.Range(-30f, 30f)) * Mathf.Deg2Rad;
+            float elev = Random.Range(branchAngleMin, branchAngleMax) * Mathf.Deg2Rad;
+            Vector3 outward = new Vector3(Mathf.Sin(az), 0f, Mathf.Cos(az));
+            Vector3 world   = Mathf.Cos(elev) * Vector3.up + Mathf.Sin(elev) * outward;
+            node.preferredLateralAzimuth = -1f;
+            return transform.InverseTransformDirection(world).normalized;
+        }
+
         Vector3 perp = Vector3.Cross(node.growDirection, Random.insideUnitSphere).normalized;
         if (perp.sqrMagnitude < 0.001f)
             perp = Vector3.Cross(node.growDirection, Vector3.right).normalized;
@@ -3685,7 +3813,7 @@ public class TreeSkeleton : MonoBehaviour
             if (node.parent.radius >= node.radius * 0.92f)
             {
                 node.isTrimCutPoint = false;
-                Debug.Log($"[Cap] Node {node.id} cut cap absorbed (parent.r={node.parent.radius:F3} ≥ {node.radius * 0.92f:F3})");
+                if (verboseLog) Debug.Log($"[Cap] Node {node.id} cut cap absorbed (parent.r={node.parent.radius:F3} ≥ {node.radius * 0.92f:F3})");
                 meshBuilder.SetDirty();
             }
         }
@@ -3733,7 +3861,9 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     Vector3 SunDirection()
     {
-        return transform.InverseTransformDirection(Vector3.up);
+        // Normalized: InverseTransformDirection scales by the inverse transform scale, and a
+        // non-unit result silently stretches every growDirection it gets Slerped into.
+        return transform.InverseTransformDirection(Vector3.up).normalized;
     }
 
     // Pipe Model
@@ -4071,7 +4201,23 @@ public class TreeSkeleton : MonoBehaviour
             bool isSubdivisionCut  = (node.depth == parent.depth);
             parent.hasWound        = true;
             parent.woundRadius     = isSubdivisionCut ? node.radius * 0.35f : node.radius;
-            parent.woundFaceNormal = isSubdivisionCut ? parent.growDirection : node.growDirection;
+            if (isSubdivisionCut)
+            {
+                parent.woundFaceNormal = parent.growDirection;
+            }
+            else if (useBevelCut && cutAngleDeg > 0.5f)
+            {
+                // Tilt the cut face toward the parent so water runs off.
+                // Perpendicular axis = hinge of the tilt (cross of removed branch and parent).
+                Vector3 perp = Vector3.Cross(node.growDirection, parent.growDirection).normalized;
+                if (perp.sqrMagnitude < 0.001f)
+                    perp = Vector3.Cross(node.growDirection, Vector3.up).normalized;
+                parent.woundFaceNormal = Quaternion.AngleAxis(cutAngleDeg, perp) * node.growDirection;
+            }
+            else
+            {
+                parent.woundFaceNormal = node.growDirection;
+            }
             parent.woundAge        = 0f;
             parent.pasteApplied    = false;
             CreateWoundObject(parent);
@@ -4811,7 +4957,7 @@ public class TreeSkeleton : MonoBehaviour
                 }
                 prevTangent = tangent;
 
-                if (step == 0 || step % 5 == 0)
+                if (verboseLog && (step == 0 || step % 5 == 0))
                     Debug.Log($"[PreGrow] year={GameManager.year} s={strandIndex} step={step}" +
                               $" targetY={targetY:F3} nodeY={nodePos.y:F3} mode={stepMode}");
 
@@ -4878,6 +5024,7 @@ public class TreeSkeleton : MonoBehaviour
         node.wireSetProgress       = 0f;
         node.wireDamageProgress    = 0f;
         node.wireAgeDays           = 0f;
+        node.wireSetSpeedMult      = 1f;   // player-speed default; AutoStyler overrides after calling this
     }
 
     // ── Mesh surface helpers ──────────────────────────────────────────────────
@@ -5091,6 +5238,8 @@ public class TreeSkeleton : MonoBehaviour
     {
         foreach (var child in node.children)
         {
+            if (IsGroundAnchoredRoot(child)) continue;
+
             if (originalDirs != null && originalDirs.TryGetValue(child, out var origDir))
                 child.growDirection = (rot * origDir).normalized;
             else
@@ -5458,7 +5607,7 @@ public class TreeSkeleton : MonoBehaviour
             if (d > 0f) node.fungalLoad = Mathf.Min(1f, node.fungalLoad + d);
         }
 
-        if (infectedCount > 0)
+        if (verboseLog && infectedCount > 0)
             Debug.Log($"[Fungal] {infectedCount} node(s) took fungal damage | year={GameManager.year}");
     }
 
@@ -5494,7 +5643,7 @@ public class TreeSkeleton : MonoBehaviour
             }
         }
 
-        if (gained > 0 || lost > 0)
+        if (verboseLog && (gained > 0 || lost > 0))
             Debug.Log($"[Fungal] Mycorrhizal: +{gained} gained, -{lost} lost | year={GameManager.year}");
     }
 
@@ -5588,6 +5737,7 @@ public class TreeSkeleton : MonoBehaviour
     {
         foreach (var child in node.children)
         {
+            if (IsGroundAnchoredRoot(child)) continue;
             child.worldPosition = node.tipPosition;
             PropagatePosition(child);
         }

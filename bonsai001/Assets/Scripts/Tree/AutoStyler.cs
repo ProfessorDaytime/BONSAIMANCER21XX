@@ -14,11 +14,14 @@ using UnityEngine;
 ///   Empty → Growing → Training → Established → Maintaining
 ///
 /// Seasonal schedule:
-///   February  — stimulate empty slots
-///   Spring    — refresh slot matching; trunk wiring; remove set wires
+///   February  — stimulate empty slots (directional: steers the new shoot toward the slot azimuth)
+///   Spring    — refresh slot matching; trunk wiring; pot phase advancement; remove set wires
 ///   October   — schedule scaffold branch wires for Growing/Training slots
 ///   Apr–May   — schedule overextended-tip pinches (silhouette containment)
-///   June      — schedule ramification pinches (interior pad density)
+///   June      — schedule ramification pinches (interior pad density); late-June defoliation when dense
+///
+/// Extended care: every auto-trim wound is pasted immediately; auto wires set faster than
+/// player wires (autoStyleWireSpeedMult); pot advances XS→S→M→L at the style's phase years.
 ///
 /// GL overlay (showTargetShape):
 ///   Cyan rings        — canopy silhouette
@@ -45,6 +48,24 @@ public class AutoStyler : MonoBehaviour
     [Tooltip("Draw target shape and slot plan as GL lines in Game/Scene view.")]
     public bool showTargetShape = true;
 
+    [Header("Convergence")]
+    [Tooltip("Wire set-speed multiplier for AutoStyler-placed wires only (player wires unaffected). " +
+             "1.5 ≈ auto wires set in ~1.3 seasons instead of 2.")]
+    public float autoStyleWireSpeedMult = 1.5f;
+    [Tooltip("Debug/test: converge in ~5 years — wire speed 4×, action preview 3 days, double depth growth per year.")]
+    public bool fastConverge = false;
+
+    [Header("Extended Care")]
+    [Tooltip("Seal every auto-trim wound with cut paste immediately (same effect as the player's paste tool).")]
+    public bool autoPaste = true;
+    [Tooltip("Full defoliation in late June when the canopy has at least this many leafy tips. 0 = never defoliate.")]
+    public int defoliateThreshold = 80;
+    [Tooltip("Minimum years between auto-defoliations. Real practice: full defoliation every year " +
+             "exhausts a tree — healthy trees are done every other year at most.")]
+    public int defoliateMinIntervalYears = 2;
+    [Tooltip("Advance pot size (XS→S→M→L) at the style's pot-phase years each spring. Never shrinks a player-chosen pot.")]
+    public bool autoRepot = true;
+
     TreeSkeleton skeleton;
     Material      glMat;
 
@@ -63,8 +84,17 @@ public class AutoStyler : MonoBehaviour
     // nodeId → in-game day when wireSetProgress first reached 1.0 (gold)
     readonly Dictionary<int, float>   wireGoldDay    = new Dictionary<int, float>();
 
+    // In-game day the late-June defoliation check fires; negative = nothing scheduled
+    float pendingDefoliateDay = -1f;
+    // Year of the last auto-defoliation (enforces defoliateMinIntervalYears)
+    int   lastDefoliateYear   = -999;
+
     [Tooltip("In-game days after a wire turns gold before AutoStyler removes it.")]
     public float unwireDelayDays = 20f;
+
+    // fastConverge overrides for testers — see PLAN.md "AutoStyler Pacing & Convergence"
+    float EffectivePreviewDays   => fastConverge ? 3f : actionPreviewDays;
+    float EffectiveWireSpeedMult => fastConverge ? 4f : autoStyleWireSpeedMult;
 
     // ── Public accessors for UI ───────────────────────────────────────────────
 
@@ -73,6 +103,29 @@ public class AutoStyler : MonoBehaviour
     public int PendingWireCount  => pendingWires.Count;
     public int PendingPinchCount => pendingPinches.Count;
     public int ShapedCount       => shapedNodeIds.Count;
+
+    /// <summary>Style match with partial credit: every occupied slot counts toward the score —
+    /// Growing 50%, Training 75%, Established/Maintaining 100%. An occupied slot at any state
+    /// is progress toward the style even before the branch is fully trained.</summary>
+    public int MatchPercent
+    {
+        get
+        {
+            if (slots.Count == 0) return 0;
+            float score = 0f;
+            foreach (var s in slots)
+            {
+                switch (s.state)
+                {
+                    case SlotState.Growing:     score += 0.50f; break;
+                    case SlotState.Training:    score += 0.75f; break;
+                    case SlotState.Established:
+                    case SlotState.Maintaining: score += 1f;    break;
+                }
+            }
+            return Mathf.RoundToInt(score * 100f / slots.Count);
+        }
+    }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -96,6 +149,8 @@ public class AutoStyler : MonoBehaviour
         GameManager.OnMonthChanged  -= HandleMonthChanged;
         pendingTrims.Clear(); pendingWires.Clear(); pendingWireDir.Clear(); pendingPinches.Clear();
         wireGoldDay.Clear();
+        pendingDefoliateDay = -1f;
+        skeleton.depthsPerYearMult = 1f;
     }
 
     void OnDestroy()
@@ -106,7 +161,14 @@ public class AutoStyler : MonoBehaviour
 
     // ── Update ────────────────────────────────────────────────────────────────
 
-    void Update() { UpdatePendingActions(); RemoveSetWires(); }
+    void Update()
+    {
+        // fastConverge doubles depth growth; keep the skeleton in sync every frame so
+        // toggling the Inspector checkbox mid-game takes effect immediately.
+        skeleton.depthsPerYearMult = (autoStyleEnabled && fastConverge) ? 2f : 1f;
+        UpdatePendingActions();
+        RemoveSetWires();
+    }
 
     void UpdatePendingActions()
     {
@@ -118,8 +180,25 @@ public class AutoStyler : MonoBehaviour
             {
                 var n = FindNodeById(id);
                 if (n == null || n.isTrimmed || n.isDead) { pendingTrims.Remove(id); continue; }
-                if (now >= pendingTrims[id]) { Log($"[AutoStyle] Trim fired node={id}"); skeleton.TrimNode(n); pendingTrims.Remove(id); }
+                if (now >= pendingTrims[id])
+                {
+                    Log($"[AutoStyle] Trim fired node={id}");
+                    var cutSite = n.parent;   // TrimNode wounds the parent — capture before the cut
+                    skeleton.TrimNode(n);
+                    if (autoPaste && cutSite != null && cutSite.hasWound && !cutSite.pasteApplied)
+                    {
+                        skeleton.ApplyPaste(cutSite);
+                        Log($"[AutoStyle] Paste applied to cut site node={cutSite.id}");
+                    }
+                    pendingTrims.Remove(id);
+                }
             }
+        }
+
+        if (pendingDefoliateDay >= 0f && now >= pendingDefoliateDay)
+        {
+            pendingDefoliateDay = -1f;
+            TryAutoDefoliate();
         }
 
         if (pendingWires.Count > 0)
@@ -157,6 +236,7 @@ public class AutoStyler : MonoBehaviour
         Log($"[AutoStyle] Spring — RefreshSlots + ShapeTrunk | year={GameManager.year}");
         RefreshSlots();
         ShapeTrunk();
+        AdvancePotPhase();
     }
 
     void HandleMonthChanged(int month)
@@ -167,9 +247,57 @@ public class AutoStyler : MonoBehaviour
             case 2:  StimulateEmptySlots(); break;
             case 4:
             case 5:  PlanPinches(overextendedOnly: true); break;
-            case 6:  if (style.enableRamification) PlanPinches(overextendedOnly: false); break;
+            case 6:
+                if (style.enableRamification) PlanPinches(overextendedOnly: false);
+                if (defoliateThreshold > 0) pendingDefoliateDay = InGameDay() + 20f;  // fires late June
+                break;
             case 10: PlanScaffoldWires(); break;
         }
+    }
+
+    // ── Extended Care ─────────────────────────────────────────────────────────
+
+    /// <summary>Late June: if the canopy is dense enough, strip all leaves. Mid-summer
+    /// defoliation forces finer back-budding and opens interior branches to light.</summary>
+    void TryAutoDefoliate()
+    {
+        if (!IsReady() || defoliateThreshold <= 0) return;
+        if (GameManager.year - lastDefoliateYear < defoliateMinIntervalYears) return;
+        int tips = 0;
+        foreach (var n in skeleton.allNodes)
+            if (n.isTerminal && !n.isRoot && !n.isDead && !n.isTrimmed) tips++;
+        if (tips < defoliateThreshold) return;
+        var leaves = GetComponent<LeafManager>();
+        if (leaves == null) return;
+        leaves.DefoliateAll();
+        lastDefoliateYear = GameManager.year;
+        Debug.Log($"[AutoStyle] Defoliated — {tips} tips ≥ threshold {defoliateThreshold} | year={GameManager.year}");
+    }
+
+    /// <summary>Spring: advance the pot through XS→S→M→L at the style's phase years.
+    /// Restriction early thickens the trunk; room later supports the maturing root mass.
+    /// Bypasses the repot mini-game and never shrinks a pot the player upsized.</summary>
+    void AdvancePotPhase()
+    {
+        if (!autoRepot) return;
+        var potSoil = GetComponent<PotSoil>();
+        if (potSoil == null || skeleton.plantingYear < 0) return;
+
+        var phases = (style.potPhaseStartYears != null && style.potPhaseStartYears.Length >= 3)
+            ? style.potPhaseStartYears
+            : new[] { 6, 13, 26 };
+
+        int treeYear = GameManager.year - skeleton.plantingYear + 1;
+        var target = treeYear >= phases[2] ? PotSoil.PotSize.L
+                   : treeYear >= phases[1] ? PotSoil.PotSize.M
+                   : treeYear >= phases[0] ? PotSoil.PotSize.S
+                   :                         PotSoil.PotSize.XS;
+
+        if ((int)target <= (int)potSoil.potSize) return;
+        var prev = potSoil.potSize;
+        potSoil.potSize = target;
+        potSoil.ApplyPotSize(skeleton.GetRootAreaTransform());
+        Debug.Log($"[AutoStyle] Pot {prev}→{target} (tree year {treeYear}) | year={GameManager.year}");
     }
 
     // ── Wire Cleanup ──────────────────────────────────────────────────────────
@@ -223,6 +351,9 @@ public class AutoStyler : MonoBehaviour
 
     void RefreshSlots()
     {
+        // Slots are rebuilt from scratch each spring — there's no persistent slot list between
+        // seasons. That means assignedNodeId is always re-matched, so a branch that moved
+        // (via wiring) will be re-evaluated against all slots on the next spring.
         if (style.branchTiers == null || style.branchTiers.Length == 0) return;
 
         float soilY = SoilWorldY();
@@ -240,12 +371,22 @@ public class AutoStyler : MonoBehaviour
         var available = new List<TreeNode>();
         foreach (var n in skeleton.allNodes)
         {
-            if (n.depth != 1 || n.isRoot || n.isDead || n.isTrimmed || n.length <= 0.001f) continue;
+            if (!IsScaffoldBase(n)) continue;
             available.Add(n);
         }
 
         // Prefer already-shaped nodes when greedy-matching (stability)
         available.Sort((a, b) => (shapedNodeIds.Contains(a.id) ? 0 : 1).CompareTo(shapedNodeIds.Contains(b.id) ? 0 : 1));
+
+        if (verboseLog)
+        {
+            Log($"[AutoStyle] RefreshSlots — {available.Count} scaffold candidates | treeH={treeH:F2} soilY={soilY:F2}");
+            foreach (var n in available)
+            {
+                float candY = (skeleton.transform.TransformPoint(n.worldPosition).y - soilY) / treeH;
+                Log($"[AutoStyle]   candidate node={n.id} h={candY:F2} az={GetBranchAzimuth(n):F0}° len={n.length:F2}");
+            }
+        }
 
         // Wide tolerance: match any branch in the right height band to its closest slot.
         // The branch will be wired toward the slot's target azimuth — don't trim it just
@@ -265,12 +406,12 @@ public class AutoStyler : MonoBehaviour
         }
 
         // Only trim a branch if its tier already has enough matched branches (the tier is truly full).
-        // Count depth=1 scaffold branches only — not trunk segments.
-        int depth1Count = 0;
+        // Count physical scaffold branches (base segments) — not trunk or mid-chord segments.
+        int scaffoldCount = 0;
         foreach (var x in skeleton.allNodes)
-            if (x.depth == 1 && !x.isRoot && !x.isDead && !x.isTrimmed && x.length > 0.001f) depth1Count++;
+            if (IsScaffoldBase(x)) scaffoldCount++;
 
-        if (depth1Count > slots.Count)
+        if (scaffoldCount > slots.Count)
         {
             // Per-tier slot capacity: count how many slots each tier has and how many are filled.
             var tierCapacity  = new int[style.branchTiers.Length];
@@ -293,7 +434,7 @@ public class AutoStyler : MonoBehaviour
                 // Only trim if its tier is full (no open slots left for it)
                 if (tierIdx >= 0 && tierOccupied[tierIdx] < tierCapacity[tierIdx]) continue;
                 if (pendingTrims.ContainsKey(n.id)) continue;
-                pendingTrims[n.id] = InGameDay() + actionPreviewDays;
+                pendingTrims[n.id] = InGameDay() + EffectivePreviewDays;
                 Log($"[AutoStyle] Excess branch queued node={n.id} tier={tierIdx}");
             }
         }
@@ -323,6 +464,10 @@ public class AutoStyler : MonoBehaviour
         foreach (var n in skeleton.allNodes)
         {
             if (n.isRoot || n.isDead || n.isTrimmed || n.depth != 0 || n.length <= 0.001f) continue;
+            // Never wire the base node: its angle is the planting angle (fixed in reality),
+            // and rotating it whips the entire tree — and everything hanging off it — around
+            // the soil line in one frame.
+            if (n == skeleton.root) continue;
             if (shapedNodeIds.Contains(n.id) || n.hasWire) continue;
             float heightNorm = (skeleton.transform.TransformPoint(n.worldPosition).y - soilY) / treeH;
             if (heightNorm < 0f) continue;
@@ -348,7 +493,7 @@ public class AutoStyler : MonoBehaviour
             if (n.length <= 0.001f || pendingWires.ContainsKey(n.id)) continue;
             var tier = style.branchTiers[slot.tierIndex]; Vector3 targetDir = SlotTargetDirection(slot, tier);
             if (Vector3.Angle(n.growDirection, targetDir) < style.wireThresholdDeg) continue;
-            pendingWires[n.id] = InGameDay() + actionPreviewDays; pendingWireDir[n.id] = targetDir;
+            pendingWires[n.id] = InGameDay() + EffectivePreviewDays; pendingWireDir[n.id] = targetDir;
             scheduled++; Log($"[AutoStyle] Wire scheduled node={n.id} az={slot.azimuthDeg:F0}°");
         }
         if (scheduled > 0) Log($"[AutoStyle] October — {scheduled} wires | year={GameManager.year}");
@@ -359,6 +504,9 @@ public class AutoStyler : MonoBehaviour
     void StimulateEmptySlots()
     {
         float soilY = SoilWorldY(); float treeH = Mathf.Max(0.01f, skeleton.CachedTreeHeight); int count = 0;
+        // One slot per trunk node per pass — otherwise two empty slots in the same tier
+        // would claim the same node and the second azimuth would overwrite the first.
+        var claimed = new HashSet<int>();
         foreach (var slot in slots)
         {
             if (slot.assignedNodeId >= 0) continue;
@@ -367,13 +515,22 @@ public class AutoStyler : MonoBehaviour
             TreeNode best = null; float bestDist = float.MaxValue;
             foreach (var n in skeleton.allNodes)
             {
-                if (n.depth != 0 || n.isRoot || n.isDead || n.isTrimmed) continue;
+                if (n.depth != 0 || n.isRoot || n.isDead || n.isTrimmed || claimed.Contains(n.id)) continue;
+                // The lateral spawns at this node's TIP — a buried or sagged-below-soil trunk
+                // node would sprout a shoot underground that tunnels out the side of the pot.
+                if (skeleton.transform.TransformPoint(n.tipPosition).y < soilY + 0.01f) continue;
                 float d = Mathf.Abs(skeleton.transform.TransformPoint(n.worldPosition).y - targetY);
                 if (d < bestDist) { bestDist = d; best = n; }
             }
-            if (best != null) { best.backBudStimulated = true; count++; }
+            if (best != null)
+            {
+                best.backBudStimulated       = true;
+                best.preferredLateralAzimuth = slot.azimuthDeg;   // steer the new shoot toward the slot
+                claimed.Add(best.id);
+                count++;
+            }
         }
-        if (count > 0) Log($"[AutoStyle] February — stimulated {count} empty slots | year={GameManager.year}");
+        if (count > 0) Log($"[AutoStyle] February — stimulated {count} empty slots (directional) | year={GameManager.year}");
     }
 
     // ── Pinch Planning ────────────────────────────────────────────────────────
@@ -404,7 +561,7 @@ public class AutoStyler : MonoBehaviour
                 if (n.refinementLevel >= targetRef) continue;
                 if (n.targetLength > 0f && n.length < n.targetLength * 0.85f) continue;
             }
-            pendingPinches[n.id] = InGameDay() + actionPreviewDays * 0.5f;
+            pendingPinches[n.id] = InGameDay() + EffectivePreviewDays * 0.5f;
             queued++;
         }
         if (queued > 0) Log($"[AutoStyle] Pinch ({(overextendedOnly ? "silhouette" : "ramification")}) — {queued} | month={GameManager.month}");
@@ -492,11 +649,11 @@ public class AutoStyler : MonoBehaviour
         var assignedIds = new HashSet<int>();
         foreach (var slot in slots) if (slot.assignedNodeId >= 0) assignedIds.Add(slot.assignedNodeId);
 
-        // Trim candidates — orange X on every unmatched depth=1 branch (will be removed next spring)
+        // Trim candidates — orange X on every unmatched scaffold branch (will be removed next spring)
         GL.Begin(GL.LINES); GL.Color(new Color(1f, 0.35f, 0f, 0.95f));
         foreach (var n in skeleton.allNodes)
         {
-            if (n.depth != 1 || n.isRoot || n.isDead || n.isTrimmed || n.length <= 0.001f) continue;
+            if (!IsScaffoldBase(n)) continue;
             if (assignedIds.Contains(n.id)) continue;
             Vector3 mid = skeleton.transform.TransformPoint(n.worldPosition + n.growDirection * (n.length * 0.5f));
             float s = Mathf.Clamp(n.radius * 14f, 0.06f, 0.22f);
@@ -577,6 +734,7 @@ public class AutoStyler : MonoBehaviour
     void ApplyWire(TreeNode node, Vector3 targetLocalDir, HashSet<int> trackingSet)
     {
         skeleton.WireNode(node, targetLocalDir);
+        node.wireSetSpeedMult = EffectiveWireSpeedMult;   // auto wires set faster than player wires
         Quaternion rot = Quaternion.FromToRotation(node.growDirection, targetLocalDir);
         node.growDirection = targetLocalDir;
         skeleton.RotateAndPropagateDescendants(node, rot, null);
@@ -590,6 +748,14 @@ public class AutoStyler : MonoBehaviour
         autoStyleEnabled && style != null && skeleton != null && skeleton.root != null &&
         GameManager.Instance != null && GameManager.Instance.state != GameState.TreeDead;
 
+    /// <summary>The FIRST segment of a physical scaffold branch — the depth-1 node whose
+    /// parent is a trunk (depth-0) node. A branch's first chord is a CHAIN of depth-1
+    /// subdivision segments; matching every segment would let one branch occupy several
+    /// slots and put trim markers mid-branch, so slot logic only ever looks at the base.</summary>
+    static bool IsScaffoldBase(TreeNode n) =>
+        n.depth == 1 && !n.isRoot && !n.isDead && !n.isTrimmed && n.length > 0.001f &&
+        n.parent != null && n.parent.depth == 0;
+
     float SoilWorldY()
     {
         float y = skeleton.plantingSurfacePoint.y;
@@ -600,6 +766,8 @@ public class AutoStyler : MonoBehaviour
     {
         Vector3 worldDir = skeleton.transform.TransformDirection(node.growDirection);
         Vector3 horiz    = new Vector3(worldDir.x, 0f, worldDir.z);
+        // Fallback: a nearly-vertical branch has no meaningful growDirection azimuth,
+        // so use the branch's world position relative to trunk instead.
         if (horiz.sqrMagnitude < 0.01f)
         {
             Vector3 w = skeleton.transform.TransformPoint(node.worldPosition);
@@ -612,6 +780,10 @@ public class AutoStyler : MonoBehaviour
 
     Vector3 SlotTargetDirection(BranchSlot slot, BranchTier tier)
     {
+        // Builds the direction a branch SHOULD point for its slot:
+        //   "targetAngleDeg from vertical, aimed at the slot's compass azimuth"
+        // Result is returned in LOCAL space (skeleton.transform.InverseTransformDirection)
+        // so it can be stored on node.growDirection directly.
         float rad = tier.targetAngleDeg * Mathf.Deg2Rad; float az = slot.azimuthDeg * Mathf.Deg2Rad;
         Vector3 outward = new Vector3(Mathf.Sin(az), 0f, Mathf.Cos(az));
         Vector3 world   = Mathf.Cos(rad) * Vector3.up + Mathf.Sin(rad) * outward;
