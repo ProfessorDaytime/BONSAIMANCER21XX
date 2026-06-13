@@ -86,9 +86,14 @@ public class ButtonClicker : MonoBehaviour
     Label         stylePanelShaped;
 
     VisualElement careLogPanel;
+    Label         careLogTitle;
     Label         careLogLatest;
     Label         careLogHistory;
     bool          careLogDirty = true;   // rebuilt lazily on next stats refresh
+    bool          careLogCollapsed;
+
+    Label         treeStatsTitle;
+    bool          treeHealthCollapsed;
 
     Label         debugStateLabel;
     bool          debugStateVisible = false;
@@ -538,10 +543,17 @@ public class ButtonClicker : MonoBehaviour
         stylePanelShaped       = root.Q("StylePanelShaped")       as Label;
 
         careLogPanel   = root.Q("CareLogPanel");
+        careLogTitle   = root.Q("CareLogTitle")   as Label;
         careLogLatest  = root.Q("CareLogLatest")  as Label;
         careLogHistory = root.Q("CareLogHistory") as Label;
         CareLog.OnChanged -= MarkCareLogDirty;   // idempotent on domain reload
         CareLog.OnChanged += MarkCareLogDirty;
+        careLogTitle?.RegisterCallback<ClickEvent>(_ =>
+        { careLogCollapsed = !careLogCollapsed; ApplyPanelCollapse(careLogPanel, careLogTitle, "CARE LOG", careLogCollapsed); });
+
+        treeStatsTitle = root.Q("TreeStatsTitle") as Label;
+        treeStatsTitle?.RegisterCallback<ClickEvent>(_ =>
+        { treeHealthCollapsed = !treeHealthCollapsed; ApplyPanelCollapse(treeStatsPanel, treeStatsTitle, "TREE HEALTH", treeHealthCollapsed); });
 
         // ── Scroll sensitivity ────────────────────────────────────────────────
         const float scrollSpeed = 400f;
@@ -2411,6 +2423,18 @@ public class ButtonClicker : MonoBehaviour
             float t   = i < coverage.Length ? coverage[i] : 0f;
             var   col = Color.Lerp(new Color(0.15f, 0.15f, 0.15f), new Color(0.3f, 0.75f, 0.3f), t);
             rootHealthSectors[i].style.backgroundColor = new StyleColor(col);
+        }
+    }
+
+    /// <summary>Collapses a panel down to its title row. Title shows ^ expanded, v collapsed.</summary>
+    void ApplyPanelCollapse(VisualElement panel, Label title, string baseTitle, bool collapsed)
+    {
+        if (panel == null || title == null) return;
+        title.text = $"{baseTitle}  {(collapsed ? "v" : "^")}";
+        foreach (var child in panel.Children())
+        {
+            if (child == title) continue;
+            child.style.display = collapsed ? DisplayStyle.None : DisplayStyle.Flex;
         }
     }
 

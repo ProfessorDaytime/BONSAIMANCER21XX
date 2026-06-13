@@ -115,6 +115,40 @@ Shipped: every repot now enters the rake step (`IsPotBound` gate removed — tha
 
 ---
 
+**H. Item Selection Menus (Pots / Rocks / Moss & Grass / Tables)**
+
+One reusable catalog structure for all placeable items, surfaced at different moments.
+
+- **`ItemDefinition` ScriptableObject** — name, category (`Pot | Rock | GroundCover | Table`), prefab/mesh reference, thumbnail, size variants, optional unlock condition (placeholder for gamification).
+- **`ItemCatalogPanel`** — one shared card-grid overlay (reuse the SpeciesSelect pattern: scrollable cards, name + thumbnail + chips), filtered by category at open time.
+- **Entry points (different times, same panel):** Pots → "Choose pot…" in the repot panel; Rocks → the repot Rock toggle / RockPlace entry picks WHICH rock first; Tables → settings or new-game setup; Moss/Grass → a Ground tool usable during normal play (spawns cover patches; ties into the existing moss-suppression/herbicide systems later).
+- **Apply handlers per category** — pot swaps the pot mesh + maps to `PotSize`; rock feeds `RockPlacer`; table swaps the Platform mesh; ground cover spawns patch instances.
+- **Scope:** `ItemDefinition.cs`, `ItemCatalog.cs` (registry), panel UXML + `buttonClicker` wiring, per-category apply hooks. Content (actual models) authored separately and dropped into definitions.
+
+---
+
+**I. Species Parameter Realism Pass** *(Fable executes on request — research-grounded data pass)*
+
+Re-derive all 17 species `.asset` values from real horticultural behaviour instead of placeholder spreads. Per species: growth rate (`baseGrowSpeed`, `depthsPerYear` — ficus fast, pines slow), water (`drainRatePerDay`, `droughtThreshold` — junipers drought-hard, maples thirsty), `wireDaysToSet` (junipers hold shape slowly ~9 months, maples set in ~3–4), wound response (`woundDrainRate`, `seasonsToHealPerUnit` — maples seal poorly at large cuts, ficus heals fast), `apicalDominance` (strong in conifers, weak in broom-style deciduous), back-budding generosity (maple/elm high, pine nearly nil), `leafGrowDays`/`leafBudBreakColor`, growth-taper windows (already roughed in), defoliation tolerance (ficus/maple yes, conifers never — should gate AutoStyler defoliation per species). Deliverable: updated assets + a short table in Docs justifying each number.
+
+---
+
+**J. Root-on-Rock Realism** *(discussion pending — screenshots/drawings welcome)*
+
+Reported: at the top of a rock root, the strand shoots out nearly horizontal then takes a sharp elbow down/back instead of flowing smoothly over the rock. Suspected causes in code: the first chain segment inherits a radial/lateral direction before the surface-drape projection takes over (elbow at segment 1), and per-segment direction changes are unbounded so the drape can fold abruptly. Candidate fixes to discuss: seed the strand's initial direction from the local surface tangent (downhill component) instead of radial; clamp per-segment bend to a max curvature so chains arc; optional post-drape smoothing pass (Catmull-Rom re-sample of the chain). Related memory: re-project onto the surface AFTER gravity bias ([[feedback_ishitsuki_roots]]).
+
+---
+
+**K. Additional AutoStyler Styles** *(discussion pending — user will provide descriptions + reference images)*
+
+Beyond Moyogi and S-Curve. Likely set: **Chokkan** (formal upright), **Shakan** (slant), **Han-Kengai / Kengai** (semi/full cascade — branch growth below rim already allowed outside the pot box), **Fukinagashi** (windswept), **Hokidachi** (broom), **Bunjin** (literati). Most are pure `StyleDefinition` assets (waypoints/tiers/silhouette), but two need small engine extensions: cascade wants height bands below the soil line (negative `heightNorm` support in tiers + silhouette), and windswept wants ASYMMETRIC slot azimuths (today slots are evenly spaced per tier — add an optional explicit per-slot azimuth list to `BranchTier`).
+
+---
+
+*UI polish shipped 2026-06-12:* Care Log panel moved to top-left and Tree Health panel to top-right, both collapsible to their title bar (click title; `^` open, `v` collapsed). Cinematic mode now accepts live zoom (scroll) and vertical pan (MMB drag) while the rotation continues — adjustments bake into the auto-framing targets and reset on each cinematic entry.
+
+---
+
 ---
 
 **B. Autonomous Run Loop (Screen Record Mode)** ✅ done — `AutoRunManager.cs` (run lifecycle via Water-state InitTree, Hands-Off play mode switch, cinematic camera, species rotation list, beauty-shot hold, loop count / infinite, `resetTreeOnLoop`)

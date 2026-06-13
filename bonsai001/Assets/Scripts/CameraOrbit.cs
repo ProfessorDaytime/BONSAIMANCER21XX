@@ -109,6 +109,10 @@ public class CameraOrbit : MonoBehaviour
     float cinematicBasePitch;  // pitch captured when cinematic mode was entered
     float cinematicSavedPanY;  // panY to restore when cinematic mode exits
     float cinematicDebugTimer;
+    // Player zoom/pan adjustments while cinematic runs (rotation never stops).
+    // Both reset every time cinematic mode is re-entered.
+    float cinematicZoomOffset;
+    float cinematicPanOffset;
 
     // Reused buffer for UI raycasts — avoids per-frame allocation
     static readonly List<RaycastResult> uiHits = new List<RaycastResult>();
@@ -266,7 +270,7 @@ public class CameraOrbit : MonoBehaviour
             Debug.LogWarning($"[Camera] isDragging safety-cleared (LMB not held) | gameState={GameManager.Instance?.state}");
         }
 
-        if (isPanning)
+        if (isPanning && !cinematicActive)   // cinematic handles its own pan (offset-based)
         {
             float panDelta = Mouse.current != null ? Mouse.current.delta.ReadValue().y * 0.01f : 0f;
             panY -= panDelta * panSpeed * radius;
@@ -280,6 +284,23 @@ public class CameraOrbit : MonoBehaviour
 
         if (cinematicActive)
         {
+            // Player zoom (wheel) and vertical pan (MMB drag) stay live while the
+            // rotation continues. They accumulate as offsets baked into the auto-zoom/
+            // framing targets, so the easing doesn't fight the player's adjustment.
+            float cScroll = Mouse.current != null ? Mouse.current.scroll.ReadValue().y / 120f : 0f;
+            if (cScroll != 0f)
+            {
+                float dz = -cScroll * zoomSpeed * radius;
+                cinematicZoomOffset += dz;
+                radius = Mathf.Clamp(radius + dz, zoomMin, zoomMax);
+            }
+            if (isPanning && Mouse.current != null)
+            {
+                float dp = -Mouse.current.delta.ReadValue().y * 0.01f * panSpeed * radius;
+                cinematicPanOffset += dp;
+                panY += dp;
+            }
+
             float effectiveYawSpeed = GameManager.canTrim ? cinematicYawSpeed * 0.5f : cinematicYawSpeed;
             yaw += effectiveYawSpeed * Time.unscaledDeltaTime;
             cinematicElevPhase += Time.unscaledDeltaTime / cinematicElevPeriod * Mathf.PI * 2f;
@@ -292,12 +313,12 @@ public class CameraOrbit : MonoBehaviour
             {
                 float treeH = skeleton.CachedTreeHeight;
 
-                // Always track the pivot so the base stays at ~20% from the bottom.
-                float targetPanY = treeH * cinematicFramingFraction;
+                // Track the pivot (base ~20% from the bottom) plus the player's pan offset.
+                float targetPanY = treeH * cinematicFramingFraction + cinematicPanOffset;
                 panY = Mathf.Lerp(panY, targetPanY, cinematicPanLerpSpeed * Time.unscaledDeltaTime);
 
                 // Only pull the camera back when the canopy enters the top 10% of the frame.
-                float targetRadius = Mathf.Max(cinematicZoomMin, treeH * cinematicZoomHeightMult);
+                float targetRadius = Mathf.Max(cinematicZoomMin, treeH * cinematicZoomHeightMult) + cinematicZoomOffset;
                 targetRadius = Mathf.Clamp(targetRadius, zoomMin, zoomMax);
                 Vector3 treeTop = skeleton.transform.position + Vector3.up * treeH;
                 Vector3 vp = Camera.main.WorldToViewportPoint(treeTop);
@@ -401,6 +422,8 @@ public class CameraOrbit : MonoBehaviour
             cinematicElevPhase = 0f;
             cinematicSavedPanY = panY;
             cinematicDebugTimer = 0f;
+            cinematicZoomOffset = 0f;   // player zoom/pan adjustments reset on every entry
+            cinematicPanOffset  = 0f;
             if (skeleton != null)
             {
                 float treeH = skeleton.CachedTreeHeight;
