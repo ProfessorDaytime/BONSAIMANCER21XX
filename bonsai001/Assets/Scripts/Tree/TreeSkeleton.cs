@@ -563,6 +563,12 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Distance from the planting surface at which roots begin to hug the surface.")]
     [SerializeField] float rootSurfaceSnapDist = 0.8f;
 
+    [Tooltip("Max degrees a growing root segment may bend away from its parent segment per step. " +
+             "Lower = smoother, more flowing roots (a 90° elbow becomes a multi-segment arc); " +
+             "higher = sharper corners. Pure direction limit — never moves node positions. " +
+             "180 disables smoothing.")]
+    [SerializeField] float rootMaxBendPerSegmentDeg = 26f;
+
     [Header("Ishitsuki Rock")]
     [Tooltip("Convex MeshCollider of the placed rock. Set at runtime by RockPlacer on orientation confirm.")]
     public Collider rockCollider;
@@ -576,6 +582,16 @@ public class TreeSkeleton : MonoBehaviour
 
     [Tooltip("World-unit radius around the rock surface within which roots deflect to follow it.")]
     [SerializeField] float rockInfluenceRadius = 0.4f;
+
+    [Tooltip("Corner-rounding passes applied to each pre-grown rock-root cable. Rounds the " +
+             "out-then-down elbows where roots crest the rock and dive down the side, while " +
+             "re-snapping to the rock face so they stay hugging it. 0 = off (sharp corners).")]
+    [SerializeField] int rockCableSmoothIterations = 3;
+
+    [Tooltip("Clear gap (world units) between a rock-root's outer surface and the rock. Each " +
+             "cable node floats off the rock by its own radius PLUS this padding, so the root " +
+             "tube sits on the outside instead of clipping through. Keep small for a snug look.")]
+    [SerializeField] float rockRootSurfacePadding = 0.015f;
 
     [Tooltip("How many in-game days between [Tree5] snapshot log entries. Lower = more detail; higher = less spam.")]
     [SerializeField] int   snapshotLogIntervalDays = 30;
@@ -3713,7 +3729,7 @@ public class TreeSkeleton : MonoBehaviour
                 }
             }
 
-            return dir;
+            return LimitRootBend(node, dir);
         }
 
         if (node.isRoot)
@@ -3847,6 +3863,11 @@ public class TreeSkeleton : MonoBehaviour
                 }
             }
 
+            // Smooth the chain: limit how far this segment may rotate away from its
+            // parent so a sharp out-then-down elbow becomes a flowing arc. Applied
+            // before the safety clamps below so they remain authoritative.
+            dir = LimitRootBend(node, dir);
+
             // Clamp: roots must never grow upward — EXCEPT when near the rock,
             // where they may need to crest an edge to get over the side.
             if (!nearRock && dir.y > 0f)
@@ -3863,6 +3884,24 @@ public class TreeSkeleton : MonoBehaviour
         // Slerp toward sun so phototropismWeight is a direct blend fraction (0=none, 1=point straight up)
         Vector3 inertiaDir = (node.growDirection * inertiaWeight + rand).normalized;
         return Vector3.Slerp(inertiaDir, SunDirection(), phototropismWeight);
+    }
+
+    /// <summary>
+    /// Caps how far a new root segment's direction may rotate from its parent segment's,
+    /// turning sharp elbows into smooth multi-segment arcs. Pure direction limit: it never
+    /// touches node positions, so it can't cascade bad positions the way re-chaining can,
+    /// and because it only ever shrinks the bend it cannot reintroduce a zigzag.
+    /// Both vectors are tree-local (parent.growDirection and the freshly computed dir).
+    /// </summary>
+    Vector3 LimitRootBend(TreeNode parent, Vector3 desiredLocalDir)
+    {
+        if (rootMaxBendPerSegmentDeg >= 179f) return desiredLocalDir;
+        Vector3 parentDir = parent.growDirection;
+        if (parentDir.sqrMagnitude < 1e-6f || desiredLocalDir.sqrMagnitude < 1e-6f)
+            return desiredLocalDir;
+        return Vector3.RotateTowards(
+            parentDir.normalized, desiredLocalDir.normalized,
+            rootMaxBendPerSegmentDeg * Mathf.Deg2Rad, 0f).normalized;
     }
 
     /// <summary>
@@ -5117,11 +5156,160 @@ public class TreeSkeleton : MonoBehaviour
             strandIndex++;
         }
 
-        // After pre-growing, rebuild radii so the new nodes feed into the pipe model.
+        // Rebuild radii FIRST so the cable nodes have their final thickness — the smoothing
+        // pass below floats each node off the rock by its own radius, so it needs real radii.
         if (grown > 0)
             RecalculateRadii(root);
 
+        // Round the out-then-down elbows on every cable so roots flow over the rock instead
+        // of cornering, and push each node out by (radius + padding) so the tube sits OUTSIDE
+        // the rock. Runs each call; the surface re-snap keeps it stable (already-smooth,
+        // on-surface nodes barely move), so it doesn't over-smooth.
+        if (rockCableSmoothIterations > 0)
+            foreach (var startNode in trunkRoots)
+                SmoothRockCableStrand(startNode);
+
         Debug.Log($"[Ishitsuki] year={GameManager.year} PreGrowRootsToSoil — spawned {grown} pre-grown nodes total");
+    }
+
+    /// <summary>
+    /// Rounds the corners of one pre-grown rock-root cable (the training-wire chain hanging
+    /// off <paramref name="startNode"/>). Endpoint-preserving weighted-Laplacian smoothing of
+    /// the polyline vertices, with each moved vertex re-snapped onto the rock face so the
+    /// cable stays hugging the rock instead of sinking in or floating off.
+    ///
+    /// Safe by construction: all smoothed positions are computed first, then written back in
+    /// one pass with each segment's dir+length recomputed for continuity (tip[i] == base[i+1]).
+    /// It never chains a node off its parent's tip mid-pass — the failure mode that cascades
+    /// bad positions. The trunk anchor (vertex 0) and the soil-contact tip (last vertex) are
+    /// fixed, so the cable still starts at the trunk and ends at the soil.
+    /// </summary>
+    void SmoothRockCableStrand(TreeNode startNode)
+    {
+        if (rockCollider == null || startNode == null) return;
+
+        // Gather the linear cable: startNode, then the first training-wire root child each step.
+        var chain = new List<TreeNode>();
+        TreeNode n = startNode; int guard = 0;
+        while (n != null && ++guard < 5000)
+        {
+            chain.Add(n);
+            TreeNode next = null;
+            foreach (var c in n.children)
+                if (c.isRoot && c.isTrainingWire) { next = c; break; }
+            n = next;
+        }
+        int count = chain.Count;
+        if (count < 3) return;   // need at least one interior segment to round
+
+        // Polyline vertices in LOCAL space: each node's base, then the final tip.
+        int vCount = count + 1;
+        var V = new Vector3[vCount];
+        for (int i = 0; i < count; i++) V[i] = chain[i].worldPosition;  // local base
+        V[count] = chain[count - 1].tipPosition;                        // local end tip
+
+        float   soilY      = debugSoilYOverride ? debugSoilY : plantingSurfacePoint.y;
+        float   reach      = rockCollider.bounds.extents.magnitude * 2f;
+        Vector3 rockCenter = rockCollider.bounds.center;
+
+        // ── Pass 1: Laplacian smoothing, interior re-snapped to the BARE rock surface ──
+        // (thickness/padding offset is applied in pass 2 so the smoothing math works on the
+        // surface itself). Record each vertex's surface contact point + outward normal.
+        var Sworld = new Vector3[vCount];
+        var Nworld = new Vector3[vCount];
+        var onRock = new bool[vCount];
+
+        for (int iter = 0; iter < rockCableSmoothIterations; iter++)
+        {
+            var np = (Vector3[])V.Clone();
+            for (int i = 1; i < vCount - 1; i++)   // endpoints fixed
+            {
+                Vector3 s = V[i] * 0.5f + V[i - 1] * 0.25f + V[i + 1] * 0.25f;
+                Vector3 w = transform.TransformPoint(s);
+                onRock[i] = false;
+                if (w.y > soilY + 0.02f && SnapToRock(w, rockCenter, reach, out Vector3 sp, out Vector3 sn))
+                {
+                    Sworld[i] = sp; Nworld[i] = sn; onRock[i] = true;
+                    w = sp;
+                }
+                if (w.y < soilY) w.y = soilY;
+                np[i] = transform.InverseTransformPoint(w);
+            }
+            V = np;
+        }
+
+        // ── Pass 2: concavity-aware outward offset ────────────────────────────────────
+        // Push each on-rock vertex out by (radius + padding). On CONCAVE spans the straight
+        // tube between two nodes would cut the bulge, so add extra: sample the real surface
+        // along each segment's chord and measure how far it sticks out toward the root past
+        // the chord (positive = concave). Convex spans measure <=0 and get no extra, so they
+        // stay snug. This is exactly "detect concave, give it more padding" — measured, not guessed.
+        var extra = new float[vCount];
+        for (int i = 0; i < vCount - 1; i++)
+        {
+            if (!onRock[i] || !onRock[i + 1]) continue;
+            Vector3 navg = (Nworld[i] + Nworld[i + 1]).normalized;
+            if (navg.sqrMagnitude < 1e-4f) continue;
+            float segExtra = 0f;
+            for (int k = 1; k <= 5; k++)   // 5 samples along the chord catch deeper concavities
+            {
+                Vector3 chordPt = Vector3.Lerp(Sworld[i], Sworld[i + 1], k / 6f);
+                if (rockCollider.Raycast(new Ray(chordPt + navg * reach, -navg), out RaycastHit mh, reach * 2f))
+                {
+                    float bulge = Vector3.Dot(mh.point - chordPt, navg);  // >0 = surface toward the root
+                    if (bulge > segExtra) segExtra = bulge;
+                }
+            }
+            segExtra *= 1.2f;   // safety margin for the deepest point between samples
+            if (segExtra > extra[i])     extra[i]     = segExtra;
+            if (segExtra > extra[i + 1]) extra[i + 1] = segExtra;
+        }
+
+        for (int i = 1; i < vCount - 1; i++)
+        {
+            if (!onRock[i]) continue;
+            float r = Mathf.Max(chain[Mathf.Min(i, count - 1)].radius, rootTerminalRadius);
+            Vector3 w = Sworld[i] + Nworld[i] * (r + rockRootSurfacePadding + extra[i]);
+
+            // Draping roots only descend — never let the outward offset (which can lift a node
+            // along an up-facing facet's normal) push it above its parent. Kills the occasional
+            // segment that juts upward off the rock crown. V[i-1] is already finalised here.
+            float prevY = transform.TransformPoint(V[i - 1]).y;
+            if (w.y > prevY + 0.01f) w.y = prevY + 0.01f;
+
+            V[i] = transform.InverseTransformPoint(w);
+        }
+
+        // Write back: positions, then per-segment dir/length for continuity. The last node
+        // keeps its own dir/length when the final segment is ~zero (an actively-growing tip).
+        for (int i = 0; i < count; i++)
+        {
+            chain[i].worldPosition = V[i];
+            Vector3 d = V[i + 1] - V[i];
+            float len = d.magnitude;
+            if (len > 1e-5f)
+            {
+                chain[i].growDirection = d / len;
+                chain[i].length        = len;
+            }
+        }
+    }
+
+    /// <summary>Nearest rock surface point + outward normal, by casting from outside the rock
+    /// inward along the radial from the bounds centre. Works on non-convex mesh colliders
+    /// (unlike Physics.ClosestPoint). Returns false if the ray misses (past the rock edge).</summary>
+    bool SnapToRock(Vector3 worldPos, Vector3 rockCenter, float reach, out Vector3 surfPt, out Vector3 surfNormal)
+    {
+        Vector3 outwardN = worldPos - rockCenter;
+        if (outwardN.sqrMagnitude < 1e-4f) outwardN = Vector3.up;
+        outwardN.Normalize();
+        if (rockCollider.Raycast(new Ray(worldPos + outwardN * reach, -outwardN), out RaycastHit hit, reach * 2f))
+        {
+            surfPt = hit.point; surfNormal = hit.normal;
+            return true;
+        }
+        surfPt = worldPos; surfNormal = outwardN;
+        return false;
     }
 
     /// <summary>

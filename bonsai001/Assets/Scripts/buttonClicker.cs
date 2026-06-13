@@ -95,6 +95,11 @@ public class ButtonClicker : MonoBehaviour
     Label         treeStatsTitle;
     bool          treeHealthCollapsed;
 
+    Label         stylePanelTitle;
+    bool          stylePanelCollapsed;
+    Label         rootHealthHeader;
+    bool          rootHealthCollapsed;
+
     Label         debugStateLabel;
     bool          debugStateVisible = false;
 
@@ -535,6 +540,12 @@ public class ButtonClicker : MonoBehaviour
         rootHealthSectors    = root.Q("RootHealthSectors");
 
         stylePanel             = root.Q("StylePanel");
+        stylePanelTitle        = root.Q("StylePanelTitle")        as Label;
+        stylePanelTitle?.RegisterCallback<ClickEvent>(_ =>
+        { stylePanelCollapsed = !stylePanelCollapsed; ApplyPanelCollapse(stylePanel, stylePanelTitle, "AUTO STYLE", stylePanelCollapsed); });
+        rootHealthHeader       = root.Q("RootHealthHeader")       as Label;
+        rootHealthHeader?.RegisterCallback<ClickEvent>(_ =>
+        { rootHealthCollapsed = !rootHealthCollapsed; ApplyPanelCollapse(rootHealthPanel, rootHealthHeader, "ROOT HEALTH", rootHealthCollapsed); });
         stylePanelStyleName    = root.Q("StylePanelStyleName")    as Label;
         stylePanelScore        = root.Q("StylePanelScore")        as Label;
         stylePanelSlots        = root.Q("StylePanelSlots")        as Label;

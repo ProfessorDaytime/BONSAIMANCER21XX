@@ -6061,7 +6061,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ringSegments: 8
   debugHealthRings: 0
-  debugRainbowRoots: 1
+  debugRainbowRoots: 0
   debugRootVisibility: 0
   renderRoots: 0
   rockCollider: {fileID: 0}
@@ -6113,6 +6113,11 @@ MonoBehaviour:
   sagThreshold: 1
   sagSensitivity: 8
   maxSagAngleDeg: 35
+  sagSpreadDays: 100
+  leafMassEach: 0.01
+  elasticSagMaxDeg: 6
+  elasticFullLoadRatio: 2
+  elasticSagPerDayDeg: 1.5
   sagBlend: 0.6
   matureAgeSeasons: 8
   junctionStressThreshold: 2.5
@@ -6246,11 +6251,15 @@ MonoBehaviour:
   rootInitialPitch: 0.15
   initialRootCount: 7
   rootLiftHeight: 4
+  rakeLiftMult: 1.5
   rootLiftSpeed: 4
   rootSurfaceSnapDist: 0.8
+  rootMaxBendPerSegmentDeg: 26
   rockCollider: {fileID: 1644556599}
   isIshitsukiMode: 0
   rockInfluenceRadius: 0.4
+  rockCableSmoothIterations: 3
+  rockRootSurfacePadding: 0.03
   snapshotLogIntervalDays: 5
   verboseLog: 0
   branchSpawnMaxDelay: 50
@@ -6315,6 +6324,8 @@ MonoBehaviour:
   refinementLeafShrink: 1
   baseFallChancePerDay: 0.15
   defoliationFactor: 0
+  leafUnfurlIntervalDays: 1.5
+  budLingerMaxDays: 8
 --- !u!114 &1486295573
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6398,6 +6409,7 @@ MonoBehaviour:
   rootRotDamagePerSeason: 0.04
   repotBaseDamage: 0.1
   degradationSlowdownSeasons: 4
+  compaction: 0
 --- !u!114 &1486295590
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6410,11 +6422,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2925fc87c916fe458c9fe96e55d6e77, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RootRakeManager
-  soilRings: 8
-  soilSegments: 16
+  targetChunkCount: 110
   soilMaterial: {fileID: 2100000, guid: 65d46df61d594d44583e1f3954b955e4, type: 2}
-  soilChunkPrefab: {fileID: 495330803571658881, guid: 74ef713594f631b4a95d4845451f83cd, type: 3}
+  dirtCellMesh: {fileID: 0}
   rakeBrushRadius: 0.35
+  chunkGravity: 5
+  chunkCullDepth: 4
+  potBoundHitsPerCell: 2
+  overRakeSnapCooldown: 0.75
+  overRakeSnapChance: 0.25
   straightenSpeed: 1.5
   rakeMaxDepth: 3
   surfaceRootCount: 4
@@ -6478,11 +6494,16 @@ MonoBehaviour:
   autoStyleEnabled: 1
   verboseLog: 1
   actionPreviewDays: 20
-  showTargetShape: 1
+  showTargetShape: 0
   autoStyleWireSpeedMult: 1.5
   fastConverge: 1
+  animateAutoWires: 1
+  wireAnimHoverSecs: 0.6
+  wireAnimRotateSecs: 2
+  wireAnimSettleSecs: 0.5
   autoPaste: 1
   defoliateThreshold: 80
+  defoliateMinIntervalYears: 2
   autoRepot: 1
   unwireDelayDays: 20
 --- !u!1 &1496661667

@@ -453,59 +453,63 @@ public class RootRakeManager : MonoBehaviour
     {
         if (soilBallGO == null) return;
 
-        // Core seed: remaining cell nearest the ball center (the trunk column)
-        int core = -1; float best = float.MaxValue;
+        // A cell only stays if it's connected (through the cell grid) to something that
+        // actually holds it up: a living root passing through it, or the trunk column.
+        // Seed the "keep" set with every directly-anchored cell and flood from all of them.
+        // (The old code kept whatever clump was nearest the ball centre regardless of
+        // support — so once the trunk cells were raked, a floating island could become that
+        // "core" and was protected forever. This fixes that.)
+        var keep  = new bool[numCells];
+        var queue = new Queue<int>();
+        var ballT = soilBallGO.transform;
+
+        Vector3 trunkBaseWorld = skeleton.root != null
+            ? transform.TransformPoint(skeleton.root.worldPosition)
+            : transform.position;
+        float trunkColR2 = (cellSize * 1.5f) * (cellSize * 1.5f);
+        float rootReach  = cellSize * 0.75f;
+
         for (int i = 0; i < numCells; i++)
         {
             if (cellRemoved[i]) continue;
-            float d = cellLocalCenters[i].sqrMagnitude;
-            if (d < best) { best = d; core = i; }
+            if (CellAnchored(i, trunkBaseWorld, trunkColR2, rootReach, ballT))
+            { keep[i] = true; queue.Enqueue(i); }
         }
-        if (core < 0) return;
 
-        // Flood-fill the core component over 6-neighbour grid adjacency
-        var inCore = new bool[numCells];
-        var queue  = new Queue<int>();
-        inCore[core] = true; queue.Enqueue(core);
+        // Fallback: if nothing is anchored (e.g. every root was trimmed mid-rake), keep the
+        // clump nearest the trunk so the tree isn't left floating in mid-air.
+        if (queue.Count == 0)
+        {
+            int core = -1; float best = float.MaxValue;
+            for (int i = 0; i < numCells; i++)
+            {
+                if (cellRemoved[i]) continue;
+                float d = cellLocalCenters[i].sqrMagnitude;
+                if (d < best) { best = d; core = i; }
+            }
+            if (core < 0) return;
+            keep[core] = true; queue.Enqueue(core);
+        }
+
+        // Flood the keep set over 6-neighbour grid adjacency.
         while (queue.Count > 0)
         {
             var c = cellCoords[queue.Dequeue()];
             for (int n = 0; n < 6; n++)
             {
                 if (!cellByCoord.TryGetValue(c + Neigh[n], out int j)) continue;
-                if (cellRemoved[j] || inCore[j]) continue;
-                inCore[j] = true; queue.Enqueue(j);
+                if (cellRemoved[j] || keep[j]) continue;
+                keep[j] = true; queue.Enqueue(j);
             }
         }
 
-        // Everything else groups into islands; unanchored islands fall as chunks
-        var seen  = new bool[numCells];
+        // Anything not reached by an anchor falls.
         bool broke = false;
         for (int i = 0; i < numCells; i++)
         {
-            if (cellRemoved[i] || inCore[i] || seen[i]) continue;
-
-            var island = new List<int>();
-            seen[i] = true; queue.Enqueue(i);
-            while (queue.Count > 0)
-            {
-                int k = queue.Dequeue();
-                island.Add(k);
-                var c = cellCoords[k];
-                for (int n = 0; n < 6; n++)
-                {
-                    if (!cellByCoord.TryGetValue(c + Neigh[n], out int j)) continue;
-                    if (cellRemoved[j] || inCore[j] || seen[j]) continue;
-                    seen[j] = true; queue.Enqueue(j);
-                }
-            }
-
-            if (IslandAnchoredByRoot(island)) continue;
-            foreach (int k in island)
-            {
-                cellRemoved[k] = true;
-                SpawnChunk(CellWorld(k));
-            }
+            if (cellRemoved[i] || keep[i]) continue;
+            cellRemoved[i] = true;
+            SpawnChunk(CellWorld(i));
             broke = true;
         }
 
@@ -521,18 +525,23 @@ public class RootRakeManager : MonoBehaviour
         new(1, 0, 0), new(-1, 0, 0), new(0, 1, 0), new(0, -1, 0), new(0, 0, 1), new(0, 0, -1),
     };
 
-    bool IslandAnchoredByRoot(List<int> island)
+    /// <summary>True if a cell is directly held up — in the trunk column, or with a living
+    /// root passing through it. Such cells (and anything grid-connected to them) survive.</summary>
+    bool CellAnchored(int i, Vector3 trunkBaseWorld, float trunkColR2, float rootReach, Transform ballT)
     {
-        float reach = cellSize * 0.75f;
-        var ballT = soilBallGO.transform;
+        // Trunk column: the trunk physically grips the soil right around its base.
+        Vector3 w = CellWorld(i);
+        float dx = w.x - trunkBaseWorld.x, dz = w.z - trunkBaseWorld.z;
+        if (dx * dx + dz * dz < trunkColR2) return true;
+
+        // Root proximity: a living root segment runs through this cell.
+        Vector3 cellLocal = cellLocalCenters[i];
         foreach (var n in skeleton.allNodes)
         {
             if (!n.isRoot || n.isTrimmed || n == skeleton.root) continue;
             Vector3 a = ballT.InverseTransformPoint(transform.TransformPoint(n.worldPosition));
             Vector3 b = ballT.InverseTransformPoint(transform.TransformPoint(n.tipPosition));
-            foreach (int k in island)
-                if (DistPointSegment(cellLocalCenters[k], a, b) < reach)
-                    return true;
+            if (DistPointSegment(cellLocal, a, b) < rootReach) return true;
         }
         return false;
     }

@@ -133,9 +133,12 @@ Re-derive all 17 species `.asset` values from real horticultural behaviour inste
 
 ---
 
-**J. Root-on-Rock Realism** *(discussion pending — screenshots/drawings welcome)*
+**J. Root-on-Rock Realism** *(organic path done 2026-06-12; pre-grown rock cables still pending)*
 
-Reported: at the top of a rock root, the strand shoots out nearly horizontal then takes a sharp elbow down/back instead of flowing smoothly over the rock. Suspected causes in code: the first chain segment inherits a radial/lateral direction before the surface-drape projection takes over (elbow at segment 1), and per-segment direction changes are unbounded so the drape can fold abruptly. Candidate fixes to discuss: seed the strand's initial direction from the local surface tangent (downhill component) instead of radial; clamp per-segment bend to a max curvature so chains arc; optional post-drape smoothing pass (Catmull-Rom re-sample of the chain). Related memory: re-project onto the surface AFTER gravity bias ([[feedback_ishitsuki_roots]]).
+Reported: roots shoot out nearly horizontal then take a sharp elbow down instead of flowing smoothly (user drawing: "now" = staple-shaped, "want" = smooth arc over the blob).
+
+- ✅ **Organic roots (nebari + fill-in + organic rock growth)** — `TreeSkeleton.LimitRootBend()` caps how far a new root segment may rotate from its parent (`rootMaxBendPerSegmentDeg`, default 26°), turning the 90° out-then-down elbow into a multi-segment arc. Pure direction limit applied at the end of the root branches of `ContinuationDirection` — never moves node positions (the fragile thing per [[feedback_ishitsuki_roots]]), and only shrinks bend so it can't reintroduce the zigzag. This fixes the potted-tree screenshot the user provided.
+- ✅ **Pre-grown rock cables (`PreGrowRootsToSoil`)** done 2026-06-12 — `SmoothRockCableStrand()` rounds each cable's out-then-down elbows: endpoint-preserving weighted-Laplacian smoothing of the polyline vertices (trunk anchor + soil tip fixed), each moved vertex re-snapped onto the rock face (cast from outside inward) so it keeps hugging the rock. Safe-by-construction: smoothed positions computed first, then written back in one pass recomputing each segment's dir+length for continuity (tip[i]==base[i+1]) — never chains a node off its parent's tip mid-pass (the cascade failure mode). Runs each `PreGrowRootsToSoil` call; surface re-snap makes it a stable contraction so re-smoothing the growing cable each season doesn't over-flatten. Tunable `rockCableSmoothIterations` (default 3) on TreeSkeleton.
 
 ---
 
