@@ -229,4 +229,11 @@ public class TreeSpecies : ScriptableObject
     [Tooltip("Leaf color during spring and summer (non-fall season).\n" +
              "Maple: bright green.  Pine: dark blue-green.  Wisteria: medium green.")]
     public Color leafSpringColor = new Color(0.15f, 0.55f, 0.10f);
+
+    [Tooltip("In-game days for a new leaf to expand from 15% to full size after emerging.")]
+    public float leafGrowDays = 20f;
+
+    [Tooltip("Pale tint blended over leafSpringColor while a leaf is young — the light " +
+             "yellow-green of fresh growth that darkens as the leaf matures.")]
+    public Color leafBudBreakColor = new Color(0.72f, 0.88f, 0.38f);
 }

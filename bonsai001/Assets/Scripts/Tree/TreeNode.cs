@@ -154,6 +154,12 @@ public class TreeNode
     public float pendingSagDeg;    // this season's sag rotation still to apply; bleeds into growDirection daily
     public float sagDegPerDay;     // daily bleed rate for pendingSagDeg, set by BranchWeightPass each spring
 
+    // ── Elastic (leaf-load) sag ───────────────────────────────────────────────
+    // Seasonal droop from the weight of the current canopy. Unlike permanent sag it
+    // REVERSES: when leaves fall the branch springs back up by the same amount.
+    public float elasticSagDeg;    // degrees of elastic droop currently applied to growDirection
+    public float leafLoad;         // transient: leaf mass of this subtree, recomputed daily (not saved)
+
     // ── Dieback ───────────────────────────────────────────────────────────────
     public bool isDead;            // health hit 0 — no growth, no leaves; may become deadwood or fall
     public bool isDeadwood;        // large dead branch kept as structural deadwood (jin candidate)

@@ -50,7 +50,9 @@ AutoStyler should manage the full care cycle, not just wiring and trimming.
 
 ---
 
-**C. 45-Degree Branch Cut Angle**
+**C. 45-Degree Branch Cut Angle** ✅ done (verified 2026-06-11 — was already fully implemented)
+
+`useBevelCut` (default on) + `cutAngleDeg` (45°) tilt `woundFaceNormal` in `TrimNode`; `AddWoundCap` renders the angled callus face; the health benefit ships as `bevelCutDrainMult = 0.7` applied in the seasonal wound-drain pass when the wound face is angled >10° off the branch axis.
 
 In real bonsai, cuts are made at ~45° relative to the branch axis so water runs off the wound face rather than pooling. A flush flat cut retains moisture and invites fungal infection.
 
@@ -61,7 +63,9 @@ In real bonsai, cuts are made at ~45° relative to the branch axis so water runs
 
 ---
 
-**D. AutoStyler Narrative / Care Log**  *(medium priority — foundation first)*
+**D. AutoStyler Narrative / Care Log** ✅ done 2026-06-11
+
+`CareLog.cs` — static rolling log (200-entry cap), persisted via `SaveData.careLog`, restored on load, cleared on restart, "Planted a new {species} seed" on InitTree. AutoStyler logs every action with a templated reason: trim (azimuth + why), paste, pinch (silhouette vs ramification), wire (bearing/lean, trunk vs slot wording, logged when the bend completes), unwire (gold + delay), defoliate (tip count), pot phase advance, February back-bud stimulation, and a spring review line (slots filled + match %). `TreeSkeleton.LogSeasonNarrative()` writes the 2–3 sentence health summary (mood from avg health, one positive, worst negatives: danger / open wounds / fungal / dry soil / pot-bound) right before the season-end autosave. `CareLogPanel` in the Stats overlay: latest entry pinned, scrollable newest-first history, dirty-flag refresh on `CareLog.OnChanged`.
 
 A running log of why each auto-care action was taken, and a plain-English summary of the tree's current health state.
 
@@ -72,18 +76,20 @@ A running log of why each auto-care action was taken, and a plain-English summar
 
 ---
 
-**E. Leaf Growth & Bud-Break Rework**
+**E. Leaf Growth & Bud-Break Rework** ✅ done 2026-06-11
 
-Leaves currently pop in at full size and full color. Real leaves emerge small and pale from an opening bud, then expand and darken over days–weeks.
+All parts shipped. Leaves emerge at 15% scale tinted by `leafBudBreakColor` and mature over `leafGrowDays` — both now `TreeSpecies` fields (defaults 20 d / pale yellow-green, so the 17 existing `.asset` files work unedited). Clusters unfurl in stages: first batch at bud break, then one leaf — a PAIR for Opposite-bud species — every `leafUnfurlIntervalDays` (1.5 d ± jitter, LeafManager Inspector field). The autumn bud GameObject is handed from `TreeSkeleton` to `LeafManager.BeginBudOpen()` at bud break instead of being destroyed: it swells ~1.6× over two days and is removed when its cluster finishes unfurling (`budLingerMaxDays` = 8 d fallback covers terminals that never qualify for leaves).
 
-- **Leaf maturation** ✓ first pass done 2026-06-11 — leaves emerge at **15%** scale in a paler yellow-green and grow to full size/color over 20 in-game days (`GROW_START_FRACTION` / `GROW_DAYS` / `YoungLeafTint` in `Leaf.cs`). Remaining: promote the constants to `TreeSpecies` fields (`leafGrowDays`, `leafBudBreakColor`).
+- **Leaf maturation** ✓ — leaves emerge at **15%** scale in a paler yellow-green and grow to full size/color over `leafGrowDays` in-game days (per-species; set on each Leaf at spawn).
 - **Bud-opening sequence** — instead of an instant full cluster: the autumn bud GameObject swells slightly in early March, opens (small scale pop + first leaf pair) at bud break, then the remaining leaves of the cluster unfurl one-by-one over the following days. The bud mesh is destroyed only after the last leaf emerges.
 - **Multiple leaves per bud** — cluster size already exists; reuse it as "leaves remaining to unfurl." Opposite-bud species unfurl in pairs, alternate species singly.
 - **Scope:** `LeafManager.cs` (spawn pipeline → staged unfurl state machine, per-cluster age), `Leaf.cs` (scale/color over age), `TreeSkeleton.cs` (bud-break hook passes the bud object instead of destroying it immediately), `TreeSpecies` (`leafGrowDays`, optional paler `leafBudBreakColor`).
 
 ---
 
-**F. Leaf Weight & Elastic Spring-Back** *(extends item 30 — Branch Weight & Strength)*
+**F. Leaf Weight & Elastic Spring-Back** ✅ done 2026-06-11 *(extends item 30 — Branch Weight & Strength)*
+
+Implemented: `ComputeLeafLoad` walks live cluster counts (`LeafManager.NodeLeafCount × leafMassEach`) bottom-up once per in-game day inside `ApplyDailySag`. Each branch tracks `elasticSagDeg` toward a target of `elasticSagMaxDeg` (6°) scaled by leaf-load/strength ratio, rate-capped at `elasticSagPerDayDeg` (1.5°/day) in BOTH directions — so the canopy weight eases branches down through summer and they spring back up over a few days as the leaves fall. `elasticSagDeg` persists in saves so loading doesn't double-droop. Tunables on TreeSkeleton under "Leaf Weight (Elastic Sag)".
 
 Wood load and permanent sag exist (`ComputeLoad` → `ApplySagAndStress`, load = wood mass only). Branches should also carry seasonal LEAF load — and visibly lift a little when the leaves drop in autumn.
 
@@ -95,9 +101,11 @@ Wood load and permanent sag exist (`ComputeLoad` → `ApplySagAndStress`, load =
 
 ---
 
-**G. Repot Soil Compaction & Rake Rework**
+**G. Repot Soil Compaction & Rake Rework** ✅ done 2026-06-12 *(flow reworked same day after playtest: rake-first)*
 
-Real repotting: the old soil is compacted around the root ball; you rake/comb it out of the roots before setting the tree in fresh soil. The current rake mini-game only triggers when the tree is **pot-bound** (`OnRepotButtonClick` gates on `skeleton.IsPotBound()`), so normal repots skip it entirely — which is why it "doesn't seem to work."
+**Playtest fix:** the original order (pick soil → rake) never showed the player a rake prompt — and two latent bugs hid the ball anyway: `RootRake` state wasn't in TreeSkeleton's `inRootMode` so the tree DROPPED back down on rake entry, and the soil ball was built in world space at the pot instead of around the lifted root mass. New flow: **Repot button → tree lifts with the soil-caked root ball (ball parented to the tree, cell centers ball-local) → rake → Confirm stores raked % → repot panel → preset click = `ApplyRepot()`** (compaction/scoring/CareLog + PotSoil.Repot + root regen + settle back down). Leaving root mode any other way mid-rake cleans up and discards the visit.
+
+Shipped: every repot now enters the rake step (`IsPotBound` gate removed — that gate was why it "didn't work"); pot-bound soil is compacted, needing `potBoundHitsPerCell` (2) rake passes per cell. Raked cells break off as **code-generated clods** (jittered squashed boxes, soil material, no prefabs/Rigidbodies) that tumble under manual gravity and are destroyed `chunkCullDepth` (4 u) below the pot. Over-raking bare cells can snap fine roots (cooldown + chance, visible strand loss + small parent health sting, shown in the rake HUD). On confirm: the un-raked fraction becomes `PotSoil.compaction` — drainage ×(1−0.5·c) and retention +0.15·c for the first season, decaying 0.6/season — a ≥95% clean sweep with zero snapped roots gives the whole tree +0.03 health, and the whole thing lands in the CareLog. `soilCompaction` persisted in saves.
 
 - **Always rake** — every repot enters the rake step; pot-bound just means MORE compacted soil and tangled roots (higher difficulty / more strokes).
 - **Tessellated soil ball** — replace the current visual with ~100 low-poly soil chunks (simple irregular wedges in a hemisphere around the root mass; a jittered grid is fine — no fancy Voronoi needed). Chunk meshes are **generated in code** (randomized squashed boxes / 6–10-vert blobs with vertex jitter, soil-colored vertex tint) — no prefabs or art assets. Rake strokes knock loose the chunks they cross: detach with a small impulse away from the stroke, **ballistic fall with light tumble (manual gravity, no Rigidbody needed), destroyed once world Y drops below 0** (under the table). Chunk count remaining is the progress meter.

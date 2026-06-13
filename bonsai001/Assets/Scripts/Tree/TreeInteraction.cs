@@ -584,7 +584,26 @@ public class TreeInteraction : MonoBehaviour
 
         Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
 
-        // Priority 1: click a root node tip to prune it (same as RootWork)
+        // Priority 1: rake — wherever the ray is on the soil ball, strokes rake it.
+        // RaycastAll because the pot/table/tree colliders sit in front of the ball's
+        // lower half (same lesson as weed pulling). Root pruning only takes over where
+        // the ball has been cleared (or roots poke out beyond it).
+        if (rakeManager.SoilBallGO != null)
+        {
+            var hits = Physics.RaycastAll(ray, 200f);
+            foreach (var h in hits)
+            {
+                if (h.collider == null || h.collider.gameObject != rakeManager.SoilBallGO) continue;
+                SetHighlight(null, HighlightMode.None);
+                // Only rake on significant vertical movement (up or down — either counts)
+                float deltaY = Mouse.current.delta.ReadValue().y;
+                if (Mathf.Abs(deltaY) >= RakeMinDeltaY)
+                    rakeManager.RakeAt(h.point);
+                return;
+            }
+        }
+
+        // Priority 2: click a root node tip to prune it (same as RootWork)
         TreeNode rootNode = PickNode(ray, out _, n => n.isRoot && n != skeleton.root);
         if (rootNode != null)
         {
@@ -598,16 +617,6 @@ public class TreeInteraction : MonoBehaviour
         }
 
         SetHighlight(null, HighlightMode.None);
-
-        // Priority 2: rake stroke — vertical mouse drag over the soil ball
-        if (rakeManager.SoilBallGO == null) return;
-        if (!Physics.Raycast(ray, out RaycastHit soilHit, 200f)) return;
-        if (soilHit.collider.gameObject != rakeManager.SoilBallGO) return;
-
-        // Only rake on significant vertical movement (up or down — either counts)
-        float deltaY = Mouse.current.delta.ReadValue().y;
-        if (Mathf.Abs(deltaY) >= RakeMinDeltaY)
-            rakeManager.RakeAt(soilHit.point);
     }
 
     void RecordFailedClick(Ray ray)

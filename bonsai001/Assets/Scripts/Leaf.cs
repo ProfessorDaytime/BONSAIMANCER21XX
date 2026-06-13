@@ -58,13 +58,14 @@ public class Leaf : MonoBehaviour
 
     // ── Grow-in ───────────────────────────────────────────────────────────────
     // Leaves emerge at GROW_START_FRACTION of full size in a paler green and expand
-    // over GROW_DAYS in-game days — real leaves unfurl small and pale, they don't
-    // pop in full-size. (Species-tunable growth + bud unfurl: PLAN item E.)
+    // over growDays in-game days — real leaves unfurl small and pale, they don't
+    // pop in full-size. growDays/youngTint are set per-species by LeafManager on
+    // spawn; the initializers are fallbacks for prefab-placed leaves.
 
     const float GROW_START_FRACTION = 0.15f;
-    const float GROW_DAYS           = 20f;
-    // Pale yellow-green tint blended over the species spring color while young
-    static readonly Color YoungLeafTint = new Color(0.72f, 0.88f, 0.38f);
+
+    [HideInInspector] public float growDays  = 20f;
+    [HideInInspector] public Color youngTint = new Color(0.72f, 0.88f, 0.38f);
 
     float growProgress = 0f;   // 0 = just emerged, 1 = full size + full color
 
@@ -111,8 +112,8 @@ public class Leaf : MonoBehaviour
         // Grow-in over in-game days (skip once falling so the fall keeps the correct scale)
         if (!isFalling && growProgress < 1f)
         {
-            float growDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
-            growProgress   = Mathf.Min(1f, growProgress + growDays / GROW_DAYS);
+            float elapsedDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
+            growProgress      = Mathf.Min(1f, growProgress + elapsedDays / Mathf.Max(1f, growDays));
             float s = Mathf.Lerp(GROW_START_FRACTION, 1f, Mathf.SmoothStep(0f, 1f, growProgress));
             transform.localScale = targetScale * s;
             UpdateLeafColor();   // young pale green darkens to the species color as it grows
@@ -161,7 +162,7 @@ public class Leaf : MonoBehaviour
         else
         {
             // Young leaves are paler; the species spring color develops as the leaf grows
-            Color spring = Color.Lerp(Color.Lerp(springColor, YoungLeafTint, 0.65f), springColor,
+            Color spring = Color.Lerp(Color.Lerp(springColor, youngTint, 0.65f), springColor,
                                       Mathf.SmoothStep(0f, 1f, growProgress));
             color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
         }

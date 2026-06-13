@@ -85,6 +85,11 @@ public class ButtonClicker : MonoBehaviour
     Label         stylePanelPending;
     Label         stylePanelShaped;
 
+    VisualElement careLogPanel;
+    Label         careLogLatest;
+    Label         careLogHistory;
+    bool          careLogDirty = true;   // rebuilt lazily on next stats refresh
+
     Label         debugStateLabel;
     bool          debugStateVisible = false;
 
@@ -163,6 +168,8 @@ public class ButtonClicker : MonoBehaviour
     Button        repotFreeDrainButton;
     Button        repotMoistButton;
     Button        repotAcidicButton;
+    Button        repotRockToggleButton;
+    Button        repotConfirmButton;
     Button        potSizeXSButton;
     Button        potSizeSButton;
     Button        potSizeMButton;
@@ -171,6 +178,9 @@ public class ButtonClicker : MonoBehaviour
     Button        potSizeSlabButton;
     Label         potSizeLabel;
     PotSoil.PotSize pendingPotSize = PotSoil.PotSize.M;
+    PotSoil.SoilPreset? pendingSoilPreset;   // null = keep current mix
+    bool pendingRepotOnRock;                 // confirm chains into RockPlace when true
+    bool repotPanelWasOpen;                  // one-shot init when the panel opens
 
     // ── Rock size selection ───────────────────────────────────────────────────
     VisualElement rockSizePanel;
@@ -468,6 +478,8 @@ public class ButtonClicker : MonoBehaviour
         fungicideButton      = root.Q("FungicideButton")    as Button;
 
         repotPanel            = root.Q("RepotPanel");
+        repotRockToggleButton = root.Q("RepotRockToggleButton") as Button;
+        repotConfirmButton    = root.Q("RepotConfirmButton")    as Button;
         soilDegradationLabel  = root.Q("SoilDegradationLabel") as Label;
         degradationBarFill    = root.Q("DegradationBarFill");
         soilSaturationLabel   = root.Q("SoilSaturationLabel")  as Label;
@@ -524,6 +536,12 @@ public class ButtonClicker : MonoBehaviour
         stylePanelSlotBreakdown = root.Q("StylePanelSlotBreakdown") as Label;
         stylePanelPending      = root.Q("StylePanelPending")      as Label;
         stylePanelShaped       = root.Q("StylePanelShaped")       as Label;
+
+        careLogPanel   = root.Q("CareLogPanel");
+        careLogLatest  = root.Q("CareLogLatest")  as Label;
+        careLogHistory = root.Q("CareLogHistory") as Label;
+        CareLog.OnChanged -= MarkCareLogDirty;   // idempotent on domain reload
+        CareLog.OnChanged += MarkCareLogDirty;
 
         // ── Scroll sensitivity ────────────────────────────────────────────────
         const float scrollSpeed = 400f;
@@ -699,10 +717,12 @@ public class ButtonClicker : MonoBehaviour
         herbicideButton?.RegisterCallback<ClickEvent>(_ => OnHerbicideButtonClick());
         fungicideButton?.RegisterCallback<ClickEvent>(_ => OnFungicideButtonClick());
 
-        repotClassicButton?.RegisterCallback<ClickEvent>(_ => OnRepotButtonClick(PotSoil.SoilPreset.ClassicBonsai));
-        repotFreeDrainButton?.RegisterCallback<ClickEvent>(_ => OnRepotButtonClick(PotSoil.SoilPreset.FreeDraining));
-        repotMoistButton?.RegisterCallback<ClickEvent>(_ => OnRepotButtonClick(PotSoil.SoilPreset.MoistureRetaining));
-        repotAcidicButton?.RegisterCallback<ClickEvent>(_ => OnRepotButtonClick(PotSoil.SoilPreset.Acidic));
+        repotClassicButton?.RegisterCallback<ClickEvent>(_ => SelectSoilPreset(PotSoil.SoilPreset.ClassicBonsai));
+        repotFreeDrainButton?.RegisterCallback<ClickEvent>(_ => SelectSoilPreset(PotSoil.SoilPreset.FreeDraining));
+        repotMoistButton?.RegisterCallback<ClickEvent>(_ => SelectSoilPreset(PotSoil.SoilPreset.MoistureRetaining));
+        repotAcidicButton?.RegisterCallback<ClickEvent>(_ => SelectSoilPreset(PotSoil.SoilPreset.Acidic));
+        repotRockToggleButton?.RegisterCallback<ClickEvent>(_ => ToggleRepotRock());
+        repotConfirmButton?.RegisterCallback<ClickEvent>(_ => OnRepotConfirmClick());
 
         potSizeXSButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.XS));
         potSizeSButton?.RegisterCallback<ClickEvent>(_ => SelectPotSize(PotSoil.PotSize.S));
@@ -821,6 +841,7 @@ public class ButtonClicker : MonoBehaviour
 
     void OnDisable()
     {
+        CareLog.OnChanged                -= MarkCareLogDirty;
         GameManager.OnGameStateChanged   -= OnGameStateChanged;
         GameManager.OnMonthChanged       -= OnMonthChanged;
         if (skeleton != null) skeleton.OnWireSetGold -= OnWireSetGold;
@@ -943,18 +964,25 @@ public class ButtonClicker : MonoBehaviour
         bool inRootPrune = GameManager.Instance.state == GameState.RootPrune;
         if (repotPanel != null)
             repotPanel.style.display = inRootPrune ? DisplayStyle.Flex : DisplayStyle.None;
+        if (!inRootPrune) repotPanelWasOpen = false;   // re-arm the one-shot init
 
         if (inRootPrune && skeleton != null)
         {
             var potSoil = skeleton.GetComponent<PotSoil>();
             if (potSoil != null)
             {
-                // Sync pending pot size from actual pot on first open
-                if (pendingPotSize != potSoil.potSize)
+                // One-shot init when the panel OPENS — syncing every frame would clobber
+                // the player's selections while they're choosing.
+                if (!repotPanelWasOpen)
                 {
-                    pendingPotSize = potSoil.potSize;
+                    repotPanelWasOpen = true;
+                    pendingPotSize     = potSoil.potSize;
+                    pendingSoilPreset  = null;
+                    pendingRepotOnRock = false;
                     if (potSizeLabel != null) potSizeLabel.text = $"Current: {potSoil.potSize}";
                     RefreshPotSizeButtons();
+                    RefreshSoilPresetButtons();
+                    RefreshRepotRockToggle();
                 }
 
                 // Sync rock size chips to the current rock
@@ -999,7 +1027,9 @@ public class ButtonClicker : MonoBehaviour
             {
                 float removed = rakeManager.SoilRemovedFraction() * 100f;
                 int strands = rakeManager.RootStrandCount();
-                rakeStatusLabel.text = $"Soil removed: {removed:F0}%\nRoot strands: {strands}";
+                int snapped = rakeManager.FineRootsSnapped;
+                rakeStatusLabel.text = $"Soil removed: {removed:F0}%\nRoot strands: {strands}" +
+                                       (snapped > 0 ? $"\nFine roots snapped: {snapped}" : "");
             }
         }
 
@@ -1149,6 +1179,8 @@ public class ButtonClicker : MonoBehaviour
             rootHealthPanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
         if (stylePanel != null)
             stylePanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
+        if (careLogPanel != null)
+            careLogPanel.style.display = showStats ? DisplayStyle.Flex : DisplayStyle.None;
 
         if (uiToggleButton != null)
             uiToggleButton.style.color = uiToggleState switch
@@ -2160,29 +2192,80 @@ public class ButtonClicker : MonoBehaviour
         }
     }
 
-    void OnRepotButtonClick(PotSoil.SoilPreset preset)
+    // Preset buttons only SELECT — nothing applies until Confirm Repot.
+    void SelectSoilPreset(PotSoil.SoilPreset preset)
+    {
+        pendingSoilPreset = preset;
+        RefreshSoilPresetButtons();
+    }
+
+    void RefreshSoilPresetButtons()
+    {
+        var potSoil = skeleton != null ? skeleton.GetComponent<PotSoil>() : null;
+        PotSoil.SoilPreset active = pendingSoilPreset ??
+            (potSoil != null ? potSoil.preset : PotSoil.SoilPreset.ClassicBonsai);
+
+        var presets = new[] {
+            (repotClassicButton,   PotSoil.SoilPreset.ClassicBonsai),
+            (repotFreeDrainButton, PotSoil.SoilPreset.FreeDraining),
+            (repotMoistButton,     PotSoil.SoilPreset.MoistureRetaining),
+            (repotAcidicButton,    PotSoil.SoilPreset.Acidic) };
+        foreach (var (btn, p) in presets)
+        {
+            if (btn == null) continue;
+            btn.style.backgroundColor = (p == active)
+                ? new UnityEngine.UIElements.StyleColor(new Color(0.40f, 0.55f, 0.35f))
+                : new UnityEngine.UIElements.StyleColor(new Color(0.25f, 0.25f, 0.25f));
+        }
+    }
+
+    void ToggleRepotRock()
+    {
+        pendingRepotOnRock = !pendingRepotOnRock;
+        RefreshRepotRockToggle();
+    }
+
+    void RefreshRepotRockToggle()
+    {
+        if (repotRockToggleButton == null) return;
+        repotRockToggleButton.text = pendingRepotOnRock ? "Rock: On" : "Rock: Off";
+        repotRockToggleButton.style.backgroundColor = pendingRepotOnRock
+            ? new UnityEngine.UIElements.StyleColor(new Color(0.40f, 0.55f, 0.35f))
+            : new UnityEngine.UIElements.StyleColor(new Color(0.25f, 0.25f, 0.25f));
+    }
+
+    // Final commit: applies the selected soil + pot size (rake scoring rides along),
+    // then optionally chains into rock placement for an Ishitsuki arrangement.
+    void OnRepotConfirmClick()
     {
         if (skeleton == null) return;
         var potSoil = skeleton.GetComponent<PotSoil>();
         if (potSoil == null) return;
 
-        // Pot-bound trees get the rake mini-game before new soil is applied
-        if (skeleton.IsPotBound())
+        PotSoil.SoilPreset preset = pendingSoilPreset ?? potSoil.preset;
+        bool sizeChanged = pendingPotSize != potSoil.potSize;
+
+        var rakeManager = skeleton.GetComponent<RootRakeManager>();
+        if (rakeManager != null)
         {
-            var rakeManager = skeleton.GetComponent<RootRakeManager>();
-            if (rakeManager != null)
-            {
-                bool sizeChanged = pendingPotSize != potSoil.potSize;
-                rakeManager.EnterRakeMode(preset, pendingPotSize, sizeChanged);
-                return;
-            }
+            rakeManager.ApplyRepot(preset, pendingPotSize, sizeChanged);
+        }
+        else
+        {
+            // Fallback (no RootRakeManager present) — apply immediately
+            potSoil.Repot(skeleton, preset, pendingPotSize, sizeChanged);
+            // Refresh leaf tint — repot stress may have changed node health
+            skeleton.GetComponent<LeafManager>()?.RefreshFungalTint(skeleton);
         }
 
-        // Normal (non-pot-bound) repot — apply immediately
-        bool changed = pendingPotSize != potSoil.potSize;
-        potSoil.Repot(skeleton, preset, pendingPotSize, changed);
-        // Refresh leaf tint — repot stress may have changed node health
-        skeleton.GetComponent<LeafManager>()?.RefreshFungalTint(skeleton);
+        pendingSoilPreset = null;
+        bool wantRock = pendingRepotOnRock;
+        pendingRepotOnRock = false;
+        RefreshRepotRockToggle();
+
+        // Optional Ishitsuki step — place the rock and re-seat the tree on it.
+        if (wantRock)
+            GameManager.Instance.UpdateGameState(GameState.RockPlace);
     }
 
     void OnConfirmRepotClick()
@@ -2292,9 +2375,15 @@ public class ButtonClicker : MonoBehaviour
     public void OnRootPruneButtonClick(ClickEvent evt)
     {
         GameManager.Instance.ToggleRootPrune();
+
+        // Entering root work → the lifted root ball comes out caked in old soil.
+        // Rake it clean first; confirming the rake opens the soil/pot choice panel.
+        if (GameManager.Instance.state == GameState.RootPrune && skeleton != null)
+            skeleton.GetComponent<RootRakeManager>()?.EnterRakeMode();
+
         MaybeShowTooltip("repot",
             "Repotting",
-            "Lift the tree to manage its root system and repot into fresh soil.\n\nBest done in late winter (Jan–Feb). When roots are pot-bound, rake away the soil ball before repotting to straighten and refresh the roots.");
+            "The lifted root ball comes out caked in old soil — drag vertical strokes across it to rake the soil away (pot-bound soil is compacted and takes extra passes). Over-raking bare spots snaps fine roots!\n\nConfirm when done to choose fresh soil and a pot size. Best done in late winter (Jan–Feb).");
     }
 
     void UpdateRootHealthDisplay()
@@ -2325,8 +2414,33 @@ public class ButtonClicker : MonoBehaviour
         }
     }
 
+    void MarkCareLogDirty() => careLogDirty = true;
+
+    void UpdateCareLogDisplay()
+    {
+        if (!careLogDirty || careLogPanel == null) return;
+        careLogDirty = false;
+
+        var entries = CareLog.Entries;
+        if (careLogLatest != null)
+            careLogLatest.text = entries.Count > 0
+                ? CareLog.Format(entries[entries.Count - 1])
+                : "No care actions yet.";
+
+        if (careLogHistory != null)
+        {
+            // Newest first; the latest entry is pinned above, so start one back.
+            var sb = new System.Text.StringBuilder();
+            int shown = 0;
+            for (int i = entries.Count - 2; i >= 0 && shown < 60; i--, shown++)
+                sb.AppendLine(CareLog.Format(entries[i]));
+            careLogHistory.text = sb.ToString();
+        }
+    }
+
     void UpdateStylePanelDisplay()
     {
+        UpdateCareLogDisplay();
         if (stylePanel == null) return;
         var styler = AutoStyler.Instance;
         if (styler == null || styler.style == null)

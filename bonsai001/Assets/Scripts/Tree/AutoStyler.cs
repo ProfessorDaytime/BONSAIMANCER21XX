@@ -55,6 +55,17 @@ public class AutoStyler : MonoBehaviour
     [Tooltip("Debug/test: converge in ~5 years — wire speed 4×, action preview 3 days, double depth growth per year.")]
     public bool fastConverge = false;
 
+    [Header("Wire Animation")]
+    [Tooltip("Animate auto-wires in REAL seconds (hover → wire on → slow bend → settle) so the work " +
+             "is visible even at fast game speed. Off = instant snap like before.")]
+    public bool animateAutoWires = true;
+    [Tooltip("Real seconds the hover ring converges on the branch before the wire goes on.")]
+    public float wireAnimHoverSecs = 0.6f;
+    [Tooltip("Real seconds the branch takes to bend to its target — the slow, visible part.")]
+    public float wireAnimRotateSecs = 2.0f;
+    [Tooltip("Real seconds the ring lingers after the bend before fading out.")]
+    public float wireAnimSettleSecs = 0.5f;
+
     [Header("Extended Care")]
     [Tooltip("Seal every auto-trim wound with cut paste immediately (same effect as the player's paste tool).")]
     public bool autoPaste = true;
@@ -80,6 +91,8 @@ public class AutoStyler : MonoBehaviour
     readonly Dictionary<int, float>   pendingWires   = new Dictionary<int, float>();
     readonly Dictionary<int, Vector3> pendingWireDir = new Dictionary<int, Vector3>();
     readonly Dictionary<int, float>   pendingPinches = new Dictionary<int, float>();
+    // nodeId → true when the pinch is silhouette containment, false when ramification
+    readonly Dictionary<int, bool>    pendingPinchSilhouette = new Dictionary<int, bool>();
 
     // nodeId → in-game day when wireSetProgress first reached 1.0 (gold)
     readonly Dictionary<int, float>   wireGoldDay    = new Dictionary<int, float>();
@@ -88,6 +101,27 @@ public class AutoStyler : MonoBehaviour
     float pendingDefoliateDay = -1f;
     // Year of the last auto-defoliation (enforces defoliateMinIntervalYears)
     int   lastDefoliateYear   = -999;
+
+    // ── Wire animation state ──────────────────────────────────────────────────
+    // Auto-wires play one at a time: Hover (ring converges) → Rotate (slow bend,
+    // real seconds) → Settle (ring fades). Driven by Time.deltaTime so the pace is
+    // identical at any game speed.
+
+    enum WireAnimPhase { Hover, Rotate, Settle }
+
+    class WireAnim
+    {
+        public int           nodeId;
+        public Vector3       targetDir;
+        public HashSet<int>  trackingSet;
+        public Vector3       startDir;
+        public WireAnimPhase phase;
+        public float         phaseTime;
+    }
+
+    readonly Queue<WireAnim> wireAnimQueue = new Queue<WireAnim>();
+    readonly HashSet<int>    queuedWireIds = new HashSet<int>();   // queued or animating
+    WireAnim activeWireAnim;
 
     [Tooltip("In-game days after a wire turns gold before AutoStyler removes it.")]
     public float unwireDelayDays = 20f;
@@ -148,8 +182,10 @@ public class AutoStyler : MonoBehaviour
         skeleton.OnNewGrowingSeason -= HandleNewGrowingSeason;
         GameManager.OnMonthChanged  -= HandleMonthChanged;
         pendingTrims.Clear(); pendingWires.Clear(); pendingWireDir.Clear(); pendingPinches.Clear();
+        pendingPinchSilhouette.Clear();
         wireGoldDay.Clear();
         pendingDefoliateDay = -1f;
+        wireAnimQueue.Clear(); queuedWireIds.Clear(); activeWireAnim = null;
         skeleton.depthsPerYearMult = 1f;
     }
 
@@ -167,7 +203,76 @@ public class AutoStyler : MonoBehaviour
         // toggling the Inspector checkbox mid-game takes effect immediately.
         skeleton.depthsPerYearMult = (autoStyleEnabled && fastConverge) ? 2f : 1f;
         UpdatePendingActions();
+        UpdateWireAnimation();
         RemoveSetWires();
+    }
+
+    // ── Wire Animation ────────────────────────────────────────────────────────
+
+    void UpdateWireAnimation()
+    {
+        if (activeWireAnim == null && wireAnimQueue.Count > 0)
+        {
+            activeWireAnim = wireAnimQueue.Dequeue();
+            var start = FindNodeById(activeWireAnim.nodeId);
+            if (start == null || start.isDead || start.isTrimmed || start.hasWire)
+            { queuedWireIds.Remove(activeWireAnim.nodeId); activeWireAnim = null; return; }
+            activeWireAnim.startDir  = start.growDirection;
+            activeWireAnim.phase     = WireAnimPhase.Hover;
+            activeWireAnim.phaseTime = 0f;
+        }
+        if (activeWireAnim == null) return;
+
+        var node = FindNodeById(activeWireAnim.nodeId);
+        if (node == null || node.isDead || node.isTrimmed)
+        { queuedWireIds.Remove(activeWireAnim.nodeId); activeWireAnim = null; return; }
+
+        // Real time on purpose — the animation pace is identical at any game speed.
+        activeWireAnim.phaseTime += Time.deltaTime;
+
+        switch (activeWireAnim.phase)
+        {
+            case WireAnimPhase.Hover:
+                if (activeWireAnim.phaseTime >= wireAnimHoverSecs)
+                {
+                    // Coil goes on at the branch's current angle; the bend follows.
+                    skeleton.WireNode(node, activeWireAnim.targetDir);
+                    node.wireSetSpeedMult = EffectiveWireSpeedMult;
+                    activeWireAnim.phase     = WireAnimPhase.Rotate;
+                    activeWireAnim.phaseTime = 0f;
+                }
+                break;
+
+            case WireAnimPhase.Rotate:
+            {
+                float t     = Mathf.Clamp01(activeWireAnim.phaseTime / Mathf.Max(0.01f, wireAnimRotateSecs));
+                float eased = Mathf.SmoothStep(0f, 1f, t);
+                Vector3 want = Vector3.Slerp(activeWireAnim.startDir, activeWireAnim.targetDir, eased).normalized;
+                // Incremental delta each frame keeps descendants consistent even while the
+                // tree is actively growing around the animation.
+                Quaternion delta = Quaternion.FromToRotation(node.growDirection, want);
+                node.growDirection = want;
+                skeleton.RotateAndPropagateDescendants(node, delta, null);
+                skeleton.meshBuilder?.SetDirty();
+                if (t >= 1f)
+                {
+                    activeWireAnim.trackingSet.Add(node.id);
+                    activeWireAnim.phase     = WireAnimPhase.Settle;
+                    activeWireAnim.phaseTime = 0f;
+                    LogWireApplied(node, activeWireAnim.targetDir, activeWireAnim.trackingSet);
+                    Log($"[AutoStyle] Wire bent node={node.id}");
+                }
+                break;
+            }
+
+            case WireAnimPhase.Settle:
+                if (activeWireAnim.phaseTime >= wireAnimSettleSecs)
+                {
+                    queuedWireIds.Remove(activeWireAnim.nodeId);
+                    activeWireAnim = null;
+                }
+                break;
+        }
     }
 
     void UpdatePendingActions()
@@ -183,11 +288,14 @@ public class AutoStyler : MonoBehaviour
                 if (now >= pendingTrims[id])
                 {
                     Log($"[AutoStyle] Trim fired node={id}");
+                    float trimAz = GetBranchAzimuth(n);
                     var cutSite = n.parent;   // TrimNode wounds the parent — capture before the cut
                     skeleton.TrimNode(n);
+                    CareLog.Add("Trim", $"Removed branch at {trimAz:F0}° — no open slot in its height band", id);
                     if (autoPaste && cutSite != null && cutSite.hasWound && !cutSite.pasteApplied)
                     {
                         skeleton.ApplyPaste(cutSite);
+                        CareLog.Add("Paste", "Sealed the fresh cut with paste", cutSite.id);
                         Log($"[AutoStyle] Paste applied to cut site node={cutSite.id}");
                     }
                     pendingTrims.Remove(id);
@@ -222,8 +330,18 @@ public class AutoStyler : MonoBehaviour
             foreach (int id in new List<int>(pendingPinches.Keys))
             {
                 var n = FindNodeById(id);
-                if (n == null || n.isDead || n.isTrimmed || !n.isTerminal) { pendingPinches.Remove(id); continue; }
-                if (now >= pendingPinches[id]) { Log($"[AutoStyle] Pinch fired node={id}"); skeleton.PinchNode(n); pendingPinches.Remove(id); }
+                if (n == null || n.isDead || n.isTrimmed || !n.isTerminal)
+                { pendingPinches.Remove(id); pendingPinchSilhouette.Remove(id); continue; }
+                if (now >= pendingPinches[id])
+                {
+                    Log($"[AutoStyle] Pinch fired node={id}");
+                    skeleton.PinchNode(n);
+                    bool silhouette = !pendingPinchSilhouette.TryGetValue(id, out bool s) || s;
+                    CareLog.Add("Pinch", silhouette
+                        ? "Pinched a tip past the silhouette — containing the outline"
+                        : "Pinched a matured shoot to force division (ramification)", id);
+                    pendingPinches.Remove(id); pendingPinchSilhouette.Remove(id);
+                }
             }
         }
     }
@@ -271,6 +389,7 @@ public class AutoStyler : MonoBehaviour
         if (leaves == null) return;
         leaves.DefoliateAll();
         lastDefoliateYear = GameManager.year;
+        CareLog.Add("Defoliate", $"Defoliated {tips} tips to force finer back-budding and light the interior");
         Debug.Log($"[AutoStyle] Defoliated — {tips} tips ≥ threshold {defoliateThreshold} | year={GameManager.year}");
     }
 
@@ -297,6 +416,7 @@ public class AutoStyler : MonoBehaviour
         var prev = potSoil.potSize;
         potSoil.potSize = target;
         potSoil.ApplyPotSize(skeleton.GetRootAreaTransform());
+        CareLog.Add("Repot", $"Moved up to a {target} pot (tree year {treeYear}) — room for the maturing root mass");
         Debug.Log($"[AutoStyle] Pot {prev}→{target} (tree year {treeYear}) | year={GameManager.year}");
     }
 
@@ -341,6 +461,7 @@ public class AutoStyler : MonoBehaviour
                 shapedNodeIds.Add(id);
                 wireGoldDay.Remove(id);
                 toRemove.Add(id);
+                CareLog.Add("Unwire", $"Wire fully set — removed {unwireDelayDays:F0} days after gold, before it could bite", id);
                 Log($"[AutoStyle] Unwire (gold+{unwireDelayDays}d) node={id}");
             }
         }
@@ -440,6 +561,7 @@ public class AutoStyler : MonoBehaviour
         }
 
         int occ = slots.Count(s => s.assignedNodeId >= 0);
+        CareLog.Add("Season", $"Spring review — {occ}/{slots.Count} branch positions filled ({MatchPercent}% style match)");
         Log($"[AutoStyle] Slots {occ}/{slots.Count} — " +
             string.Join(" ", slots.GroupBy(s => s.state).Select(g => $"{g.Key}:{g.Count()}")) +
             $" | year={GameManager.year}");
@@ -468,7 +590,7 @@ public class AutoStyler : MonoBehaviour
             // and rotating it whips the entire tree — and everything hanging off it — around
             // the soil line in one frame.
             if (n == skeleton.root) continue;
-            if (shapedNodeIds.Contains(n.id) || n.hasWire) continue;
+            if (shapedNodeIds.Contains(n.id) || n.hasWire || queuedWireIds.Contains(n.id)) continue;
             float heightNorm = (skeleton.transform.TransformPoint(n.worldPosition).y - soilY) / treeH;
             if (heightNorm < 0f) continue;
             Vector3 targetDir = WaypointDirection(NearestWaypoint(heightNorm));
@@ -490,7 +612,7 @@ public class AutoStyler : MonoBehaviour
             if (slot.assignedNodeId < 0) continue;
             var n = FindNodeById(slot.assignedNodeId);
             if (n == null || n.hasWire || n.isDead || n.isTrimmed || shapedNodeIds.Contains(n.id)) continue;
-            if (n.length <= 0.001f || pendingWires.ContainsKey(n.id)) continue;
+            if (n.length <= 0.001f || pendingWires.ContainsKey(n.id) || queuedWireIds.Contains(n.id)) continue;
             var tier = style.branchTiers[slot.tierIndex]; Vector3 targetDir = SlotTargetDirection(slot, tier);
             if (Vector3.Angle(n.growDirection, targetDir) < style.wireThresholdDeg) continue;
             pendingWires[n.id] = InGameDay() + EffectivePreviewDays; pendingWireDir[n.id] = targetDir;
@@ -530,7 +652,11 @@ public class AutoStyler : MonoBehaviour
                 count++;
             }
         }
-        if (count > 0) Log($"[AutoStyle] February — stimulated {count} empty slots (directional) | year={GameManager.year}");
+        if (count > 0)
+        {
+            CareLog.Add("BackBud", $"Encouraged buds at {count} trunk point{(count == 1 ? "" : "s")} facing empty branch positions");
+            Log($"[AutoStyle] February — stimulated {count} empty slots (directional) | year={GameManager.year}");
+        }
     }
 
     // ── Pinch Planning ────────────────────────────────────────────────────────
@@ -541,7 +667,11 @@ public class AutoStyler : MonoBehaviour
         Vector3 trunkXZ = new Vector3(skeleton.transform.position.x, 0f, skeleton.transform.position.z);
         foreach (var n in skeleton.allNodes)
         {
-            if (!n.isTerminal || n.isRoot || n.isDead || n.isTrimmed || !n.isGrowing) continue;
+            if (!n.isTerminal || n.isRoot || n.isDead || n.isTrimmed) continue;
+            // Silhouette containment targets tips that are actively extending. Ramification
+            // pinches the season's FINISHED shoots — by June most have set, and cutting the
+            // matured shoot to force division is the whole technique — so no isGrowing there.
+            if (overextendedOnly && !n.isGrowing) continue;
             if (pendingPinches.ContainsKey(n.id)) continue;
             Vector3 tipWorld = skeleton.transform.TransformPoint(n.tipPosition);
             float h = Mathf.Clamp01((tipWorld.y - soilY) / treeH);
@@ -562,6 +692,7 @@ public class AutoStyler : MonoBehaviour
                 if (n.targetLength > 0f && n.length < n.targetLength * 0.85f) continue;
             }
             pendingPinches[n.id] = InGameDay() + EffectivePreviewDays * 0.5f;
+            pendingPinchSilhouette[n.id] = overextendedOnly;
             queued++;
         }
         if (queued > 0) Log($"[AutoStyle] Pinch ({(overextendedOnly ? "silhouette" : "ramification")}) — {queued} | month={GameManager.month}");
@@ -684,6 +815,42 @@ public class AutoStyler : MonoBehaviour
         }
         GL.End();
 
+        // Active wire animation — bright ring that converges on the branch (hover), pulses
+        // through the slow bend, and fades out (settle). Recomputed from live node geometry
+        // each frame so it follows the branch as it bends.
+        if (activeWireAnim != null)
+        {
+            var wn = FindNodeById(activeWireAnim.nodeId);
+            if (wn != null)
+            {
+                Vector3 mid = skeleton.transform.TransformPoint(wn.worldPosition + wn.growDirection * (wn.length * 0.5f));
+                float baseR = Mathf.Clamp(wn.radius * 12f, 0.08f, 0.26f);
+                float r = baseR, alpha = 1f;
+                switch (activeWireAnim.phase)
+                {
+                    case WireAnimPhase.Hover:
+                        float ht = Mathf.Clamp01(activeWireAnim.phaseTime / Mathf.Max(0.01f, wireAnimHoverSecs));
+                        r = Mathf.Lerp(baseR * 3f, baseR, Mathf.SmoothStep(0f, 1f, ht));
+                        break;
+                    case WireAnimPhase.Rotate:
+                        r = baseR * (1f + 0.12f * Mathf.Sin(Time.time * 12f));
+                        break;
+                    case WireAnimPhase.Settle:
+                        alpha = 1f - Mathf.Clamp01(activeWireAnim.phaseTime / Mathf.Max(0.01f, wireAnimSettleSecs));
+                        break;
+                }
+                GL.Begin(GL.LINES); GL.Color(new Color(0.25f, 0.95f, 1f, alpha));
+                DrawCircleGL(mid, r, 20);
+                if (activeWireAnim.phase == WireAnimPhase.Rotate)
+                {
+                    // Tick showing where the branch is being pulled toward
+                    Vector3 tgt = skeleton.transform.TransformDirection(activeWireAnim.targetDir).normalized;
+                    GL.Vertex(mid); GL.Vertex(mid + tgt * baseR * 2.2f);
+                }
+                GL.End();
+            }
+        }
+
         // Pending pinches — green spike at tip (seasonal; shown when queued)
         if (pendingPinches.Count > 0)
         {
@@ -733,6 +900,20 @@ public class AutoStyler : MonoBehaviour
 
     void ApplyWire(TreeNode node, Vector3 targetLocalDir, HashSet<int> trackingSet)
     {
+        if (animateAutoWires)
+        {
+            // Queue the visible hover→bend→settle sequence; one plays at a time.
+            if (queuedWireIds.Contains(node.id)) return;
+            queuedWireIds.Add(node.id);
+            wireAnimQueue.Enqueue(new WireAnim
+            { nodeId = node.id, targetDir = targetLocalDir, trackingSet = trackingSet });
+            return;
+        }
+        ApplyWireInstant(node, targetLocalDir, trackingSet);
+    }
+
+    void ApplyWireInstant(TreeNode node, Vector3 targetLocalDir, HashSet<int> trackingSet)
+    {
         skeleton.WireNode(node, targetLocalDir);
         node.wireSetSpeedMult = EffectiveWireSpeedMult;   // auto wires set faster than player wires
         Quaternion rot = Quaternion.FromToRotation(node.growDirection, targetLocalDir);
@@ -740,6 +921,17 @@ public class AutoStyler : MonoBehaviour
         skeleton.RotateAndPropagateDescendants(node, rot, null);
         skeleton.meshBuilder?.SetDirty();
         trackingSet.Add(node.id);
+        LogWireApplied(node, targetLocalDir, trackingSet);
+    }
+
+    void LogWireApplied(TreeNode node, Vector3 targetLocalDir, HashSet<int> trackingSet)
+    {
+        Vector3 w   = skeleton.transform.TransformDirection(targetLocalDir).normalized;
+        float lean  = Vector3.Angle(w, Vector3.up);
+        float az    = (Mathf.Atan2(w.x, w.z) * Mathf.Rad2Deg + 360f) % 360f;
+        CareLog.Add("Wire", trackingSet == autoWiredTrunkIds
+            ? $"Wired a trunk section toward its waypoint line ({lean:F0}° lean)"
+            : $"Wired branch toward {az:F0}° at {lean:F0}° from vertical — training to its slot", node.id);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

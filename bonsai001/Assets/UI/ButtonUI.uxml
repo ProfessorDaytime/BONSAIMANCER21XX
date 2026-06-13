@@ -54,7 +54,11 @@
         <ui:Button text="Classic Bonsai" name="RepotClassicButton" style="height: 28px; font-size: 11px; cursor: initial; margin-bottom: 2px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
         <ui:Button text="Free-Draining" name="RepotFreeDrainButton" style="height: 28px; font-size: 11px; cursor: initial; margin-bottom: 2px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
         <ui:Button text="Moisture-Retaining" name="RepotMoistButton" style="height: 28px; font-size: 11px; cursor: initial; margin-bottom: 2px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
-        <ui:Button text="Acidic (Kanuma)" name="RepotAcidicButton" style="height: 28px; font-size: 11px; cursor: initial; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
+        <ui:Button text="Acidic (Kanuma)" name="RepotAcidicButton" style="height: 28px; font-size: 11px; cursor: initial; margin-bottom: 6px; background-color: rgba(20,20,20,0.85); color: rgb(200,200,200); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
+        <!-- Optional Ishitsuki step after the repot applies -->
+        <ui:Button text="Rock: Off" name="RepotRockToggleButton" style="height: 26px; font-size: 10px; cursor: initial; margin-bottom: 6px; background-color: rgba(20,20,20,0.85); color: rgb(190,190,190); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
+        <!-- Final commit — applies soil + pot size (+ rock placement when toggled on) -->
+        <ui:Button text="Confirm Repot" name="RepotConfirmButton" style="height: 32px; font-size: 12px; cursor: initial; background-color: rgba(20,30,20,0.9); color: rgb(180,230,180); border-color: rgb(60,100,60); border-width: 2px; border-radius: 4px;" />
     </ui:VisualElement>
     <!-- Root Rake panel — visible only in RootRake state -->
     <ui:VisualElement name="RootRakePanel" style="position: absolute; left: 0; bottom: 60px; width: 170px; padding: 8px; background-color: rgba(16,24,16,0.92); border-radius: 6px; display: none; flex-direction: column;">
@@ -62,8 +66,8 @@
         <ui:Label text="Drag up/down over the soil to rake it away." style="color: rgb(160,180,140); font-size: 9px; white-space: normal; margin-bottom: 6px;" />
         <!-- Live status: soil removed % and root strand count -->
         <ui:Label name="RakeStatusLabel" text="Soil removed: 0%&#10;Root strands: 0" style="color: rgb(200,210,180); font-size: 10px; margin-bottom: 6px;" />
-        <!-- Confirm — applies repot and regenerates clean roots -->
-        <ui:Button text="Confirm Repot" name="ConfirmRepotButton" style="height: 30px; font-size: 11px; cursor: initial; margin-bottom: 3px; background-color: rgba(20,20,20,0.85); color: rgb(180,230,180); border-color: rgb(60,100,60); border-width: 1px; border-radius: 4px;" />
+        <!-- Done raking — opens the repot panel (soil / pot size / rock / confirm) -->
+        <ui:Button text="Done Raking" name="ConfirmRepotButton" style="height: 30px; font-size: 11px; cursor: initial; margin-bottom: 3px; background-color: rgba(20,20,20,0.85); color: rgb(180,230,180); border-color: rgb(60,100,60); border-width: 1px; border-radius: 4px;" />
         <!-- Cancel — returns to repot panel without raking -->
         <ui:Button text="Cancel" name="CancelRakeButton" style="height: 26px; font-size: 10px; cursor: initial; background-color: rgba(20,20,20,0.85); color: rgb(200,140,140); border-color: rgb(80,80,80); border-width: 1px; border-radius: 4px;" />
     </ui:VisualElement>
@@ -169,6 +173,15 @@
             <ui:Label text="Shaped" style="color: rgb(140,170,155); font-size: 10px;" />
             <ui:Label name="StylePanelShaped" text="—" style="color: rgb(200,200,200); font-size: 10px;" />
         </ui:VisualElement>
+    </ui:VisualElement>
+
+    <!-- ── Care Log Panel ─────────────────────────────────────────────────── -->
+    <ui:VisualElement name="CareLogPanel" style="position: absolute; left: 190px; bottom: 10px; width: 280px; max-height: 230px; padding: 10px; background-color: rgb(14,20,18); border-radius: 6px; display: none; flex-direction: column;">
+        <ui:Label text="CARE LOG" style="color: rgb(140,200,180); font-size: 11px; -unity-font-style: bold; margin-bottom: 4px;" />
+        <ui:Label name="CareLogLatest" text="—" style="color: rgb(220,220,220); font-size: 10px; white-space: normal; margin-bottom: 5px; border-bottom-color: rgb(40,60,50); border-bottom-width: 1px; padding-bottom: 4px;" />
+        <ui:ScrollView name="CareLogScroll" style="flex-grow: 1; max-height: 150px;">
+            <ui:Label name="CareLogHistory" text="" style="color: rgb(160,170,165); font-size: 9px; white-space: normal;" />
+        </ui:ScrollView>
     </ui:VisualElement>
 
     <ui:VisualElement name="RootHealthPanel" style="position: absolute; left: 10px; bottom: 10px; width: 160px; padding: 10px; background-color: rgb(18,28,18); border-radius: 6px; display: none;">

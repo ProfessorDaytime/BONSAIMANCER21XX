@@ -66,6 +66,7 @@ public class SaveNode
     public float sagAngleDeg;
     public float pendingSagDeg;   // seasonal sag still bleeding in (0 in old saves)
     public float sagDegPerDay;
+    public float elasticSagDeg;   // leaf-load droop currently applied (0 in old saves)
 
     // Dieback
     public bool isDead;
@@ -143,6 +144,7 @@ public class SaveData
     public float soilPerlite;
     public float soilDegradation;
     public float soilSaturation;
+    public float soilCompaction;   // fresh-repot compaction (0 in old saves)
     public int   soilSeasonsSinceRepot;
     public int   soilPreset;
     public int   potSize;   // PotSoil.PotSize cast to int
@@ -168,6 +170,9 @@ public class SaveData
 
     // Sibling fusion bonds
     public List<SaveFusionBond> fusionBonds = new List<SaveFusionBond>();
+
+    // Care log (auto-care actions + season narratives; empty on old saves)
+    public List<CareLogEntry> careLog = new List<CareLogEntry>();
 }
 
 /// <summary>
@@ -639,6 +644,7 @@ public static class SaveManager
             soilPerlite           = potSoil?.perlite           ?? 0f,
             soilDegradation       = potSoil?.soilDegradation   ?? 0f,
             soilSaturation        = potSoil?.saturationLevel   ?? 0f,
+            soilCompaction        = potSoil?.compaction        ?? 0f,
             soilSeasonsSinceRepot = potSoil?.seasonsSinceRepot ?? 0,
             soilPreset            = (int)(potSoil?.preset   ?? PotSoil.SoilPreset.ClassicBonsai),
             potSize               = (int)(potSoil?.potSize  ?? PotSoil.PotSize.M),
@@ -648,6 +654,8 @@ public static class SaveManager
             startMonth      = skeleton.SaveStartMonth,
             lastGrownYear   = skeleton.SaveLastGrownYear,
             isIshitsukiMode = skeleton.isIshitsukiMode,
+
+            careLog = CareLog.Snapshot(),
 
             planNX = skeleton.plantingNormal.x,
             planNY = skeleton.plantingNormal.y,
@@ -714,6 +722,7 @@ public static class SaveManager
             sagAngleDeg = node.sagAngleDeg,
             pendingSagDeg = node.pendingSagDeg,
             sagDegPerDay  = node.sagDegPerDay,
+            elasticSagDeg = node.elasticSagDeg,
 
             isDead        = node.isDead,
             isDeadwood    = node.isDeadwood,

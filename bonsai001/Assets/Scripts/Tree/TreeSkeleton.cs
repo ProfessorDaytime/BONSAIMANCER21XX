@@ -48,6 +48,20 @@ public class TreeSkeleton : MonoBehaviour
              "Spreads the droop through the season instead of snapping it on one frame.")]
     [SerializeField] float sagSpreadDays = 100f;
 
+    [Header("Leaf Weight (Elastic Sag)")]
+    [Tooltip("Mass of one leaf in the load model. The summer canopy adds load; autumn removes it.")]
+    [SerializeField] float leafMassEach = 0.01f;
+
+    [Tooltip("Maximum elastic droop (degrees) leaf weight can add to a branch. Unlike permanent " +
+             "sag this REVERSES — branches spring back up as the leaves fall.")]
+    [SerializeField] float elasticSagMaxDeg = 6f;
+
+    [Tooltip("Leaf-load/strength ratio at which elastic droop reaches its maximum.")]
+    [SerializeField] float elasticFullLoadRatio = 2f;
+
+    [Tooltip("Fastest elastic droop change per in-game day (degrees) — eases both directions.")]
+    [SerializeField] float elasticSagPerDayDeg = 1.5f;
+
     [Tooltip("How strongly accumulated sag blends the growDirection downward per spring. " +
              "1 = fully sagged at maxSagAngleDeg, 0 = no visual effect.")]
     [SerializeField] float sagBlend = 0.6f;
@@ -539,6 +553,10 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("How far the tree object lifts in world units when entering Root Prune mode.")]
     [SerializeField] float rootLiftHeight = 3.5f;
 
+    [Tooltip("Lift multiplier while raking (RootRake state) so the soil-caked root ball — " +
+             "which hangs below the trunk base — fully clears the pot rim.")]
+    [SerializeField] float rakeLiftMult = 1.5f;
+
     [Tooltip("Lift/lower animation speed (units per second).")]
     [SerializeField] float rootLiftSpeed = 4f;
 
@@ -777,6 +795,7 @@ public class TreeSkeleton : MonoBehaviour
             potSoil.perlite            = data.soilPerlite;
             potSoil.soilDegradation    = data.soilDegradation;
             potSoil.saturationLevel    = data.soilSaturation;
+            potSoil.compaction         = data.soilCompaction;
             potSoil.seasonsSinceRepot  = data.soilSeasonsSinceRepot;
             potSoil.potSize            = (PotSoil.PotSize)data.potSize;
             potSoil.ComputeDerivedProperties();
@@ -789,6 +808,7 @@ public class TreeSkeleton : MonoBehaviour
             rockPlacer.ApplyRockSize();
         }
         startYear              = data.startYear;
+        CareLog.Restore(data.careLog);
         startMonth             = data.startMonth;
         lastGrownYear          = data.lastGrownYear;
         isIshitsukiMode        = data.isIshitsukiMode;
@@ -835,6 +855,7 @@ public class TreeSkeleton : MonoBehaviour
             node.sagAngleDeg = sn.sagAngleDeg;
             node.pendingSagDeg = sn.pendingSagDeg;
             node.sagDegPerDay  = sn.sagDegPerDay;
+            node.elasticSagDeg = sn.elasticSagDeg;
             node.isDead        = sn.isDead;
             node.isDeadwood    = sn.isDeadwood;
             node.shadedSeasons = sn.shadedSeasons;
@@ -1014,6 +1035,8 @@ public class TreeSkeleton : MonoBehaviour
     /// toggle (2× while on); never serialized so it can't bake into the scene.</summary>
     [System.NonSerialized] public float depthsPerYearMult = 1f;
 
+    LeafManager leafMgr;   // cached in Awake; used by the daily elastic leaf-load pass
+
     int EffectiveDepthsPerYear => Mathf.Max(1, Mathf.RoundToInt(depthsPerYear * depthsPerYearMult));
 
     /// <summary>Maximum depth allowed to sprout children this season.</summary>
@@ -1073,6 +1096,8 @@ public class TreeSkeleton : MonoBehaviour
         var wm = GetComponent<WeedManager>();
         if (wm != null)
             wm.SetPotBounds(transform.position, weedSpawnRadius);
+
+        leafMgr = GetComponent<LeafManager>();
     }
 
     /// <summary>
@@ -1525,14 +1550,19 @@ public class TreeSkeleton : MonoBehaviour
             SetBuds();
             meshBuilder.SetDirty();
 
+            // Narrative before the autosave so the summary lands in the save file.
+            LogSeasonNarrative();
+
             // Auto-save at the end of each growing season (after bud set).
             SaveManager.AutoSave(this, GetComponent<LeafManager>());
         }
 
         // TreeOrient lowers the tree so you orient at working height, not suspended in the air.
-        // RootPrune and RockPlace still lift. Everything else grounds the tree.
-        bool inRootMode = state == GameState.RootPrune || state == GameState.RockPlace;
-        liftTarget = inRootMode ? rootLiftHeight : 0f;
+        // RootPrune, RockPlace and RootRake still lift. Everything else grounds the tree.
+        bool inRootMode = state == GameState.RootPrune || state == GameState.RockPlace ||
+                          state == GameState.RootRake;
+        float liftHeight = state == GameState.RootRake ? rootLiftHeight * rakeLiftMult : rootLiftHeight;
+        liftTarget = inRootMode ? liftHeight : 0f;
         if (meshBuilder.renderRoots != GameManager.IsRootLiftActive(state))
         {
             meshBuilder.renderRoots = inRootMode;
@@ -1560,6 +1590,46 @@ public class TreeSkeleton : MonoBehaviour
             lastGrownYear = GameManager.year;
             StartNewGrowingSeason();
         }
+    }
+
+    /// <summary>
+    /// Plain-English season summary (PLAN item D): overall condition plus the most
+    /// impactful positive and negative factors, logged to the CareLog at season end.
+    /// </summary>
+    void LogSeasonNarrative()
+    {
+        int   living = 0, wounds = 0, fungal = 0;
+        float healthSum = 0f;
+        foreach (var n in allNodes)
+        {
+            if (n.isRoot || n.isTrimmed || n.isDead) continue;
+            living++; healthSum += n.health;
+            if (n.hasWound && !n.pasteApplied) wounds++;
+            if (n.fungalLoad > 0.3f) fungal++;
+        }
+        float avgHealth = living > 0 ? healthSum / living : 1f;
+
+        string mood = avgHealth >= 0.85f ? "The tree is thriving"
+                    : avgHealth >= 0.60f ? "The tree is doing well"
+                    : avgHealth >= 0.40f ? "The tree is under stress"
+                    :                      "The tree is struggling";
+
+        var parts = new List<string> { mood };
+
+        // One positive, then the worst negatives (capped so it stays 2–3 sentences)
+        if      (nutrientReserve >= 1.0f) parts.Add("it heads into autumn well fed");
+        else if (soilMoisture    >= 0.45f) parts.Add($"moisture has stayed comfortable at {soilMoisture * 100f:F0}%");
+
+        if (treeInDanger)                      parts.Add("it is in DANGER — another critical season could kill it");
+        if (wounds > 0)                        parts.Add($"{wounds} open wound{(wounds == 1 ? " is" : "s are")} draining health — paste would help");
+        if (fungal > 0 && parts.Count < 4)     parts.Add($"{fungal} branch{(fungal == 1 ? " carries" : "es carry")} a fungal load worth watching");
+        if (soilMoisture < 0.3f && parts.Count < 4) parts.Add("the soil has been running dry");
+        if (IsPotBound() && parts.Count < 4)   parts.Add("roots are pressing the pot walls — a repot is due");
+
+        string narrative = parts.Count > 1
+            ? parts[0] + " — " + string.Join("; ", parts.GetRange(1, parts.Count - 1)) + "."
+            : parts[0] + ".";
+        CareLog.Add("Season", narrative);
     }
 
     /// <summary>Taper multiplier (0–1) based on day of year vs species slow/stop window.</summary>
@@ -1955,13 +2025,17 @@ public class TreeSkeleton : MonoBehaviour
             {
                 if (currentBranchCount >= maxBranchNodes) continue;  // hard cap reached
 
-                // Bud break — destroy the dormant bud GameObject
+                // Bud break — hand the dormant bud GameObject to LeafManager, which keeps
+                // it visible (swelling) until its leaf cluster finishes unfurling. Falls
+                // back to immediate destroy when no LeafManager is present.
                 if (terminal.hasBud)
                 {
                     terminal.hasBud = false;
                     if (budObjects.TryGetValue(terminal.id, out var budGo))
                     {
-                        Destroy(budGo);
+                        var lm = GetComponent<LeafManager>();
+                        if (lm != null && budGo != null) lm.BeginBudOpen(terminal.id, budGo);
+                        else if (budGo != null)          Destroy(budGo);
                         budObjects.Remove(terminal.id);
                     }
                 }
@@ -2377,11 +2451,52 @@ public class TreeSkeleton : MonoBehaviour
             any = true;
         }
 
+        // Elastic leaf-load droop: the target angle tracks the CURRENT canopy weight on
+        // each branch, so summer leaves ease branches down and autumn leaf-fall lets them
+        // spring back up by the same amount. Rate-capped per day in both directions.
+        if (leafMgr != null && elasticSagMaxDeg > 0f)
+        {
+            ComputeLeafLoad(root);
+            Vector3 upLocal = transform.InverseTransformDirection(Vector3.up).normalized;
+            foreach (var node in allNodes)
+            {
+                if (node.isRoot || node.isTrimmed || node.isDead || node.isDeadwood) continue;
+                if (node.leafLoad <= 0f && node.elasticSagDeg <= 0f) continue;   // winter no-op
+
+                float seasonsAlive = Mathf.Max(1f, GameManager.year - node.birthYear);
+                float maturity     = Mathf.Clamp01(seasonsAlive / matureAgeSeasons);
+                float strength     = Mathf.Max(node.radius * node.radius * node.radius * woodHardness * maturity, 0.0001f);
+
+                float target = elasticSagMaxDeg *
+                               Mathf.Clamp01(node.leafLoad / strength / Mathf.Max(0.01f, elasticFullLoadRatio));
+                float delta  = Mathf.Clamp(target - node.elasticSagDeg, -elasticSagPerDayDeg, elasticSagPerDayDeg);
+                if (Mathf.Abs(delta) < 0.01f) continue;
+
+                node.growDirection = Vector3.RotateTowards(
+                    node.growDirection, delta > 0f ? downLocal : upLocal,
+                    Mathf.Abs(delta) * Mathf.Deg2Rad, 0f).normalized;
+                node.elasticSagDeg += delta;
+                any = true;
+            }
+        }
+
         if (any)
         {
             PropagatePositions(root);
             meshBuilder?.SetDirty();
         }
+    }
+
+    /// <summary>Bottom-up leaf mass per subtree (leafLoad), from live cluster counts.</summary>
+    float ComputeLeafLoad(TreeNode node)
+    {
+        float sum = !node.isRoot && leafMgr != null
+            ? leafMgr.NodeLeafCount(node.id) * leafMassEach
+            : 0f;
+        foreach (var child in node.children)
+            sum += ComputeLeafLoad(child);
+        node.leafLoad = sum;
+        return sum;
     }
 
     /// <summary>Roots anchored to the ground or a rock (everything except air-layer roots,
@@ -2670,6 +2785,7 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     public void ClearForRestart()
     {
+        CareLog.Clear();
         GetComponent<LeafManager>()?.ClearAllLeaves();
         foreach (var go in budObjects.Values)    if (go != null) Destroy(go);
         budObjects.Clear();
@@ -2749,6 +2865,7 @@ public class TreeSkeleton : MonoBehaviour
             r.isRoot        = true;
         }
 
+        CareLog.Add("Plant", $"Planted a new {SpeciesName} seed");
         Debug.Log($"[Tree] InitTree (seed) year={GameManager.year} | trunk growing | initialRoots={roots}");
 
         RecalculateRadii(root);

@@ -209,15 +209,20 @@ public class PotSoil : MonoBehaviour
         nutrientCapacity = Mathf.Lerp(1.2f, 2.0f, rawNutrient);
     }
 
-    /// <summary>
-    /// Effective drainage rate accounting for compaction.
-    /// </summary>
-    public float EffectiveDrainageRate => drainageRate * (1f - soilDegradation * 0.70f);
+    [Tooltip("0–1: fresh-repot compaction around the root ball — the un-raked fraction of the " +
+             "old soil, set by the rake mini-game at confirm. Penalizes drainage and aeration, " +
+             "then loosens over the first season as roots and watering work it open.")]
+    [Range(0f, 1f)] public float compaction = 0f;
 
     /// <summary>
-    /// Effective water retention accounting for compaction (degraded soil holds more water).
+    /// Effective drainage rate accounting for degradation and fresh-repot compaction.
     /// </summary>
-    public float EffectiveWaterRetention => Mathf.Min(1f, waterRetention + soilDegradation * 0.25f);
+    public float EffectiveDrainageRate => drainageRate * (1f - soilDegradation * 0.70f) * (1f - compaction * 0.5f);
+
+    /// <summary>
+    /// Effective water retention accounting for degradation and compaction (both hold more water).
+    /// </summary>
+    public float EffectiveWaterRetention => Mathf.Min(1f, waterRetention + soilDegradation * 0.25f + compaction * 0.15f);
 
     /// <summary>
     /// Drain rate multiplier applied to TreeSkeleton.drainRatePerDay.
@@ -234,6 +239,9 @@ public class PotSoil : MonoBehaviour
     public void SeasonTick(TreeSkeleton skeleton)
     {
         seasonsSinceRepot++;
+
+        // Fresh-repot compaction loosens fast — mostly gone after one season
+        compaction = Mathf.Max(0f, compaction - 0.6f);
 
         // Degradation — slows after a few seasons as the mix stabilises
         float degradeThisSeason = baseDegradeRate;

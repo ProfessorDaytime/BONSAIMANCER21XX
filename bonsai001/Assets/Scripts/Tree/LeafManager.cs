@@ -169,7 +169,11 @@ public class LeafManager : MonoBehaviour
         // Check for new terminal nodes created mid-season (chain propagation).
         // SpawnSpringLeaves skips nodes already in the dict, so this is safe every frame.
         if (isGrowingSeason)
+        {
             SpawnSpringLeaves();
+            ProcessUnfurls();
+        }
+        UpdateOpeningBuds();
 
         if (isLeafFall)
         {
@@ -231,6 +235,106 @@ public class LeafManager : MonoBehaviour
         return Mathf.Clamp01(sum / count / Mathf.Max(1f, cap));
     }
 
+    // ── Bud-opening / staged unfurl (PLAN item E) ─────────────────────────────
+    // A cluster no longer pops in whole: the first leaf (pair for opposite-bud
+    // species) emerges at spawn, the rest unfurl one batch every
+    // leafUnfurlIntervalDays. The autumn bud GameObject is handed over by
+    // TreeSkeleton at bud break and lingers — swelling — until its cluster
+    // finishes unfurling (or the fallback timer cleans it up).
+
+    [Tooltip("In-game days between successive leaves unfurling from one opening bud.")]
+    [SerializeField] float leafUnfurlIntervalDays = 1.5f;
+
+    [Tooltip("Fallback: in-game days an opening bud may linger before it is removed even " +
+             "if its cluster never finished unfurling (trimmed node, ineligible terminal…).")]
+    [SerializeField] float budLingerMaxDays = 8f;
+
+    class PendingUnfurl { public TreeNode node; public int remaining; public float nextDay; }
+    class OpeningBud   { public GameObject go; public float bornDay; public Vector3 baseScale; }
+
+    readonly List<PendingUnfurl>         pendingUnfurls = new List<PendingUnfurl>();
+    readonly Dictionary<int, OpeningBud> openingBuds    = new Dictionary<int, OpeningBud>();
+
+    static float DayNow() => GameManager.dayOfYear + GameManager.year * 366f;
+
+    int UnfurlBatchSize =>
+        skeleton.species != null && skeleton.species.budType == BudType.Opposite ? 2 : 1;
+
+    /// <summary>TreeSkeleton hands the dormant bud GameObject here at bud break instead of
+    /// destroying it, so it can visibly swell while its leaves unfurl.</summary>
+    public void BeginBudOpen(int nodeId, GameObject budGo)
+    {
+        if (budGo == null) return;
+        if (openingBuds.TryGetValue(nodeId, out var old) && old.go != null) Destroy(old.go);
+        openingBuds[nodeId] = new OpeningBud
+        { go = budGo, bornDay = DayNow(), baseScale = budGo.transform.localScale };
+    }
+
+    void FinishBudOpen(int nodeId)
+    {
+        if (nodeId < 0) return;
+        if (openingBuds.TryGetValue(nodeId, out var b))
+        {
+            if (b.go != null) Destroy(b.go);
+            openingBuds.Remove(nodeId);
+        }
+    }
+
+    void ProcessUnfurls()
+    {
+        if (pendingUnfurls.Count == 0) return;
+        float now = DayNow();
+        for (int i = pendingUnfurls.Count - 1; i >= 0; i--)
+        {
+            var p = pendingUnfurls[i];
+            var n = p.node;
+            if (n == null || n.isTrimmed || n.isDead || !nodeLeaves.TryGetValue(n.id, out var list))
+            {
+                pendingUnfurls.RemoveAt(i);
+                FinishBudOpen(n != null ? n.id : -1);
+                continue;
+            }
+            if (now < p.nextDay) continue;
+
+            int batch = Mathf.Min(UnfurlBatchSize, p.remaining);
+            for (int b = 0; b < batch; b++) list.Add(SpawnSingleLeaf(n));
+            listDirty   = true;
+            p.remaining -= batch;
+            p.nextDay    = now + leafUnfurlIntervalDays * Random.Range(0.7f, 1.3f);
+            if (p.remaining <= 0)
+            {
+                pendingUnfurls.RemoveAt(i);
+                FinishBudOpen(n.id);
+            }
+        }
+    }
+
+    void UpdateOpeningBuds()
+    {
+        if (openingBuds.Count == 0) return;
+        float now = DayNow();
+        List<int> done = null;
+        foreach (var kv in openingBuds)
+        {
+            var b = kv.Value;
+            if (b.go == null)
+            {
+                if (done == null) done = new List<int>();
+                done.Add(kv.Key); continue;
+            }
+            float age = now - b.bornDay;
+            if (age > budLingerMaxDays)
+            {
+                Destroy(b.go);
+                if (done == null) done = new List<int>();
+                done.Add(kv.Key); continue;
+            }
+            // Swell to ~1.6× over the first two in-game days, then hold while leaves unfurl
+            b.go.transform.localScale = b.baseScale * (1f + 0.6f * Mathf.Clamp01(age / 2f));
+        }
+        if (done != null) foreach (int id in done) openingBuds.Remove(id);
+    }
+
     // ── Spawning ──────────────────────────────────────────────────────────────
 
     void SpawnSpringLeaves()
@@ -266,8 +370,31 @@ public class LeafManager : MonoBehaviour
             ? Random.Range(leavesPerNode - leavesPerNodeRange, leavesPerNode + leavesPerNodeRange + 1)
             : leavesPerNode;
         count = Mathf.Max(1, count);
-        var list = new List<GameObject>(count);
 
+        // Register the cluster immediately (the bud gate checks nodeLeaves), spawn the
+        // first batch now, and queue the rest to unfurl over the following days.
+        var list = new List<GameObject>(count);
+        nodeLeaves[node.id] = list;
+        listDirty = true;
+
+        int firstBatch = Mathf.Min(UnfurlBatchSize, count);
+        for (int i = 0; i < firstBatch; i++)
+            list.Add(SpawnSingleLeaf(node));
+
+        int remaining = count - firstBatch;
+        if (remaining > 0)
+            pendingUnfurls.Add(new PendingUnfurl
+            {
+                node      = node,
+                remaining = remaining,
+                nextDay   = DayNow() + leafUnfurlIntervalDays * Random.Range(0.7f, 1.3f),
+            });
+        else
+            FinishBudOpen(node.id);   // single-leaf cluster — bud has nothing left to do
+    }
+
+    GameObject SpawnSingleLeaf(TreeNode node)
+    {
         // Build a world-space perpendicular basis from the branch direction so we can
         // spread leaves outward from the branch axis with the stem origin on the branch.
         Vector3 branchWorldDir = skeleton.transform.TransformDirection(node.growDirection).normalized;
@@ -275,56 +402,54 @@ public class LeafManager : MonoBehaviour
         if (perp.sqrMagnitude < 0.01f) perp = Vector3.Cross(branchWorldDir, Vector3.right);
         perp.Normalize();
 
-        for (int i = 0; i < count; i++)
+        // Place the stem origin ON the branch: scatter back along the segment
+        // (0–80% of its length from tip) with only a tiny perpendicular wobble.
+        float backFraction   = Random.Range(0f, 0.8f);
+        Vector3 backOffset   = -node.growDirection * (backFraction * Mathf.Min(node.length, node.targetLength));
+        Vector3 sideJitter   = Random.insideUnitSphere * clusterRadius * 0.1f;
+        sideJitter          -= Vector3.Project(sideJitter, node.growDirection);  // keep perpendicular only
+        Vector3 offset       = backOffset + sideJitter;
+
+        // Orient leaf outward from branch: random azimuth around branch axis,
+        // high elevation (mostly perpendicular) so leaves spread sideways, then
+        // blend toward Vector3.down to simulate gravity droop.
+        float   azimuth   = Random.Range(0f, 360f);
+        float   elevation = Random.Range(55f, 88f);
+        Vector3 outPerp   = Quaternion.AngleAxis(azimuth, branchWorldDir) * perp;
+        Vector3 outDir    = Quaternion.AngleAxis(-elevation, Vector3.Cross(branchWorldDir, outPerp).normalized) * branchWorldDir;
+        float   droop     = Random.Range(0.15f, 0.55f);
+        outDir            = Vector3.Lerp(outDir, Vector3.down, droop).normalized;
+        Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up)
+                            * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
+
+        var go = Instantiate(leafPrefab, skeleton.transform);
+        go.transform.localPosition = node.tipPosition + offset;
+        go.transform.rotation      = rot;
+        go.transform.localScale    = Vector3.zero;  // Leaf.Update() scales it in
+
+        // Apply shared material to all renderers in the prefab hierarchy
+        foreach (var r in go.GetComponentsInChildren<Renderer>())
+            r.sharedMaterial = leafMat;
+
+        // Use existing Leaf component if the prefab already has one (avoids duplicate
+        // components fighting each other — the second one would reset localPosition every frame)
+        var leaf          = go.GetComponent<Leaf>() ?? go.AddComponent<Leaf>();
+        leaf.ownerNode    = node;
+        leaf.tipOffset    = offset;
+        leaf.targetScale  = Vector3.one * seasonLeafScale;
+        if (skeleton.species != null)
         {
-            // Place the stem origin ON the branch: scatter back along the segment
-            // (0–80% of its length from tip) with only a tiny perpendicular wobble.
-            float backFraction   = Random.Range(0f, 0.8f);
-            Vector3 backOffset   = -node.growDirection * (backFraction * Mathf.Min(node.length, node.targetLength));
-            Vector3 sideJitter   = Random.insideUnitSphere * clusterRadius * 0.1f;
-            sideJitter          -= Vector3.Project(sideJitter, node.growDirection);  // keep perpendicular only
-            Vector3 offset       = backOffset + sideJitter;
-
-            // Orient leaf outward from branch: random azimuth around branch axis,
-            // high elevation (mostly perpendicular) so leaves spread sideways, then
-            // blend toward Vector3.down to simulate gravity droop.
-            float   azimuth   = Random.Range(0f, 360f);
-            float   elevation = Random.Range(55f, 88f);
-            Vector3 outPerp   = Quaternion.AngleAxis(azimuth, branchWorldDir) * perp;
-            Vector3 outDir    = Quaternion.AngleAxis(-elevation, Vector3.Cross(branchWorldDir, outPerp).normalized) * branchWorldDir;
-            float   droop     = Random.Range(0.15f, 0.55f);
-            outDir            = Vector3.Lerp(outDir, Vector3.down, droop).normalized;
-            Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up)
-                                * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
-
-            var go = Instantiate(leafPrefab, skeleton.transform);
-            go.transform.localPosition = node.tipPosition + offset;
-            go.transform.rotation      = rot;
-            go.transform.localScale    = Vector3.zero;  // Leaf.Update() scales it in
-
-            // Apply shared material to all renderers in the prefab hierarchy
-            foreach (var r in go.GetComponentsInChildren<Renderer>())
-                r.sharedMaterial = leafMat;
-
-            // Use existing Leaf component if the prefab already has one (avoids duplicate
-            // components fighting each other — the second one would reset localPosition every frame)
-            var leaf          = go.GetComponent<Leaf>() ?? go.AddComponent<Leaf>();
-            leaf.ownerNode    = node;
-            leaf.tipOffset    = offset;
-            leaf.targetScale  = Vector3.one * seasonLeafScale;
-            if (skeleton.species != null)
-                leaf.springColor = skeleton.species.leafSpringColor;
-
-            leaf.ApplyDeformation(
-                twistDeg:     Random.Range(-28f, 28f),
-                curlFraction: Random.Range(0.05f, 0.30f)
-            );
-
-            list.Add(go);
+            leaf.springColor = skeleton.species.leafSpringColor;
+            leaf.growDays    = skeleton.species.leafGrowDays;
+            leaf.youngTint   = skeleton.species.leafBudBreakColor;
         }
 
-        nodeLeaves[node.id] = list;
-        listDirty = true;
+        leaf.ApplyDeformation(
+            twistDeg:     Random.Range(-28f, 28f),
+            curlFraction: Random.Range(0.05f, 0.30f)
+        );
+
+        return go;
     }
 
     /// <summary>
@@ -363,6 +488,10 @@ public class LeafManager : MonoBehaviour
     /// Used by TreeInteraction to filter hover candidates.
     /// </summary>
     public bool NodeHasLeaves(int nodeId) => nodeLeaves.ContainsKey(nodeId);
+
+    /// <summary>Live leaf count on a node — used by TreeSkeleton's elastic leaf-load sag.</summary>
+    public int NodeLeafCount(int nodeId) =>
+        nodeLeaves.TryGetValue(nodeId, out var list) ? list.Count : 0;
 
     /// <summary>
     /// Strips the leaf cluster from a single node (fall animation).
@@ -431,6 +560,11 @@ public class LeafManager : MonoBehaviour
         nodeLeaves.Clear();
         allLeaves.Clear();
         listDirty = false;
+
+        pendingUnfurls.Clear();
+        foreach (var b in openingBuds.Values)
+            if (b.go != null) Destroy(b.go);
+        openingBuds.Clear();
     }
 
     /// <summary>
