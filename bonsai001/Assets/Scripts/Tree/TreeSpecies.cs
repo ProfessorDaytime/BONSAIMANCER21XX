@@ -152,6 +152,12 @@ public class TreeSpecies : ScriptableObject
              "Dense-leafed species (maple) can push 1.5+; sparse species (literati pine) stay closer to 1.0.")]
     public float maxEnergyMultiplier = 1.5f;
 
+    [Tooltip("Whether this species tolerates full defoliation (a broadleaf ramification technique).\n" +
+             "TRUE for deciduous broadleaf (maple, elm, ficus…). FALSE for conifers — defoliating a " +
+             "pine/spruce/juniper/cedar can kill it. Gates the AutoStyler's auto-defoliation pass; " +
+             "the player's manual Defoliate tool is unaffected.")]
+    public bool canDefoliate = true;
+
     // ── Soil Preferences ──────────────────────────────────────────────────────
 
     [Header("Soil Preferences")]

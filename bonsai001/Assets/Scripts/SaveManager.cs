@@ -101,6 +101,11 @@ public class SaveNode
     public float wnX, wnY, wnZ;
     public float woundAge;
     public bool  pasteApplied;
+
+    // Bark surface scars
+    public bool  hadBudScar;
+    public float budScarAge;
+    public bool  hadWoundScar;
 }
 
 [System.Serializable]
@@ -750,6 +755,9 @@ public static class SaveManager
             wnX = node.woundFaceNormal.x, wnY = node.woundFaceNormal.y, wnZ = node.woundFaceNormal.z,
             woundAge     = node.woundAge,
             pasteApplied = node.pasteApplied,
+            hadBudScar   = node.hadBudScar,
+            budScarAge   = node.budScarAge,
+            hadWoundScar = node.hadWoundScar,
         };
     }
 }

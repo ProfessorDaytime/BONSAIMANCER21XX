@@ -718,7 +718,11 @@ public class TreeInteraction : MonoBehaviour
     void HandleTrimHover()
     {
         Ray      ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        TreeNode node = PickNode(ray, out _, n => n != skeleton.root && !n.isRoot);
+        // Branches as always, plus EXPOSED roots — Ishitsuki rock cables (isTrainingWire)
+        // and air-layer roots — so the player can trim a root on the rock like a branch.
+        // (Buried pot roots stay out of the clippers; those are managed in RootPrune mode.)
+        TreeNode node = PickNode(ray, out _,
+            n => n != skeleton.root && (!n.isRoot || n.isTrainingWire || n.isAirLayerRoot));
         if (node != null)
         {
             SetHighlight(node, HighlightMode.TrimSubtree);

@@ -1,20 +1,47 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-04-29 · Items 1–34 complete + Branch Saw + Bark Shader System + Branch Promotion Advisor + Tutorial/Seasonal Tooltips + Calendar (all 6 parts) + Idle Camera Orbit + Autosave + Root Containment + Repot Root Raking + Pot & Rock Size Selection + Sibling Branch Fusion + Bark Texture System + AutoStyler (slot-based plan engine, Moyogi & S-Curve, GL intent indicators, Style Panel UI, auto-unwire gold timer, rainbow root debug); priority queue items 1–18 done; many backlog items also confirmed complete
+Last updated: 2026-06-13 · Full Auto-Style care cycle (A–G), root realism (J), Ishitsuki care, and repot/rake rework all complete this phase. See "Completed This Phase" below for the full list and the Completed Items Log at the bottom for prior phases.
 
 ---
 
-## Priority Queue
+## Active Priority Queue
 
-Ordered by current priority. Work top-to-bottom.
+Pending work in recommended priority order. Detailed specs are under "Pending — Detailed Specs" below. (This ordering is a recommendation — reshuffle freely.)
 
-### ✅ DONE — Auto-Style Engine (Moyogi / S-Curve)
-
-Plan-based slot engine. `StyleDefinition` ScriptableObject (waypoints, tiers, canopy curve, ramification). `AutoStyler.cs` greedy slot matching, intent-based GL indicators (trim X / wire circle / pinch spike, always visible year-round), seasonal schedule (spring slots+trunk, Feb back-bud, Apr/May pinch silhouette, Jun ramification, Oct scaffold wires). Auto-unwire after `unwireDelayDays` (20d) from gold. Style Panel in Stats UI (match %, slot breakdown E/G/T/Est/M, pending counts). Rainbow root debug overlay on by default. See §44 SYSTEMS.md.
+| # | Item | Status / notes |
+|---|------|----------------|
+| 1 | **H — Item Selection Menus** | One reusable catalog (pots / rocks / moss & grass / tables). Framework buildable now; art content dropped in later. |
+| 2 | **20 — Multi-Tree / Quick-Start** | Multiple trees per session; auto-generate an aged tree. Larger architectural feature. |
+| 3 | **19 — Gamification & Tutorial Progression** | Needs a design pass first. |
+| 4 | **21 — Decoration System** | Overlaps H's GroundCover/decor; fold in after H. |
+| 5 | **Backlog — Auto-Style Training Data Recorder** | AutoStyler is now stable enough; infra-only. See Backlog for the full spec. |
+| 6 | **K — Additional AutoStyler Styles** | **Lowest priority.** Blocked on user (descriptions + reference images). Chokkan / Shakan / cascade / windswept / broom / literati. |
 
 ---
 
-### 🔴 NEW — High Priority
+## Completed This Phase (Jun 2026)
+
+- **A. AutoStyler Pacing & Convergence** ✅ — directional back-bud (`preferredLateralAzimuth`), `autoStyleWireSpeedMult` 1.5×, partial-credit `MatchPercent`, `fastConverge`; + scaffold-base slot-matching fix.
+- **B. AutoStyler Extended Care** ✅ — auto-paste, late-June defoliation (`defoliateThreshold`, biennial), spring pot advancement (`potPhaseStartYears`).
+- **C. 45° Branch Cut Angle** ✅ — `useBevelCut`/`cutAngleDeg`, angled callus, `bevelCutDrainMult` heal bonus (was already implemented; verified).
+- **D. AutoStyler Care Log + Narrative** ✅ — `CareLog.cs` (persisted), templated action reasons, season-end health summary, collapsible CareLogPanel.
+- **E. Leaf Growth & Bud-Break** ✅ — leaves emerge at 15% and mature over `leafGrowDays`, staged cluster unfurl, bud swells then opens.
+- **F. Leaf Weight & Elastic Spring-Back** ✅ — leaf load in `ComputeLeafLoad`; `elasticSagDeg` eases branches down in summer and springs them back at leaf-fall.
+- **G. Repot Soil Compaction & Rake Rework** ✅ — rake-first flow, solid voxel soil ball with code-gen falling clods, unsupported-island break-off, compaction debuff + clean-sweep scoring.
+- **J. Root-on-Rock Realism** ✅ — organic curvature clamp (`rootMaxBendPerSegmentDeg`) + rock-cable corner-rounding (`SmoothRockCableStrand`) with concavity-aware surface offset; up-jut + clip-through fixed.
+- **Ishitsuki care** ✅ — AutoStyler auto-removes the rock-binding wire when set; Trim tool cuts exposed rock/air-layer roots like branches; trimmed cables stay cut.
+- **Weeds-on-rock fix** ✅ — weeds excluded from the rock footprint via the real `rockCollider` (not just the "Rock" tag).
+- **UI polish** ✅ — Care Log (top-left), Tree Health (top-right), Auto Style + Root Health all collapsible; cinematic live zoom/pan that resets per entry.
+- **Autonomous Run Loop** ✅ — `AutoRunManager.cs` hands-off record loop (Hands-Off mode, cinematic, species rotation, beauty-shot hold, loop count).
+- **I. Species Parameter Realism Pass** ✅ done 2026-06-13 — added `leafGrowDays` + `leafBudBreakColor` to all 17 species (species-specific flush speed/color), fixed Ficus's subtropical growth window (was stopping in June), added `canDefoliate` field gating the AutoStyler's auto-defoliation so conifers are never defoliated, and corrected signature colors (white-pine blue needles, Scots-pine orange bark). Justification table in `Docs/SPECIES_REALISM.md`.
+- **L. Bark Wound / Scar System** ✅ done 2026-06-13 — pruning cuts render as **dedicated callus-disc geometry** (`AddWoundDiscAt`), NOT a vertex channel — the first TEXCOORD1 attempt smeared across the trunk's welded segments and overlapped adjacent wounds (console proved 4 wounds → 1 visible). Classified by whether the branch continues: a **side cut** leaves a short bark **stub protruding** along the cut direction with the cut face on its end (`AddWoundStub`, bigger branch = bigger stub); an **end cut** caps the branch end. **Healing over seasons** (`TreeSkeleton.WoundHealProgress`, decoupled from the health drain so balance is untouched): the callus rolls in (heartwood→callus recolor + the face domes into a knob) and side-stubs are engulfed by the thickening trunk — small cuts vanish, big ones leave a lasting knob. Heal speed ∝ wound size, node vigor, cut paste, species. **Winding gotcha:** the disc winding had to be outward (`cross(v1-v0,v2-v0)` along +normal) or every disc lit from behind (dark/edge-on). Tunables: TreeSkeleton "Wound Occlusion" + TreeMeshBuilder "Pruning Scars". Hook left for jin/deadwood. `woundAge` persisted. Files: `TreeMeshBuilder`, `BarkVertexColor.shader` (wound block), `TreeSkeleton`, `TreeNode`, `SaveManager`. See memory `project_wound_disc_geometry`.
+
+---
+
+## Completed This Phase — Implementation Detail (A–G)
+
+<details>
+<summary>Full implementation notes for the completed A–G items (expand for reference).</summary>
 
 **A. AutoStyler Pacing & Convergence** ✅ done 2026-06-11
 
@@ -113,7 +140,13 @@ Shipped: every repot now enters the rake step (`IsPotBound` gate removed — tha
 - **Arcade scoring** — % soil removed vs fine-root damage: over-raking through the same cell repeatedly snaps fine roots (small health hit, visible root count drop). Clean sweep = small health bonus on the repot.
 - **Scope:** `RootRakeManager.cs` (chunk field, stroke detection, scoring), `buttonClicker.cs` (remove the IsPotBound gate), `PotSoil.cs` (compaction debuff hook), small chunk prefab or procedural mesh.
 
+</details>
+
 ---
+
+## Pending — Detailed Specs
+
+*(One spec per pending item; priority order is in the Active Priority Queue table above.)*
 
 **H. Item Selection Menus (Pots / Rocks / Moss & Grass / Tables)**
 
@@ -127,77 +160,27 @@ One reusable catalog structure for all placeable items, surfaced at different mo
 
 ---
 
-**I. Species Parameter Realism Pass** *(Fable executes on request — research-grounded data pass)*
-
-Re-derive all 17 species `.asset` values from real horticultural behaviour instead of placeholder spreads. Per species: growth rate (`baseGrowSpeed`, `depthsPerYear` — ficus fast, pines slow), water (`drainRatePerDay`, `droughtThreshold` — junipers drought-hard, maples thirsty), `wireDaysToSet` (junipers hold shape slowly ~9 months, maples set in ~3–4), wound response (`woundDrainRate`, `seasonsToHealPerUnit` — maples seal poorly at large cuts, ficus heals fast), `apicalDominance` (strong in conifers, weak in broom-style deciduous), back-budding generosity (maple/elm high, pine nearly nil), `leafGrowDays`/`leafBudBreakColor`, growth-taper windows (already roughed in), defoliation tolerance (ficus/maple yes, conifers never — should gate AutoStyler defoliation per species). Deliverable: updated assets + a short table in Docs justifying each number.
-
----
-
-**J. Root-on-Rock Realism** *(organic path done 2026-06-12; pre-grown rock cables still pending)*
-
-Reported: roots shoot out nearly horizontal then take a sharp elbow down instead of flowing smoothly (user drawing: "now" = staple-shaped, "want" = smooth arc over the blob).
-
-- ✅ **Organic roots (nebari + fill-in + organic rock growth)** — `TreeSkeleton.LimitRootBend()` caps how far a new root segment may rotate from its parent (`rootMaxBendPerSegmentDeg`, default 26°), turning the 90° out-then-down elbow into a multi-segment arc. Pure direction limit applied at the end of the root branches of `ContinuationDirection` — never moves node positions (the fragile thing per [[feedback_ishitsuki_roots]]), and only shrinks bend so it can't reintroduce the zigzag. This fixes the potted-tree screenshot the user provided.
-- ✅ **Pre-grown rock cables (`PreGrowRootsToSoil`)** done 2026-06-12 — `SmoothRockCableStrand()` rounds each cable's out-then-down elbows: endpoint-preserving weighted-Laplacian smoothing of the polyline vertices (trunk anchor + soil tip fixed), each moved vertex re-snapped onto the rock face (cast from outside inward) so it keeps hugging the rock. Safe-by-construction: smoothed positions computed first, then written back in one pass recomputing each segment's dir+length for continuity (tip[i]==base[i+1]) — never chains a node off its parent's tip mid-pass (the cascade failure mode). Runs each `PreGrowRootsToSoil` call; surface re-snap makes it a stable contraction so re-smoothing the growing cable each season doesn't over-flatten. Tunable `rockCableSmoothIterations` (default 3) on TreeSkeleton.
-
----
-
-**K. Additional AutoStyler Styles** *(discussion pending — user will provide descriptions + reference images)*
+**K. Additional AutoStyler Styles** *(LOWEST priority; discussion pending — user will provide descriptions + reference images)*
 
 Beyond Moyogi and S-Curve. Likely set: **Chokkan** (formal upright), **Shakan** (slant), **Han-Kengai / Kengai** (semi/full cascade — branch growth below rim already allowed outside the pot box), **Fukinagashi** (windswept), **Hokidachi** (broom), **Bunjin** (literati). Most are pure `StyleDefinition` assets (waypoints/tiers/silhouette), but two need small engine extensions: cascade wants height bands below the soil line (negative `heightNorm` support in tiers + silhouette), and windswept wants ASYMMETRIC slot azimuths (today slots are evenly spaced per tier — add an optional explicit per-slot azimuth list to `BranchTier`).
 
 ---
 
-*UI polish shipped 2026-06-12:* Care Log panel moved to top-left and Tree Health panel to top-right, both collapsible to their title bar (click title; `^` open, `v` collapsed). Cinematic mode now accepts live zoom (scroll) and vertical pan (MMB drag) while the rotation continues — adjustments bake into the auto-framing targets and reset on each cinematic entry.
+---
+
+**19. Gamification & Tutorial Progression** — XP/levels, achievements, and guided early-game progression. Needs a design pass before implementation.
+
+**20. Multi-Tree / Quick-Start** — multiple trees per session with per-tree save/load; auto-generate a tree at a given age with a randomised style for quick starts.
+
+**21. Decoration System** — figurines / accent plantings / ground accents placed in the scene; overlaps H's GroundCover/decor catalog, so fold in after H.
 
 ---
 
----
-
-**B. Autonomous Run Loop (Screen Record Mode)** ✅ done — `AutoRunManager.cs` (run lifecycle via Water-state InitTree, Hands-Off play mode switch, cinematic camera, species rotation list, beauty-shot hold, loop count / infinite, `resetTreeOnLoop`)
-
-A hands-off loop that boots the game, grows a tree using the Auto-Style Engine for a configured number of years, then resets and repeats — indefinitely and without any player input. Designed for unattended screen recording of full tree life-cycles or highlight reels.
-
-- **`AutoRunManager.cs`** — singleton; reads config (species, style, run duration in years, loop count or infinite). On `Start`, if `autoRunEnabled` (set via a scene flag or command-line arg), fires `BeginRun()`.
-- **Run lifecycle:** `BeginRun` → fresh `ClearForRestart` + water → `AutoStyler` enabled → `PlayModeManager` switches to Hands-Off preset (auto-water, auto-fertilize, fast timescale) → run until `GameManager.year >= startYear + runDurationYears` → `EndRun` → brief pause → `BeginRun` again.
-- **Cinematic integration** — `BeginRun` presses C to activate cinematic mode automatically; `EndRun` can optionally hold on a final beauty shot for N real seconds before restarting.
-- **Species / style rotation** — optional list of `(species, style)` pairs cycled round-robin each run so a single overnight session captures multiple species.
-- **Scope:** new `AutoRunManager.cs`, `AutoRunConfig` ScriptableObject (species list, style list, duration, loop mode, beauty-shot hold seconds), hook into `buttonClicker.OnDeadRestartClick` path and `GameManager`.
+> **Archive:** the original numbered queue items 1–18 (all done) and the Autonomous Run Loop (`AutoRunManager.cs`, done) are recorded in the sections below and in the **Completed Items Log** at the bottom of this doc.
 
 ---
 
-1. ✓ **Rock Placement — Lock UI + Cancel + Camera-Relative Controls** *(backlog)*
-2. ✓ **New Input System Migration**
-3. ✓ **Growth Season Taper** *(item 34)*
-4. ✓ **Roots → bark color over time** *(backlog)*
-5. ✓ **Branch Saw**
-6. ✓ **Pot & Rock Size Selection** *(backlog)*
-7. ✓ **Repot Root Raking Mini-Game** *(backlog)*
-8. ✓ **UI Cycle Toggle + Tree Health Stats + Active Tool in Calendar** — single `◉` button cycles Tools → Stats → Neither; stats panel shows all health values live; tool name appended to calendar TMP
-9. ✓ **Confirm/Cancel Visibility** — hidden by default; shown only in RockPlace/TreeOrient; styled to match pause button
-10. ✓ **Time Speed Toggle Button** — a small button above the `◉` cycle button, same size as Pause. Cycles between two speeds: *Fast* (TIMESCALE=200, current default) and *Slow* (1 game-hour = 2 real seconds, i.e. TIMESCALE≈1/120). Button shows current state (`▶▶` fast / `▶` slow); amber tint in slow mode. **Auto-trigger:** when the calendar enters January (`month == 1`), automatically switch to Slow so the player has comfortable trimming time. Does not auto-switch back — player controls that manually.
-    - **Scope:** `GameManager.cs` (constants, auto-trigger in `SetMonthText`), `buttonClicker.cs` (button field, click handler, Q wiring), `ButtonUI.uxml` (new button above `◉`)
-11. ✓ **Realistic Winter Pruning** — decouple dormancy from growth cap so heavy winter cuts don't create a "no growth for a year" deadlock. Four changes:
-    - **Growth window lock:** `regrowthSeasonCount` only increments during growing seasons (Mar–Aug). Winter cuts sit dormant until spring, then begin recovering at normal rate. Zero code impact outside `StartNewGrowingSeason`. *(Suggestion 2 — lowest risk, implement first)*
-    - **Forced dormant skip:** If a cut is made in winter (month 11–2) AND `trimCutDepth` is deep (> configurable threshold, e.g. depth 4), set `regrowthSeasonCount = 2` at the moment of cut so the tree skips winter + has a slow spring start. *(Suggestion 1)*
-    - **Reserve depletion:** Track total `cutDepthThisSeason` on `TreeSkeleton`; if it exceeds `heavyPruneReserveThreshold`, multiply next spring's `growthSeasonMult` by `heavyPruneRecoveryScale` (default 0.5) for one season. Reset after spring. *(Suggestion 3)*
-    - **Severity-scaled regrowth rate:** In `CutPointDepthCap`, when `severity > 0.8` (heavily pruned, ratio of cut depth to tree depth), scale `depthsPerYear` by 0.7 for that node's first recovery season. *(Suggestion 4)*
-    - **Scope:** `TreeSkeleton.cs` (`StartNewGrowingSeason`, `TrimNode`, `CutPointDepthCap`, `GrowthSeasonMult`), `TreeNode.cs` (no new fields needed), `TreeSpecies.cs` (optional threshold fields)
-12. ✓ **First-Use Tooltip System** — reuse the existing `TipPause` / tooltip overlay mechanism to pop up contextual tooltips the first time the player clicks each tool button. Each tooltip is a short text explaining what the tool does and a basic tip. Player must click X or press ESC to dismiss (same as current TipPause). After first dismissal, that tool's tooltip never shows again (track shown-set in PlayerPrefs or a `HashSet<string>` serialized to SaveData). Tooltips can also be triggered programmatically (e.g. first repot, first wiring session, first winter).
-    - **Scope:** `GameManager.cs` (new `ShowTooltip(string title, string body)` method, enters TipPause), `buttonClicker.cs` (intercept first-click per tool button, call ShowTooltip), `ButtonUI.uxml` (add title label to tooltip overlay if not already present), `SaveData` (add `shownTooltips` string list)
-13. ✓ **Graft / Sibling Branch Fusion** — Approach graft (inarizashi): two-click tool selects source terminal + target node; over `graftSeasonsToFuse` (default 2) growing seasons the source tip's direction bends toward the target; on fusion a bridge node is created spanning the gap. Amber GL line shows in-progress grafts; pale green circle marks pending source. ESC/RMB cancels selection. Failed if either node dies before fusion. **Sibling Fusion** (automatic): each spring `DetectNewFusions()` groups terminal branch nodes by parent; sibling pairs whose tips are within `(rA+rB)×2.5` world units register a `FusionBond`; after `fusionSeasonsToFuse` (default 4) seasons `AdvanceFusions()` creates a bridge node using the existing `isGraftBridge` path. Bonds persist across saves via `SaveFusionBond` list in `SaveData`.
-14. ✓ **Species Visuals** — per-species bark colors (`youngBarkColor`, `matureBarkColor`, `rootNewGrowthColor`) pushed to shader `_NGColor`/`_BarkColor`/`_NGRootColor` via `TreeMeshBuilder.ApplySpeciesColors()`; per-species `leafSpringColor` replaces hardcoded green in `Leaf.cs`; `LeafManager` passes color from `species` on spawn; all fields have sensible defaults so existing `.asset` files work without edits
-15. ✓ **Bark Shader System** — 100% procedural HLSL replacing all texture lookups. 10 botanical bark patterns (smooth, fine fissures, interlacing, vertical strips, irregular blocks, large plates, peeling strips, fibrous shreds, spongy, lenticels) driven by inlined SimpleNoise/GradNoise/Voronoi. Layered blend: vertex.a fades Type-2 fine fissures (twigs) → species bark type (mature wood). 3-band cel-shaded lighting (shadow/mid/lit thresholds) + backface-inflate silhouette outline pass. Wound face embedded in unified mesh as organic callus geometry (`AddWoundCap`): swell ring + closing ring + concave center, progress-driven by `healProgress`. vertex.g = wound intensity, vertex.b = paste mask. BarkFlakerManager spawns 3D peeling meshes on trunk/scaffold for barkType 10/12/14, count = f(age, health). All 17 species `.asset` files updated with `barkType` + color values.
-16. ✓ **Branch Promotion Advisor** — tip hover/lock, GL overlays (cyan target, candidate diamonds scored by depth/radius/vigor/direction), action labels (Remove/Pinch/Trim back) + season timing, PromoteButton + PromotionAdvisorPanel in UI
-17. ✓ **Tutorial & Seasonal Tooltips** — moisture tutorial (first time <50%), seasonal care tips (first-time-only per season with Amount guidance), weed tooltip fix, calendar closes tools, medium start speed
-18. ✓ **Calendar Enhancements: Play Modes + Speed Config + Idle Orbit** — speed defaults to Med on calendar close; 3-tab calendar (Schedule / Modes / Speed); Play Modes tab with 4 built-in presets (Screensaver/Active Play/Hands-Off/Focused), speed rules engine (9 triggers, lowest-speed-wins, idle re-arm), auto-water/fertilize flags per mode; Speed Config tab with configurable Slow/Med/Fast timescale sliders + live day-duration labels + PlayerPrefs persist; idle camera orbit (slow yaw drift + elevation sine, snaps back on any input)
-19. **Gamification & Tutorial Progression** *(backlog)*
-20. **Multi-Tree / Quick-Start** *(item 26)*
-21. **Decoration System** *(backlog)*
-
----
-
-## Completed This Phase
+## Completed — Auto-Style Engine & Earlier Phases (detail)
 
 - **AutoStyler — slot-based plan engine** ✓ — `StyleDefinition` ScriptableObject (trunk waypoints, branch tiers with `azimuthOffsetDeg`, canopy silhouette curve, ramification settings). `AutoStyler.cs` greedy slot-matching (depth=1 branches matched to nearest azimuth slot); `BranchSlot` + `SlotState` (Empty/Growing/Training/Established/Maintaining); seasonal schedule (spring: slot refresh + trunk wire; Feb: back-bud stimulation; Apr/May: silhouette pinch; Jun: ramification; Oct: scaffold wires). `AutoStyler.Instance` static accessor + public slot/pending accessors.
 - **AutoStyler — GL intent indicators** ✓ — All indicators are intent-based (always visible year-round, not queue-based). Orange X (6 lines, 3 planes) on every unmatched depth=1 branch = trim candidate. Cyan circle + crosshair on every Growing/Training assigned branch = wire candidate. Green spike at tip for queued pinches. Colored slot diamonds with trunk spoke. Canopy silhouette rings (cyan), tier boundary rings (orange), trunk waypoint crosses + lean arrows (yellow).

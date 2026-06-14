@@ -192,6 +192,17 @@ public class ButtonClicker : MonoBehaviour
     bool pendingRepotOnRock;                 // confirm chains into RockPlace when true
     bool repotPanelWasOpen;                  // one-shot init when the panel opens
 
+    // ── Item Catalog (H) ──────────────────────────────────────────────────────
+    [Header("Item Catalog (H)")]
+    [SerializeField] ItemCatalog itemCatalog;   // pots / rocks / tables / ground-cover definitions
+    ItemCatalogPanel catalogPanel;              // shared modal card grid; created in InitUI
+    ItemDefinition   pendingPotItem;            // pot chosen from the catalog (prefab = mesh-swap hook)
+    Button           choosePotButton;           // "Choose pot…" injected into the repot panel
+
+    // ── Quick-Start (Multi-Tree / Quick-Start) ────────────────────────────────
+    QuickStartPanel  quickStartPanel;           // style + age picker
+    Button           quickStartButton;          // "⚡ Quick-Start" injected into the species overlay
+
     // ── Rock size selection ───────────────────────────────────────────────────
     VisualElement rockSizePanel;
     Button        rockSizeSButton, rockSizeMButton, rockSizeLButton, rockSizeXLButton;
@@ -488,6 +499,7 @@ public class ButtonClicker : MonoBehaviour
         fungicideButton      = root.Q("FungicideButton")    as Button;
 
         repotPanel            = root.Q("RepotPanel");
+        SetupItemCatalog(root);
         repotRockToggleButton = root.Q("RepotRockToggleButton") as Button;
         repotConfirmButton    = root.Q("RepotConfirmButton")    as Button;
         soilDegradationLabel  = root.Q("SoilDegradationLabel") as Label;
@@ -612,6 +624,7 @@ public class ButtonClicker : MonoBehaviour
         speciesSortBar        = root.Q("SpeciesSortBar");
         speciesConfirmButton  = root.Q("SpeciesConfirmButton") as Button;
         speciesConfirmButton?.RegisterCallback<ClickEvent>(_ => OnSpeciesConfirmClick());
+        SetupQuickStart(root);
         BuildSortBar();
         BuildSpeciesCards();
 
@@ -2213,6 +2226,70 @@ public class ButtonClicker : MonoBehaviour
                 ? new UnityEngine.UIElements.StyleColor(new Color(0.40f, 0.55f, 0.35f))
                 : new UnityEngine.UIElements.StyleColor(new Color(0.25f, 0.25f, 0.25f));
         }
+    }
+
+    // ── Item Catalog (H) — shared card-grid picker ────────────────────────────
+    void SetupItemCatalog(VisualElement root)
+    {
+        catalogPanel = new ItemCatalogPanel(root, itemCatalog);
+
+        // Inject a "Choose pot…" button into the repot panel — the existing XS/S/M/L buttons stay
+        // as a quick-pick. (Added in code; reposition in UXML later if a tidier slot is wanted.)
+        if (repotPanel != null && choosePotButton == null)
+        {
+            choosePotButton = new Button { text = "Choose pot…" };
+            choosePotButton.style.marginTop    = 6;
+            choosePotButton.style.marginBottom = 2;
+            choosePotButton.RegisterCallback<ClickEvent>(_ => OpenPotCatalog());
+            repotPanel.Add(choosePotButton);
+        }
+    }
+
+    void OpenPotCatalog()
+    {
+        if (catalogPanel == null) return;
+        catalogPanel.Open(ItemCategory.Pot, "Choose a Pot", pendingPotItem, pot =>
+        {
+            pendingPotItem = pot;
+            pendingPotSize = pot.potSize;          // map the chosen pot to its footprint
+            // pot.prefab is the mesh-swap hook for when pot art is authored — applied on repot.
+            RefreshPotSizeButtons();
+            if (potSizeLabel != null) potSizeLabel.text = $"Current: {pot.Label}";
+        });
+    }
+
+    // ── Quick-Start — fast-grow a developed tree from the new-game screen ──────
+    void SetupQuickStart(VisualElement root)
+    {
+        quickStartPanel = new QuickStartPanel(root);
+
+        // Inject a "⚡ Quick-Start" button next to the species Confirm button, so the new-game
+        // flow can fast-grow a developed tree of the chosen species instead of starting from seed.
+        if (speciesConfirmButton != null && quickStartButton == null)
+        {
+            quickStartButton = new Button { text = "⚡ Quick-Start" };
+            quickStartButton.style.marginTop = 6;
+            quickStartButton.RegisterCallback<ClickEvent>(_ => OpenQuickStart());
+            (speciesConfirmButton.parent ?? root).Add(quickStartButton);
+        }
+    }
+
+    void OpenQuickStart()
+    {
+        if (selectedSpecies == null)
+        {
+            GameManager.Instance?.ShowTooltip("Pick a species first",
+                "Select a species card, then press Quick-Start to fast-grow a developed tree.");
+            return;
+        }
+        var qsm = QuickStartManager.Instance;
+        if (qsm == null)
+        {
+            Debug.LogWarning("[QuickStart] No QuickStartManager in the scene — add the component to enable Quick-Start.");
+            return;
+        }
+        // QuickStartManager.Generate plants the species, applies the style, fast-forwards growth.
+        quickStartPanel.Open(qsm.Styles, 10, (style, age) => qsm.Generate(selectedSpecies, style, age));
     }
 
     // Preset buttons only SELECT — nothing applies until Confirm Repot.

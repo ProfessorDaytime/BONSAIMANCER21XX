@@ -45,6 +45,7 @@
      <Compile Include="Assets\Scripts\ChangeColor.cs" />
      <Compile Include="Assets\Scripts\Tree\NodeHealth.cs" />
      <Compile Include="Assets\Scripts\ProceduralCone.cs" />
+     <Compile Include="Assets\Scripts\QuickStartPanel.cs" />
      <Compile Include="Assets\Scripts\CameraOrbit.cs" />
      <Compile Include="Assets\Scripts\AudioManager.cs" />
      <Compile Include="Assets\Scripts\Old Proc Meshes\scr_ProceduralMesh.cs" />
@@ -55,6 +56,7 @@
      <Compile Include="Assets\Scripts\scr_Cyl_001.cs" />
      <Compile Include="Assets\Scripts\Tree\PotSoil.cs" />
      <Compile Include="Assets\Scripts\PlayMenuSounds.cs" />
+     <Compile Include="Assets\Scripts\Items\ItemCatalog.cs" />
      <Compile Include="Assets\Scripts\SaveManager.cs" />
      <Compile Include="Assets\Scripts\TreeRoot.cs" />
      <Compile Include="Assets\Scripts\Old Proc Meshes\scr_YValue.cs" />
@@ -74,14 +76,17 @@
      <Compile Include="Assets\Scripts\TreeGenPT002.cs" />
      <Compile Include="Assets\Scripts\Tree\BudType.cs" />
      <Compile Include="Assets\Scripts\Tree\WeedManager.cs" />
+     <Compile Include="Assets\Scripts\Items\ItemCatalogPanel.cs" />
      <Compile Include="Assets\Scripts\Tree\WeedPuller.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT004.cs" />
      <Compile Include="Assets\Scripts\Leaf.cs" />
      <Compile Include="Assets\Scripts\MainMenu.cs" />
+     <Compile Include="Assets\Scripts\Items\ItemDefinition.cs" />
      <Compile Include="Assets\Scripts\ProceduralGrid.cs" />
      <Compile Include="Assets\Scripts\Tree\CareLog.cs" />
      <Compile Include="Assets\Scripts\Tree\StyleDefinition.cs" />
      <Compile Include="Assets\Scripts\ProceduralConeBackup.cs" />
+     <Compile Include="Assets\Scripts\QuickStartManager.cs" />
      <Compile Include="Assets\Scripts\Tree\AutoStyler.cs" />
      <Compile Include="Assets\Scripts\GameManager.cs" />
      <Compile Include="Assets\Scripts\Tree\RootRakeManager.cs" />
@@ -133,6 +138,9 @@
     </Reference>
     <Reference Include="UnityEngine.AIModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.AIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AMDModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.AMDModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ARModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.ARModule.dll</HintPath>
@@ -191,6 +199,9 @@
     <Reference Include="UnityEngine.GridModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.GridModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.HierarchyModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.HierarchyModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.HierarchyCoreModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.HierarchyCoreModule.dll</HintPath>
     </Reference>
@@ -229,6 +240,9 @@
     </Reference>
     <Reference Include="UnityEngine.MultiplayerModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.MultiplayerModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.NVIDIAModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.NVIDIAModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.ParticleSystemModule.dll</HintPath>

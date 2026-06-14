@@ -30,7 +30,7 @@ Shader "Custom/BarkVertexColor"
         [Header(Wound)]
         _WoundHeartColor   ("Heartwood Color",  Color) = (0.82,0.68,0.48,1)
         _WoundCambiumColor ("Cambium Ring",     Color) = (0.55,0.72,0.30,1)
-        _WoundCallusColor  ("Callus Color",     Color) = (0.52,0.38,0.24,1)
+        _WoundCallusColor  ("Callus Color",     Color) = (0.30,0.19,0.11,1)
         _PasteColor        ("Cut Paste Color",  Color) = (0.22,0.20,0.18,1)
 
         [Header(Bark Textures)]
@@ -39,6 +39,12 @@ Shader "Custom/BarkVertexColor"
         _UseTextures      ("Use Textures (0=proc, 1=tex)", Float) = 0
         _TexelRes         ("Texel Resolution (e.g. 64)", Float) = 64
         _BarkNoiseMode    ("Noise Mode (0=scatter, 1=cellular)", Range(0,1)) = 0
+
+        [Header(Bark Scars)]
+        _ScarColor         ("Scar Color",            Color)      = (0.30,0.20,0.14,1)
+        _BudScarStrength   ("Bud Scar Strength",     Range(0,4)) = 1.0
+        _WoundScarStrength ("Wound Scar Strength",   Range(0,4)) = 1.0
+        [Toggle] _ScarDebug ("Scar Debug (bright magenta)", Float) = 0
 
         [Header(Debug)]
         [Toggle] _ForceMatureBark ("Force Mature Bark (test on primitives)", Float) = 0
@@ -102,6 +108,10 @@ Shader "Custom/BarkVertexColor"
                 float  _OutlineWidth;
                 float4 _OutlineColor;
                 float  _ForceMatureBark;
+                float4 _ScarColor;
+                float  _BudScarStrength;
+                float  _WoundScarStrength;
+                float  _ScarDebug;
             CBUFFER_END
 
             struct OAttr
@@ -178,6 +188,10 @@ Shader "Custom/BarkVertexColor"
                 float  _OutlineWidth;
                 float4 _OutlineColor;
                 float  _ForceMatureBark;
+                float4 _ScarColor;
+                float  _BudScarStrength;
+                float  _WoundScarStrength;
+                float  _ScarDebug;
             CBUFFER_END
 
             TEXTURE2D(_BarkTexA); SAMPLER(sampler_BarkTexA);
@@ -189,6 +203,7 @@ Shader "Custom/BarkVertexColor"
                 float3 normalOS   : NORMAL;
                 float4 tangentOS  : TANGENT;
                 float2 uv         : TEXCOORD0;
+                float4 scar       : TEXCOORD1;   // (budScarIntensity, budScarU, woundScarPersist, 0)
                 half4  color      : COLOR;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -201,6 +216,7 @@ Shader "Custom/BarkVertexColor"
                 float3 normalWS    : TEXCOORD2;
                 half4  color       : TEXCOORD3;
                 float  fogCoord    : TEXCOORD4;
+                float4 scar        : TEXCOORD5;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -371,6 +387,7 @@ Shader "Custom/BarkVertexColor"
                 OUT.uv          = IN.uv;
                 OUT.color       = IN.color;
                 OUT.fogCoord    = ComputeFogFactor(posInputs.positionCS.z);
+                OUT.scar        = IN.scar;
                 return OUT;
             }
 
@@ -436,11 +453,11 @@ Shader "Custom/BarkVertexColor"
                     albedo = texSample.rgb * lerp(1.0 - _BarkGrooveDepth, 1.0, pattern);
                 }
 
-                // ── Wound layer ──────────────────────────────────────────────
-                // Three zones driven by woundMask value:
-                //   woundMask ≈ 0.8-1.0 → inner heartwood (fresh exposed wood)
-                //   woundMask ≈ 0.3-0.7 → cambium ring (green edge)
-                //   woundMask ≈ 0.0-0.3 → callus / healing bark
+                // ── Wound callus ─────────────────────────────────────────────
+                // Pruning wounds are dedicated disc geometry (TreeMeshBuilder.AddWoundDisc) whose
+                // vertex.g (woundMask) selects the callus zone: high = fresh heartwood centre,
+                // mid = cambium ring, low = callus rim. Opacity rises with g so the rim still
+                // reads on bark. _ScarDebug paints the whole disc magenta to locate it.
                 if (woundMask > 0.01h)
                 {
                     half3 woundZone;
@@ -450,7 +467,8 @@ Shader "Custom/BarkVertexColor"
                     else
                         woundZone = lerp(_WoundCallusColor.rgb, _WoundCambiumColor.rgb,
                                          smoothstep(0.0, 0.65, woundMask));
-                    albedo = lerp(albedo, woundZone, woundMask);
+                    if (_ScarDebug > 0.5h) woundZone = half3(1.0, 0.0, 1.0);
+                    albedo = lerp(albedo, woundZone, saturate(0.4h + woundMask) * _WoundScarStrength);
                 }
 
                 // ── Paste override ───────────────────────────────────────────
@@ -538,6 +556,10 @@ Shader "Custom/BarkVertexColor"
                 float  _OutlineWidth;
                 float4 _OutlineColor;
                 float  _ForceMatureBark;
+                float4 _ScarColor;
+                float  _BudScarStrength;
+                float  _WoundScarStrength;
+                float  _ScarDebug;
             CBUFFER_END
 
             float3 _LightDirection;
@@ -596,6 +618,10 @@ Shader "Custom/BarkVertexColor"
                 float  _OutlineWidth;
                 float4 _OutlineColor;
                 float  _ForceMatureBark;
+                float4 _ScarColor;
+                float  _BudScarStrength;
+                float  _WoundScarStrength;
+                float  _ScarDebug;
             CBUFFER_END
 
             struct DepthAttr { float4 posOS : POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };

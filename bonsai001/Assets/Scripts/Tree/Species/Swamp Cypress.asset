@@ -56,3 +56,6 @@ MonoBehaviour:
   matureBarkColor: {r: 0.42, g: 0.32, b: 0.22, a: 1}
   rootNewGrowthColor: {r: 0.78, g: 0.68, b: 0.55, a: 1}
   leafSpringColor: {r: 0.30, g: 0.62, b: 0.18, a: 1}
+  canDefoliate: 0
+  leafGrowDays: 22
+  leafBudBreakColor: {r: 0.7, g: 0.86, b: 0.44, a: 1}

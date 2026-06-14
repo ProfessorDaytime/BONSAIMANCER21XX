@@ -36,6 +36,11 @@ public class TreeMeshBuilder : MonoBehaviour
     // Set from species.barkVTiling in ApplySpeciesColors (also defaults to 0.4f).
     float barkVTilingScale = 0.4f;
 
+    [Header("Pruning Scars")]
+    [Tooltip("How far a cut branch's leftover stub protrudes from the trunk, ×the branch radius. " +
+             "Bigger branches leave bigger stubs; 0 ≈ flush cut.")]
+    [SerializeField] float stubLengthMult = 1.2f;
+
     // Tight-angle geometry: when the angle between a parent and child growDirection
     // exceeds this threshold, intermediate rings are inserted at the base of the
     // child segment to smooth the bend instead of pinching the vertices.
@@ -119,6 +124,10 @@ public class TreeMeshBuilder : MonoBehaviour
     readonly List<int>     triangles = new List<int>();
     readonly List<Vector2> uvs       = new List<Vector2>();
     readonly List<Color>   colors    = new List<Color>();
+    // TEXCOORD1 scar channel: (budScarIntensity, budScarU, woundScarPersist, 0).
+    // Zero everywhere by default — the bark shader only marks fragments where >0,
+    // so trees with no bud/wound history render exactly as before.
+    readonly List<Vector4> scarUVs   = new List<Vector4>();
 
     // Triangle Range -> Node mapping (for Phase 3 tool hit detection)
 
@@ -253,6 +262,7 @@ public class TreeMeshBuilder : MonoBehaviour
         triangles.Clear();
         uvs.Clear();
         colors.Clear();
+        scarUVs.Clear();
         triRanges.Clear();
 
         // Traverse the node graph depth-first.
@@ -275,6 +285,8 @@ public class TreeMeshBuilder : MonoBehaviour
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         mesh.SetUVs(0, uvs);
+        // Scar channel — guarded so a count mismatch can never corrupt the mesh.
+        if (scarUVs.Count == vertices.Count) mesh.SetUVs(1, scarUVs);
         mesh.SetColors(colors);
 
         mesh.RecalculateNormals();
@@ -422,13 +434,18 @@ public class TreeMeshBuilder : MonoBehaviour
             tipColor  = (node.isGrowing && showGrowingDebugColor) ? growingDebugColor : GrowthColor(node, node.tipRadius, isExposed);
         }
 
+        // Wounds are no longer encoded in the bark vertex stream — that smeared across welded
+        // segments and overlapped adjacent cuts. Each wound is now built as its own callus disc
+        // in AddWoundDisc (below), so the bark rings carry no scar data.
+        Vector4 scar = Vector4.zero;
+
 
         // Base ring
 
         if (baseRingStart < 0)
         {
             baseRingStart = vertices.Count;
-            AddRing(node.worldPosition, axisUp, frameRight, node.radius, cumulativeHeight, baseColor);
+            AddRing(node.worldPosition, axisUp, frameRight, node.radius, cumulativeHeight, baseColor, scar);
         }
 
         // Bend rings
@@ -472,7 +489,7 @@ public class TreeMeshBuilder : MonoBehaviour
                     Color   ringC   = Color.Lerp(baseColor, tipColor, ringT);
 
                     int newRing = vertices.Count;
-                    AddRing(ringPos, bendDir, bendFrame, ringR, ringH, ringC);
+                    AddRing(ringPos, bendDir, bendFrame, ringR, ringH, ringC, scar);
 
                     // Connect the previous ring to this bend ring
                     int bendTriStart = triangles.Count;
@@ -503,7 +520,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
         float tipHeight    = cumulativeHeight + node.length;
         int   tipRingStart = vertices.Count;
-        AddRing(node.tipPosition, axisUp, frameRight, node.tipRadius, tipHeight, tipColor);
+        AddRing(node.tipPosition, axisUp, frameRight, node.tipRadius, tipHeight, tipColor, scar);
 
         // Quads (currentBase -> tip)
         // currentBase is either the original base ring (no bend) or the last
@@ -541,32 +558,47 @@ public class TreeMeshBuilder : MonoBehaviour
             // The parent keeps its end cap until the child grows past zero.
             if (child.length <= 0f) continue;
             hasRenderedChild = true;
-            // Root children attach at the trunk BASE (worldPosition), not the tip.
-            // Pass -1 so they generate a fresh base ring at their own position rather
-            // than inheriting the trunk tip ring, which would stretch triangles wildly.
-            // Cut-site children also get a fresh base ring — the cap stays as a flat disc
-            // and the shoot mesh starts small, completely detached, until the cap is absorbed.
-            int childBase = (!node.isRoot && child.isRoot) ? -1
-                          : (node.isTrimCutPoint && node.hasWound) ? -1
-                          : tipRingStart;
+            // Root children attach at the trunk BASE (worldPosition), not the tip — pass -1 so
+            // they generate a fresh base ring rather than inheriting (and stretching from) the
+            // trunk tip ring. Every other surviving child welds to the tip ring as normal, so a
+            // branch/trunk flows seamlessly past a side cut; that wound shows as a flat disc on
+            // the bark above, not a cut-face cap.
+            int childBase = (!node.isRoot && child.isRoot) ? -1 : tipRingStart;
             ProcessNode(child, childBase, tipHeight, frameRight, axisUp);
         }
 
-        // Cap the open tip ring:
-        //   • Always for terminal nodes (close the hollow end).
-        //   • Also for cut-site nodes whose wound is still open: children grow laterally
-        //     off the stump face so the flat disc must stay visible behind them.
-        bool needsCap = !hasRenderedChild || (node.isTrimCutPoint && node.hasWound);
-        if (needsCap)
+        // Classify the wound by whether the branch CONTINUES past it. If a child still renders,
+        // the cut took a lateral off the SIDE → callus disc lying flat on the bark. If nothing
+        // continues, the branch was shortened to a stub → cut FACE on the open end, facing along
+        // the branch. Drawing a face on the side makes it edge-on — that was the "wrong angle".
+        bool wounded = !node.isRoot && (node.hasWound || node.hadWoundScar) && node.woundRadius > 0.0001f;
+        bool endCut  = wounded && !hasRenderedChild;
+
+        // Cap the open tip ring when nothing renders past it. An end-cut wound's own disc both
+        // closes and colours that opening, so skip the plain cap there.
+        bool needsCap = !hasRenderedChild;
+        if (needsCap && !endCut)
         {
             int capTriStart = triangles.Count;
-
-            if (node.hasWound && !node.isRoot)
-                AddWoundCap(node, tipRingStart, tipHeight, axisUp, frameRight, tipColor);
-            else
-                AddFlatCap(node.tipPosition, tipRingStart, tipHeight, tipColor);
-
+            Color capCol = wounded ? new Color(tipColor.r, 0f, tipColor.b, tipColor.a) : tipColor;
+            AddFlatCap(node.tipPosition, tipRingStart, tipHeight, capCol);
             triRanges.Add((capTriStart, triangles.Count, node));
+        }
+
+        // Pruning scar — dedicated disc geometry so multiple/adjacent wounds stay distinct.
+        if (wounded)
+        {
+            float healProg = skeleton.WoundHealProgress(node);   // 0 fresh → 1 callus closed over
+            if (endCut)
+            {
+                // Cut face: closes the open end, facing along the branch; calluses over as it heals.
+                AddWoundDiscAt(node, node.tipPosition + axisUp * 0.002f, axisUp, frameRight, node.tipRadius, healProg);
+            }
+            else
+                // Side cut: a short stub poking out where the branch was, the cut FACE on its end.
+                // As it heals the stub is engulfed by the thickening trunk and the face calluses
+                // over — small cuts vanish, big ones leave a lasting knob.
+                AddWoundStub(node, axisUp, frameRight, healProg);
         }
 
         return tipRingStart;
@@ -581,12 +613,138 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(center);
         uvs.Add(new Vector2(0.5f, heightV * 0.4f));
         colors.Add(col);
+        scarUVs.Add(Vector4.zero);
 
         for (int i = 0; i < ringSegments; i++)
         {
             int r0 = ringStart + i, r1 = ringStart + i + 1;
             triangles.Add(capCenter); triangles.Add(r1); triangles.Add(r0);
         }
+    }
+
+    /// <summary>
+    /// Builds a short bark stub poking out of the trunk where a branch was cut off, capped on its
+    /// far end by the wound cut-face disc. Mirrors a real pruning cut — you leave a little of the
+    /// branch and the callus rolls over the end rather than a flush sheer. The stub starts on the
+    /// trunk axis (buried, hidden) and protrudes along the cut branch's old direction; bigger
+    /// branches (woundRadius) leave longer, fatter stubs (stubLengthMult).
+    /// </summary>
+    void AddWoundStub(TreeNode node, Vector3 axisUp, Vector3 frameRight, float healProg)
+    {
+        Vector3 dir   = node.woundFaceNormal.sqrMagnitude > 1e-4f ? node.woundFaceNormal.normalized : frameRight;
+        float   baseR = node.woundRadius;
+        float   endR  = node.woundRadius * 0.88f;            // slight taper toward the cut
+
+        // Extend from the trunk axis far enough to clear the bark, then protrude past it. The
+        // protrusion shrinks to zero as the wound occludes — the thickening trunk engulfs the
+        // stub, leaving just the domed callus knob the disc draws.
+        float radialMag = (dir - axisUp * Vector3.Dot(dir, axisUp)).magnitude;   // how sideways dir is
+        float exitDist  = node.tipRadius / Mathf.Max(radialMag, 0.35f);          // axis → bark along dir
+        float protrude  = Mathf.Max(node.woundRadius * stubLengthMult, 0.012f) * (1f - healProg);
+        float stubLen   = exitDist + protrude;
+
+        Vector3 baseC = node.tipPosition;                   // on the axis, buried in the trunk
+        Vector3 endC  = node.tipPosition + dir * stubLen;   // protruding cut end
+
+        Vector3 p1 = Vector3.Cross(dir, axisUp);
+        if (p1.sqrMagnitude < 1e-5f) p1 = Vector3.Cross(dir, Vector3.right);
+        if (p1.sqrMagnitude < 1e-5f) p1 = Vector3.Cross(dir, Vector3.forward);
+        p1.Normalize();
+        Vector3 p2 = Vector3.Cross(dir, p1).normalized;
+
+        Color barkCol = new Color(0f, 0f, 0f, 1f);          // clean mature bark (no wound/root/paste)
+
+        int baseStart = vertices.Count;
+        for (int i = 0; i <= ringSegments; i++)
+        {
+            float a = (float)i / ringSegments * Mathf.PI * 2f;
+            vertices.Add(baseC + (p1 * Mathf.Cos(a) + p2 * Mathf.Sin(a)) * baseR);
+            uvs.Add(new Vector2((float)i / ringSegments, 0f));
+            colors.Add(barkCol); scarUVs.Add(Vector4.zero);
+        }
+        int endStart = vertices.Count;
+        for (int i = 0; i <= ringSegments; i++)
+        {
+            float a = (float)i / ringSegments * Mathf.PI * 2f;
+            vertices.Add(endC + (p1 * Mathf.Cos(a) + p2 * Mathf.Sin(a)) * endR);
+            uvs.Add(new Vector2((float)i / ringSegments, 1f));
+            colors.Add(barkCol); scarUVs.Add(Vector4.zero);
+        }
+
+        // Side faces — outward winding matches the trunk's own (b0,e0,b1)/(b1,e0,e1).
+        int triStart = triangles.Count;
+        for (int i = 0; i < ringSegments; i++)
+        {
+            int b0 = baseStart + i, b1 = baseStart + i + 1;
+            int e0 = endStart + i,  e1 = endStart + i + 1;
+            triangles.Add(b0); triangles.Add(e0); triangles.Add(b1);
+            triangles.Add(b1); triangles.Add(e0); triangles.Add(e1);
+        }
+        triRanges.Add((triStart, triangles.Count, node));
+
+        // Cut face on the protruding end, facing along the stub (calluses over with healProg).
+        AddWoundDiscAt(node, endC + dir * 0.002f, dir, p1, endR, healProg);
+    }
+
+    /// <summary>
+    /// Builds a concentric callus disc as DEDICATED geometry for a pruning wound at
+    /// <paramref name="center"/>, facing <paramref name="normal"/>, of the given
+    /// <paramref name="radius"/>; <paramref name="refUp"/> just orients the in-plane basis.
+    /// <paramref name="healProg"/> (0 fresh → 1 occluded) drives the heal: a fresh cut is a flat
+    /// disc with a pale heartwood centre; as it heals the callus rolls in (centre recolours to
+    /// callus) and the face domes outward into a healed knob. Because each wound is its own little
+    /// patch — not baked into the trunk's interpolated vertex stream — they never smear.
+    /// </summary>
+    void AddWoundDiscAt(TreeNode node, Vector3 center, Vector3 normal, Vector3 refUp, float radius, float healProg)
+    {
+        float pasteB = node.pasteApplied ? 1f : 0f;
+
+        // Callus roll-in: exposed pale heartwood at the centre gives way to callus as it closes,
+        // and the face bulges into a domed knob. vertex.g picks the zone in the shader.
+        float dome    = radius * 0.55f * healProg;                 // knob height at full occlusion
+        float centerG = Mathf.Lerp(1.0f,  0.18f, healProg);        // heartwood → callus
+        float innerG  = Mathf.Lerp(0.6f,  0.18f, healProg);        // cambium  → callus
+        float outerG  = 0.22f;                                     // callus rim throughout
+
+        // In-plane basis perpendicular to normal.
+        Vector3 t1 = Vector3.Cross(normal, refUp);
+        if (t1.sqrMagnitude < 1e-5f) t1 = Vector3.Cross(normal, Vector3.right);
+        if (t1.sqrMagnitude < 1e-5f) t1 = Vector3.Cross(normal, Vector3.forward);
+        t1.Normalize();
+        Vector3 t2 = Vector3.Cross(normal, t1).normalized;
+
+        int c = vertices.Count;
+        vertices.Add(center + normal * dome); uvs.Add(new Vector2(0.5f, 0.5f));
+        colors.Add(new Color(0f, centerG, pasteB, 1f)); scarUVs.Add(Vector4.zero);
+
+        int inner = vertices.Count;
+        for (int i = 0; i <= ringSegments; i++)
+        {
+            float a = (float)i / ringSegments * Mathf.PI * 2f;
+            vertices.Add(center + normal * dome * 0.45f + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * (radius * 0.5f));
+            uvs.Add(new Vector2((float)i / ringSegments, 0.5f));
+            colors.Add(new Color(0f, innerG, pasteB, 1f)); scarUVs.Add(Vector4.zero);
+        }
+        int outer = vertices.Count;
+        for (int i = 0; i <= ringSegments; i++)
+        {
+            float a = (float)i / ringSegments * Mathf.PI * 2f;
+            vertices.Add(center + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * radius);
+            uvs.Add(new Vector2((float)i / ringSegments, 0.5f));
+            colors.Add(new Color(0f, outerG, pasteB, 1f)); scarUVs.Add(Vector4.zero);
+        }
+
+        // Winding verified by cross product so RecalculateNormals faces the disc along +normal
+        // (outward). cross(v1-v0, v2-v0) for (c, R_i, R_i+1) = +normal; matches the trunk's own
+        // outward face winding (b0,t0,b1). A reversed order here lit the disc from behind (dark).
+        int triStart = triangles.Count;
+        for (int i = 0; i < ringSegments; i++)
+        {
+            triangles.Add(c);         triangles.Add(inner + i);     triangles.Add(inner + i + 1);   // centre fan
+            triangles.Add(inner + i); triangles.Add(outer + i);     triangles.Add(outer + i + 1);   // band ½
+            triangles.Add(inner + i); triangles.Add(outer + i + 1); triangles.Add(inner + i + 1);   // band ½
+        }
+        triRanges.Add((triStart, triangles.Count, node));
     }
 
     /// <summary>
@@ -651,6 +809,7 @@ public class TreeMeshBuilder : MonoBehaviour
             vertices.Add(pos);
             uvs.Add(new Vector2(t, heightV * 0.4f));
             colors.Add(rimCol);
+            scarUVs.Add(Vector4.zero);
         }
 
         // Connect the outer tip ring to the swell ring (a thin band)
@@ -687,6 +846,7 @@ public class TreeMeshBuilder : MonoBehaviour
                 vertices.Add(pos);
                 uvs.Add(new Vector2(t, heightV * 0.4f));
                 colors.Add(innerCol);
+                scarUVs.Add(Vector4.zero);
             }
 
             // Band from swell ring → inner ring
@@ -705,6 +865,7 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(faceCenter);
         uvs.Add(new Vector2(0.5f, heightV * 0.4f));
         colors.Add(faceCol);
+        scarUVs.Add(Vector4.zero);
 
         for (int i = 0; i < ringSegments; i++)
         {
@@ -723,7 +884,7 @@ public class TreeMeshBuilder : MonoBehaviour
     /// has a clean seam rather than a hard wrap from 1 back to 0.
     /// </summary>
     void AddRing(Vector3 center, Vector3 axisUp, Vector3 axisRight, float radius, float heightV,
-                 Color vertexColor)
+                 Color vertexColor, Vector4 scar = default)
     {
         // axisUp and axisRight are already normalised and orthogonal (done in ProcessNode).
         Vector3 axisFwd = Vector3.Cross(axisRight, axisUp).normalized;
@@ -763,6 +924,7 @@ public class TreeMeshBuilder : MonoBehaviour
             vertices.Add(localPos);
             uvs.Add(new Vector2(t, heightV * barkVTilingScale));
             colors.Add(vertexColor);
+            scarUVs.Add(scar);
         }
     }
 
@@ -809,17 +971,10 @@ public class TreeMeshBuilder : MonoBehaviour
         float t       = Mathf.Max(radiusT, ageT);
         float rootBit = node.isRoot ? 1f : 0f;
 
-        float woundG = 0f;
-        float pasteB = 0f;
-        if (!node.isRoot && node.hasWound)
-        {
-            woundG = woundFadeSeasons > 0f
-                ? Mathf.Clamp01(1f - node.woundAge / woundFadeSeasons)
-                : 1f;
-            pasteB = node.pasteApplied ? 1f : 0f;
-        }
-
-        return new Color(rootBit, woundG, pasteB, t);
+        // Wound & paste appearance now lives entirely on the dedicated scar disc (AddWoundDisc),
+        // so the bark body carries no wound/paste tint — that vertex-stream tint was what used to
+        // smear the whole segment and bleed across welded joints. G and B stay 0 here.
+        return new Color(rootBit, 0f, 0f, t);
     }
 
     /// <summary>
@@ -853,6 +1008,7 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(root.worldPosition);
         uvs.Add(new Vector2(0.5f, 0f));
         colors.Add(color);
+        scarUVs.Add(Vector4.zero);
 
         for (int i = 0; i < ringSegments; i++)
         {
@@ -894,6 +1050,7 @@ public class TreeMeshBuilder : MonoBehaviour
             vertices.Add(pos);
             uvs.Add(new Vector2(t, undergroundDepth * 0.4f));
             colors.Add(color);
+            scarUVs.Add(Vector4.zero);
         }
 
         // Cylinder walls: same winding as ProcessNode (lower ring = b, upper ring = t → outward normals)
@@ -910,6 +1067,7 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(botCenter);
         uvs.Add(new Vector2(0.5f, undergroundDepth * 0.4f));
         colors.Add(color);
+        scarUVs.Add(Vector4.zero);
         for (int i = 0; i < ringSegments; i++)
         {
             int r0 = botRingStart + i, r1 = botRingStart + i + 1;

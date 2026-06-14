@@ -205,6 +205,36 @@ public class AutoStyler : MonoBehaviour
         UpdatePendingActions();
         UpdateWireAnimation();
         RemoveSetWires();
+        RemoveIshitsukiWireIfSet();
+    }
+
+    // Day the Ishitsuki rock-binding wire first turned gold (-1 = not gold / no wire)
+    float ishitsukiWireGoldDay = -1f;
+
+    /// <summary>
+    /// Removes the Ishitsuki rock-binding wire (the loops wrapping tree + rock) once it has
+    /// set, mirroring how branch/trunk wires are auto-unwired: track the day it turns gold
+    /// (WireSetProgress >= 1), then destroy it unwireDelayDays later — the roots have
+    /// gripped the stone and the wire's job is done.
+    /// </summary>
+    void RemoveIshitsukiWireIfSet()
+    {
+        if (!autoStyleEnabled) return;
+        var wire = skeleton.GetComponentInChildren<IshitsukiWire>();
+        if (wire == null) { ishitsukiWireGoldDay = -1f; return; }
+
+        if (wire.WireSetProgress < 1f) { ishitsukiWireGoldDay = -1f; return; }
+
+        float now = InGameDay();
+        if (ishitsukiWireGoldDay < 0f) { ishitsukiWireGoldDay = now; return; }  // first gold frame
+
+        if (now >= ishitsukiWireGoldDay + unwireDelayDays)
+        {
+            CareLog.Add("Unwire", "Removed the rock-binding wire — the roots have gripped the stone");
+            Log($"[AutoStyle] Ishitsuki binding wire removed (set+{unwireDelayDays}d)");
+            Destroy(wire.gameObject);
+            ishitsukiWireGoldDay = -1f;
+        }
     }
 
     // ── Wire Animation ────────────────────────────────────────────────────────
@@ -380,6 +410,8 @@ public class AutoStyler : MonoBehaviour
     void TryAutoDefoliate()
     {
         if (!IsReady() || defoliateThreshold <= 0) return;
+        // Never auto-defoliate conifers — it can kill them. Broadleaf species only.
+        if (skeleton.species != null && !skeleton.species.canDefoliate) return;
         if (GameManager.year - lastDefoliateYear < defoliateMinIntervalYears) return;
         int tips = 0;
         foreach (var n in skeleton.allNodes)

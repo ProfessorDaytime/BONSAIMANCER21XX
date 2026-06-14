@@ -255,15 +255,22 @@ public class WeedManager : MonoBehaviour
 
     bool IsOnRock(Vector3 pos)
     {
-        // Cast a small sphere downward from just above the surface
-        Vector3 origin = pos + Vector3.up * 0.3f;
-        if (Physics.SphereCast(origin, rockCheckRadius, Vector3.down, out RaycastHit hit, 0.6f))
+        // Primary: reject any XZ over the placed Ishitsuki rock footprint, using the actual
+        // rock collider the skeleton holds (runtime rocks aren't tagged "Rock"). A weed at
+        // soil level here would otherwise sit on / embedded in the rock instead of the soil.
+        var rock = GetComponent<TreeSkeleton>()?.rockCollider;
+        if (rock != null)
         {
-            if (hit.collider.CompareTag("Rock")) return true;
+            Vector3 origin = new Vector3(pos.x, rock.bounds.max.y + 0.5f, pos.z);
+            float   dist   = rock.bounds.size.y + 1f;
+            if (rock.Raycast(new Ray(origin, Vector3.down), out _, dist)) return true;
         }
-        // Also check for overlap at the surface level
-        var cols = Physics.OverlapSphere(pos, rockCheckRadius);
-        foreach (var c in cols)
+
+        // Fallback: tag-based check for any other rock colliders in the scene.
+        Vector3 sphereOrigin = pos + Vector3.up * 0.3f;
+        if (Physics.SphereCast(sphereOrigin, rockCheckRadius, Vector3.down, out RaycastHit hit, 0.6f))
+            if (hit.collider.CompareTag("Rock")) return true;
+        foreach (var c in Physics.OverlapSphere(pos, rockCheckRadius))
             if (c.CompareTag("Rock")) return true;
         return false;
     }

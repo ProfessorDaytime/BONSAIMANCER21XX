@@ -185,6 +185,11 @@ public class TreeNode
     public float   woundAge;         // growing seasons elapsed since the wound was made
     public bool    pasteApplied;     // player has sealed this wound with cut paste
 
+    // ── Bark surface history (rendered by the bark shader as scars) ────────────
+    public bool  hadBudScar;     // a bud set on this node and later broke — leaves a lenticel/leaf-scar mark
+    public float budScarAge;     // growing seasons since the bud broke (mark settles as wood thickens)
+    public bool  hadWoundScar;   // this node was wounded — keeps a faint callus scar even after it heals
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public TreeNode(int id, int depth, Vector3 position, Vector3 direction, float radius, float targetLength, TreeNode parent)

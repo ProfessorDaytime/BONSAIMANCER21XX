@@ -454,6 +454,16 @@ public class TreeSkeleton : MonoBehaviour
              "E.g. radius=0.1 × 20 = 2 seasons; radius=0.5 × 20 = 10 seasons.")]
     [SerializeField] float seasonsToHealPerUnit = 20f;
 
+    [Header("Wound Occlusion (visual healing)")]
+    [Tooltip("Seasons for callus to roll over and occlude a cut, per unit of wound radius. Drives " +
+             "the VISUAL heal (cut face closing + stub engulfed by the thickening trunk) — separate " +
+             "from the health drain above, so balance is unchanged. Big cuts take far longer.")]
+    [SerializeField] float woundOcclusionPerUnit = 120f;
+    [Tooltip("Floor on occlusion seasons so even a tiny twig cut takes a season or two to seal.")]
+    [SerializeField] float woundOcclusionBaseSeasons = 1f;
+    [Tooltip("Cut paste divides occlusion time by this — faster, cleaner healing.")]
+    [SerializeField] float woundPasteHealMult = 1.6f;
+
     [Tooltip("Health hit applied to the cut-site node each time it is trimmed. " +
              "Accumulates: cutting the same node three times in one session is noticeably weakening. " +
              "Recovers at trimTraumaRecoveryPerSeason each spring.")]
@@ -701,6 +711,22 @@ public class TreeSkeleton : MonoBehaviour
     /// <summary>Exposes wound-heal rate so TreeMeshBuilder can compute callus geometry.</summary>
     public float SeasonsToHealPerUnit => seasonsToHealPerUnit;
 
+    /// <summary>
+    /// Visual occlusion progress of a wound, 0 (fresh cut face) → 1 (callus fully closed over,
+    /// stub engulfed). Drives the heal geometry in TreeMeshBuilder. Independent of the health
+    /// drain. Bigger cuts (woundRadius) heal slower; vigorous nodes and cut paste heal faster —
+    /// so a small cut on a strong young tree is absorbed quickly while a big cut lingers as a scar.
+    /// </summary>
+    public float WoundHealProgress(TreeNode node)
+    {
+        if (node == null || node.woundRadius <= 0.0001f) return 1f;
+        float vigorF  = Mathf.Clamp(node.branchVigor, 0.5f, 2f);
+        float pasteF  = node.pasteApplied ? Mathf.Max(1f, woundPasteHealMult) : 1f;
+        float seasons = Mathf.Max(1f,
+            (woundOcclusionBaseSeasons + node.woundRadius * woundOcclusionPerUnit) / (vigorF * pasteF));
+        return Mathf.Clamp01(node.woundAge / seasons);
+    }
+
     // ── Save / Load accessors (expose private fields for SaveManager) ─────────
     public int   SaveStartYear     { get => startYear;      set => startYear      = value; }
     /// <summary>Year the tree was planted. -1 before first BranchGrow season.</summary>
@@ -793,7 +819,9 @@ public class TreeSkeleton : MonoBehaviour
         var weedMgr = GetComponent<WeedManager>();
         if (weedMgr != null)
         {
-            weedMgr.SetPotBounds(transform.position, weedSpawnRadius);
+            // Soil-surface Y, not the tree's Y — in Ishitsuki the tree sits up on the rock,
+            // so weeds must use the tray soil level (plantingSurfacePoint) or they spawn above the rock.
+            weedMgr.SetPotBounds(new Vector3(transform.position.x, plantingSurfacePoint.y, transform.position.z), weedSpawnRadius);
             weedMgr.LoadSaveState(data.weeds);
         }
 
@@ -894,6 +922,9 @@ public class TreeSkeleton : MonoBehaviour
             node.woundFaceNormal    = new Vector3(sn.wnX, sn.wnY, sn.wnZ);
             node.woundAge           = sn.woundAge;
             node.pasteApplied       = sn.pasteApplied;
+            node.hadBudScar         = sn.hadBudScar;
+            node.budScarAge         = sn.budScarAge;
+            node.hadWoundScar       = sn.hadWoundScar;
 
             nodeById[sn.id] = node;
             allNodes.Add(node);
@@ -1111,7 +1142,7 @@ public class TreeSkeleton : MonoBehaviour
         // Initialise WeedManager pot bounds — updated each spring with the real position.
         var wm = GetComponent<WeedManager>();
         if (wm != null)
-            wm.SetPotBounds(transform.position, weedSpawnRadius);
+            wm.SetPotBounds(new Vector3(transform.position.x, plantingSurfacePoint.y, transform.position.z), weedSpawnRadius);
 
         leafMgr = GetComponent<LeafManager>();
     }
@@ -1719,7 +1750,9 @@ public class TreeSkeleton : MonoBehaviour
         var weedMgr = GetComponent<WeedManager>();
         if (weedMgr != null)
         {
-            weedMgr.SetPotBounds(transform.position, weedSpawnRadius);
+            // Soil-surface Y, not the tree's Y — in Ishitsuki the tree sits up on the rock,
+            // so weeds must use the tray soil level (plantingSurfacePoint) or they spawn above the rock.
+            weedMgr.SetPotBounds(new Vector3(transform.position.x, plantingSurfacePoint.y, transform.position.z), weedSpawnRadius);
             weedMgr.SetTrunkRadius(root != null ? root.radius : 0f);
             weedMgr.ApplySeasonAndSpawn(this);
         }
@@ -2047,6 +2080,9 @@ public class TreeSkeleton : MonoBehaviour
                 if (terminal.hasBud)
                 {
                     terminal.hasBud = false;
+                    // The broken bud leaves a lasting bark mark at this spot (rendered by the
+                    // bark shader). Mark once; budScarAge ages it from here.
+                    if (!terminal.hadBudScar) { terminal.hadBudScar = true; terminal.budScarAge = 0f; }
                     if (budObjects.TryGetValue(terminal.id, out var budGo))
                     {
                         var lm = GetComponent<LeafManager>();
@@ -2272,36 +2308,46 @@ public class TreeSkeleton : MonoBehaviour
                 Debug.Log($"[Bud] Old-wood buds broke={oldWoodCount} year={GameManager.year}");
         }
 
-        // Wound aging: drain health, scale wound visuals, heal over time
+        // Bud-scar aging: each spring the mark settles a little as the wood thickens over it.
+        foreach (var node in allNodes)
+            if (node.hadBudScar) node.budScarAge += 1f;
+
+        // Wound aging: drain health while the wound is open, then keep aging the SCAR so the
+        // callus visually rolls over and occludes it across later seasons (WoundHealProgress).
+        bool anyWoundAged = false;
         foreach (var node in allNodes)
         {
-            if (!node.hasWound) continue;
+            if (!node.hasWound && !node.hadWoundScar) continue;
 
-            node.woundAge++;
+            anyWoundAged = true;
+            node.woundAge++;   // advances both the health-heal check and the visual occlusion
 
-            if (!node.pasteApplied)
+            if (node.hasWound)
             {
-                float drain = woundDrainRate;
-                if (useBevelCut && Vector3.Angle(node.woundFaceNormal, node.growDirection) > 10f)
-                    drain *= bevelCutDrainMult;
-                ApplyDamage(node, DamageType.WoundDrain, drain);
-            }
-
-            float seasonsToHeal = Mathf.Max(1f, node.woundRadius * seasonsToHealPerUnit);
-            float remaining     = 1f - node.woundAge / seasonsToHeal;
-
-            if (remaining <= 0f)
-            {
-                node.hasWound = false;
-                if (woundObjects.TryGetValue(node.id, out var wGo))
+                if (!node.pasteApplied)
                 {
-                    Destroy(wGo);
-                    woundObjects.Remove(node.id);
+                    float drain = woundDrainRate;
+                    if (useBevelCut && Vector3.Angle(node.woundFaceNormal, node.growDirection) > 10f)
+                        drain *= bevelCutDrainMult;
+                    ApplyDamage(node, DamageType.WoundDrain, drain);
+                }
+
+                float seasonsToHeal = Mathf.Max(1f, node.woundRadius * seasonsToHealPerUnit);
+                if (node.woundAge >= seasonsToHeal)   // health wound closed (stops draining)
+                {
+                    node.hasWound = false;
+                    if (woundObjects.TryGetValue(node.id, out var wGo))
+                    {
+                        Destroy(wGo);
+                        woundObjects.Remove(node.id);
+                    }
                 }
             }
-            // Wound visuals are now driven by vertex.g (woundAge) in TreeMeshBuilder —
-            // no per-frame scale needed here.
+            // Visual occlusion (callus roll-in + stub engulfment) is driven by WoundHealProgress
+            // in TreeMeshBuilder from the still-advancing woundAge — no per-frame work here.
         }
+        // Force a rebuild so the occlusion advances even on a mature tree that added no geometry.
+        if (anyWoundAged) meshBuilder?.SetDirty();
 
         // Trim trauma recovery: all damaged non-root nodes heal a small amount each spring.
         // Wound drain (woundDrainRate = 0.05) slightly exceeds this (0.04) so unprotected
@@ -3163,6 +3209,7 @@ public class TreeSkeleton : MonoBehaviour
         if (cutSite != null)
         {
             cutSite.hasWound        = true;
+            cutSite.hadWoundScar    = true;
             cutSite.woundRadius     = layer.node.radius;
             cutSite.woundFaceNormal = layer.node.growDirection;
             cutSite.woundAge        = 0f;
@@ -4356,6 +4403,7 @@ public class TreeSkeleton : MonoBehaviour
         {
             bool isSubdivisionCut  = (node.depth == parent.depth);
             parent.hasWound        = true;
+            parent.hadWoundScar    = true;   // keeps a faint callus scar after it heals
             parent.woundRadius     = isSubdivisionCut ? node.radius * 0.35f : node.radius;
             if (isSubdivisionCut)
             {
@@ -4885,6 +4933,14 @@ public class TreeSkeleton : MonoBehaviour
               while (current.children.Count > 0 && ++walkGuard < 5000)
                   current = current.children[0];
               if (walkGuard >= 5000) { Debug.LogError($"[PreGrow] Phase1 walk cycle detected on strand={strandIndex} — skipping"); strandIndex++; continue; }
+            }
+
+            // Player cut this cable (trim tool) — respect it, don't regrow the strand.
+            if (current.isTrimCutPoint)
+            {
+                if (verboseLog) Debug.Log($"[PreGrow] strand={strandIndex} tip is a trim cut point — not regrowing");
+                strandIndex++;
+                continue;
             }
 
             Vector3 existingTip = transform.TransformPoint(current.tipPosition);
@@ -5973,7 +6029,9 @@ public class TreeSkeleton : MonoBehaviour
 
         woundObjects[node.id] = go;
         // Mesh rebuild is already triggered by the trim that calls this.
-        Debug.Log($"[Wound] Wound registered node={node.id} radius={node.woundRadius:F3}");
+        int liveWounds = 0, scarred = 0;
+        foreach (var n in allNodes) { if (n.hasWound) liveWounds++; if (n.hadWoundScar) scarred++; }
+        Debug.Log($"[Wound] node={node.id} r={node.woundRadius:F3} faceN={node.woundFaceNormal} grow={node.growDirection} term={node.isTerminal} | live={liveWounds} scars={scarred}");
     }
 
     /// <summary>
