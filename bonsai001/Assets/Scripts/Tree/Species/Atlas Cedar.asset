@@ -14,6 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   speciesName: Atlas Cedar
   scientificName: Cedrus atlantica
+  foliageType: 2
+  evergreen: 1
+  needlesPerTuft: 24
+  needleLength: 0.26
   baseGrowSpeed: 0.15
   depthSpeedDecay: 0.85
   depthsPerYear: 2
@@ -59,3 +63,10 @@ MonoBehaviour:
   canDefoliate: 0
   leafGrowDays: 30
   leafBudBreakColor: {r: 0.6, g: 0.78, b: 0.52, a: 1}
+  fruitType: 4
+  fruitColor: {r: 0.45, g: 0.52, b: 0.32, a: 1}
+  fruitRipeColor: {r: 0.5, g: 0.36, b: 0.22, a: 1}
+  fruitSetMonth: 6
+  fruitRipeMonth: 11
+  floweringStartAge: 6
+  flowerBudChance: 0.35

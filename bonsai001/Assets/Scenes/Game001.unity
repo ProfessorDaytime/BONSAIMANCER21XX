@@ -989,6 +989,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 8681584e0947cd04b8f769610d55d063, type: 2}
   - {fileID: 11400000, guid: 4ce3cd75e9336d64993714afc3025b7d, type: 2}
   - {fileID: 11400000, guid: b7bcf17ebbff5fa4998ee69a28642756, type: 2}
+  itemCatalog: {fileID: 11400000, guid: 61618cd347e581b41aa81adb600b860d, type: 2}
+  tablePlatform: {fileID: 0}
 --- !u!4 &293476775 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 771f9ff4e98ed7547bd1039cc0b2fcec, type: 3}
@@ -2006,10 +2008,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 701059896}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 1920, y: 1080}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &442151252
 MonoBehaviour:
@@ -3624,6 +3626,13 @@ GameObject:
   - component: {fileID: 980914157}
   - component: {fileID: 980914158}
   - component: {fileID: 980914159}
+  - component: {fileID: 980914161}
+  - component: {fileID: 980914160}
+  - component: {fileID: 980914163}
+  - component: {fileID: 980914162}
+  - component: {fileID: 980914164}
+  - component: {fileID: 980914166}
+  - component: {fileID: 980914165}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -3696,7 +3705,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 980914154}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 30d5030448cb83549a4df4bf8288cc1c, type: 3}
   m_Name: 
@@ -3724,6 +3733,180 @@ MonoBehaviour:
   skeleton: {fileID: 1486295570}
   modes: []
   activeModeIndex: 0
+--- !u!114 &980914160
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 980914154}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4056a18485564074c9877fe6caf50d1f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ProgressionHUD
+--- !u!114 &980914161
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 980914154}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 010dbb0609ff9a2408a9bab236b0b492, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ProgressionManager
+  seasonStewardshipReward: 25
+  defaultMode: 1
+--- !u!114 &980914162
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 980914154}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e994c490d1b13e343917678ff2f6b32e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CustomizeManager
+  catalog: {fileID: 11400000, guid: 61618cd347e581b41aa81adb600b860d, type: 2}
+--- !u!114 &980914163
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 980914154}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 08e89904357630448ae5f22b4fc5a3e0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BackgroundManager
+--- !u!114 &980914164
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 980914154}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 912828782db96cf46943a796cc854292, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GameUiThemer
+--- !u!114 &980914165
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 980914154}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 82de375a4cb831642b339dac3230038d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MusicManager
+  volume: 0.55
+  fadeSeconds: 0.6
+--- !u!82 &980914166
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 980914154}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_Resource: {fileID: 0}
+  m_PlayOnAwake: 1
+  m_Volume: 1
+  m_Pitch: 1
+  Loop: 0
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
+  rolloffCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  panLevelCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  spreadCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  reverbZoneMixCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
 --- !u!1 &986802792
 GameObject:
   m_ObjectHideFlags: 0
@@ -6045,6 +6228,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1486295599}
+    - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1486295600}
+    - targetCorrespondingSourceObject: {fileID: 423194130296865908, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1486295604}
   m_SourcePrefab: {fileID: 100100000, guid: 592e4aa708d687845a81f9b8801873ad, type: 3}
 --- !u!1 &1486295552 stripped
 GameObject:
@@ -6064,6 +6253,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ringSegments: 8
+  stubLengthMult: 1.2
   debugHealthRings: 0
   debugRainbowRoots: 0
   debugRootVisibility: 0
@@ -6229,6 +6419,9 @@ MonoBehaviour:
   bevelCutDrainMult: 0.7
   woundDrainRate: 0.05
   seasonsToHealPerUnit: 20
+  woundOcclusionPerUnit: 120
+  woundOcclusionBaseSeasons: 1
+  woundPasteHealMult: 1.6
   trimTraumaDamage: 0.05
   trimTraumaRecoveryPerSeason: 0.04
   woundMaterialOverride: {fileID: -876546973899608171, guid: eb692e6c2e11357479bb5b074cd5e836, type: 3}
@@ -6510,6 +6703,45 @@ MonoBehaviour:
   defoliateMinIntervalYears: 2
   autoRepot: 1
   unwireDelayDays: 20
+--- !u!114 &1486295600
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1486295552}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98f9701fe6cbbde4d94fa19fb767c43a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::QuickStartManager
+  skeleton: {fileID: 1486295570}
+  cameraOrbit: {fileID: 963194231}
+  styles:
+  - {fileID: 11400000, guid: 051582429a490f34da9690bbcab413df, type: 2}
+  testSpecies: {fileID: 11400000, guid: 0017a85f7d355b94aba9304026bfe1eb, type: 2}
+  testStyle: {fileID: 11400000, guid: 051582429a490f34da9690bbcab413df, type: 2}
+  testAgeYears: 10
+  saveOnComplete: 1
+  quickStartSeconds: 30
+  maxQuickStartTimescale: 6000
+--- !u!114 &1486295604
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1486295552}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bfd4326c562f904b9c2bd4dada47613, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FlowerManager
+  skeleton: {fileID: 1486295570}
+  flowerMaterialOverride: {fileID: 2100000, guid: 8e6d037381fcd8b46be990f61d564fa3, type: 2}
+  blossomScale: 0.06
+  blossomsPerBud: 3
+  fruitScale: 0.05
 --- !u!1 &1496661667
 GameObject:
   m_ObjectHideFlags: 0

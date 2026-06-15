@@ -318,30 +318,28 @@ public class GameManager : MonoBehaviour
 
 
 
-        if (hour >= 24f)
+        // Advance whole days. The loop CATCHES UP multiple days per frame at high timescale, so the
+        // calendar stays in lock-step with growth (which advances by dt*TIMESCALE, uncapped) and no
+        // day / month / year event is skipped — Quick-Start can run very fast without the AutoStyler
+        // losing its monthly shaping. `hour -= 24` (not 0) keeps time exact. The guard caps work per
+        // frame so a pathologically high TIMESCALE can't freeze the game (dt is already clamped by
+        // Time.maximumDeltaTime, so this only bites at absurd settings).
+        int dayGuard = 0;
+        while (hour >= 24f && dayGuard++ < 4000)
         {
+            hour -= 24f;
             day++;
-            hour = 0f;
             CheckScheduledEvents();
+
+            if (day > DaysInMonth(month, year))
+            {
+                day = 1;
+                month++;
+                if (month > 12) { month = 1; year++; }
+                SetMonthText();
+            }
             TextCallFunction();
         }
-        if (day > DaysInMonth(month, year))
-        {
-            month++;
-            day = 1;
-            SetMonthText();
-            TextCallFunction();
-        }
-        if (month > 12)
-        {
-            month = 1;
-            year++;
-            SetMonthText();
-            TextCallFunction();
-        }
-
-
-
     }
 
     public void TextCallFunction(){

@@ -1,8 +1,8 @@
 using UnityEngine;
 
 /// <summary>Catalog category. Drives which entry point surfaces an item and which apply-handler
-/// runs when it is chosen.</summary>
-public enum ItemCategory { Pot, Rock, GroundCover, Table }
+/// runs when it is chosen. Appended categories keep their int order for serialization.</summary>
+public enum ItemCategory { Pot, Rock, GroundCover, Table, Decoration, Background, Music, UiTheme }
 
 /// <summary>
 /// One selectable/placeable catalog item — a pot, rock, ground-cover patch, or display table.
@@ -36,12 +36,40 @@ public class ItemDefinition : ScriptableObject
     [Tooltip("Rock category: which rock-size scale this maps to.")]
     public RockPlacer.RockSize rockSize = RockPlacer.RockSize.M;
 
-    [Header("Unlock (placeholder for gamification)")]
-    [Tooltip("If false the card shows locked until unlockId is granted by the future progression system.")]
+    [Header("Unlock (progression)")]
+    [Tooltip("If false the card stays LOCKED until the progression system grants ownership of this " +
+             "item (a milestone reward). If true, the item is available — free if cost is 0, or " +
+             "purchasable for `cost` Aesthetic Points.")]
     public bool unlockedByDefault = true;
-    [Tooltip("Identifier the gamification system grants to unlock this item. Empty = always available.")]
+    [Tooltip("Identifier a milestone grants to unlock this item. Empty = keyed by the asset name.")]
     public string unlockId = "";
+
+    [Header("Shop")]
+    [Tooltip("Aesthetic Points price. 0 = free (available immediately when unlockedByDefault). " +
+             "Ignored if no ProgressionManager is in the scene (catalog still works without the economy).")]
+    public int cost = 0;
+
+    [Header("Background category (BackgroundManager)")]
+    [Tooltip("Background category only: skybox material to apply. Null = use swatchColor as a solid " +
+             "backdrop instead. The `prefab` field (above) can hold optional scenery to place around the tree.")]
+    public Material skyboxMaterial;
+    [Tooltip("Background category only: when applied, also drives the camera's solid backdrop colour " +
+             "(reuses swatchColor) and the scene ambient tint when no skybox is set.")]
+    public Color ambientColor = new Color(0.5f, 0.5f, 0.5f);
+
+    [Header("UI Theme category (UiTheme)")]
+    [Tooltip("UiTheme category only: id of the code-defined palette to apply (forest / charcoal / " +
+             "night / sakura / parchment). See UiTheme.cs.")]
+    public string themeId = "";
+
+    [Header("Music category (MusicManager)")]
+    [Tooltip("Music category only: the looping track played while this item is equipped. " +
+             "Null = silence (a valid 'no music' choice).")]
+    public AudioClip audioClip;
 
     /// <summary>Display name fallback so a card always has a label.</summary>
     public string Label => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
+
+    /// <summary>Stable ownership/unlock key — the authored unlockId, or the asset name as fallback.</summary>
+    public string Id => string.IsNullOrWhiteSpace(unlockId) ? name : unlockId;
 }

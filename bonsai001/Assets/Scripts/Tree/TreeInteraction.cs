@@ -980,6 +980,7 @@ public class TreeInteraction : MonoBehaviour
         // Capture start direction before WireNode records it as wireOriginalDirection
         wireAnimStartDir = wireTarget.growDirection;
         skeleton.WireNode(wireTarget, localDir);
+        ProgressionManager.Instance?.ReachMilestone("first_wire");   // player-applied wires only
         wireAnimEndDir = wireTarget.wireTargetDirection;
 
         // Snapshot every descendant's current growDirection.

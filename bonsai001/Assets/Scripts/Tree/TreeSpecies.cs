@@ -242,4 +242,64 @@ public class TreeSpecies : ScriptableObject
     [Tooltip("Pale tint blended over leafSpringColor while a leaf is young — the light " +
              "yellow-green of fresh growth that darkens as the leaf matures.")]
     public Color leafBudBreakColor = new Color(0.72f, 0.88f, 0.38f);
+
+    // ── Foliage Type (broadleaf vs needle) ──────────────────────────────────────
+    [Header("Foliage Type")]
+    [Tooltip("BroadLeaf uses the leaf prefab clusters. The needle types build a procedural " +
+             "'tuft' mesh per branch tip — one object per tip, not per needle:\n" +
+             "PineFascicle — long needles in bundles (pines)\n" +
+             "SpruceRadial — short needles all round the twig (spruce, cedar, cryptomeria)\n" +
+             "FeatheryFrond — flat fern-like spray (dawn redwood, swamp cypress)\n" +
+             "Scale — tiny dense scales (juniper)")]
+    public FoliageType foliageType = FoliageType.BroadLeaf;
+
+    [Tooltip("Evergreen foliage persists year-round — needles do NOT drop each autumn.\n" +
+             "FALSE for deciduous conifers (dawn redwood, swamp cypress, larch) and all broadleaf.")]
+    public bool evergreen = false;
+
+    [Tooltip("Needles per tuft for needle foliage. One tuft mesh is built per tree and shared by " +
+             "every branch tip, so this is the per-tip needle density (ignored for BroadLeaf).")]
+    [Range(4, 40)] public int needlesPerTuft = 14;
+
+    [Tooltip("Overall world-space size of a needle tuft. Season miniaturization (refinement, " +
+             "pot-bound pressure) shrinks it further, just like leaves.")]
+    public float needleLength = 0.5f;
+
+    // ── Flowering & Fruit ───────────────────────────────────────────────────────
+    [Header("Flowering & Fruit")]
+    [Tooltip("What this species blooms as. None = no flowers. (Fruit follows in a later pass.)")]
+    public BloomType bloomType = BloomType.None;
+    [Tooltip("Blossom / petal colour.")]
+    public Color bloomColor = new Color(1f, 0.78f, 0.86f);   // cherry pink
+    [Tooltip("Calendar month flowers open (1–12). Cherry/plum ~3–4.")]
+    public int bloomMonth = 4;
+    [Tooltip("Bloom on bare branches BEFORE the leaves emerge (cherry, plum, magnolia).")]
+    public bool bloomBeforeLeaves = false;
+    [Tooltip("In-game days blossoms hold before the petals drop.")]
+    public int bloomDurationDays = 14;
+    [Tooltip("Tree age in years before it is mature enough to flower.")]
+    public int floweringStartAge = 3;
+    [Tooltip("Fraction of eligible bud nodes that set a flower/fruit bud each autumn.")]
+    [Range(0f, 1f)] public float flowerBudChance = 0.6f;
+
+    [Tooltip("Fruit this species sets (None = none). Fruit forms at the flowering sites after bloom, " +
+             "ripens (colour shift), then drops. Fruit-only species (figs, cones) skip the flower bloom.")]
+    public FruitType fruitType = FruitType.None;
+    [Tooltip("Unripe fruit colour (usually green).")]
+    public Color fruitColor = new Color(0.45f, 0.60f, 0.25f);
+    [Tooltip("Ripe fruit colour — red apple / blue juniper berry / dark fig / brown cone…")]
+    public Color fruitRipeColor = new Color(0.75f, 0.15f, 0.12f);
+    [Tooltip("Calendar month fruit sets (after bloom).")]
+    public int fruitSetMonth = 6;
+    [Tooltip("Calendar month fruit is fully ripe; it then drops over the following weeks.")]
+    public int fruitRipeMonth = 9;
 }
+
+/// <summary>Foliage geometry. BroadLeaf spawns leaf prefabs; the rest build procedural needle tufts (NeedleMesh).</summary>
+public enum FoliageType { BroadLeaf, PineFascicle, SpruceRadial, FeatheryFrond, Scale }
+
+/// <summary>Flower geometry for a species' bloom (FlowerManager). Showy, transient (bloom → petal drop).</summary>
+public enum BloomType { None, Blossom, Raceme, Catkin }
+
+/// <summary>Fruit geometry for a species (FlowerManager). Sets after bloom, ripens, then drops.</summary>
+public enum FruitType { None, Berry, Fig, Samara, Cone, Pome }

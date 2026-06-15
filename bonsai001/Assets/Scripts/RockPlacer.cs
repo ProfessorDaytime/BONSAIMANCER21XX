@@ -53,6 +53,31 @@ public class RockPlacer : MonoBehaviour
         transform.localScale = RockScales[(int)rockSize];
     }
 
+    /// <summary>
+    /// Swaps the rock's mesh + materials (and its MeshCollider, if any) to a chosen rock model from
+    /// the item catalog, then re-applies the current size. A null prefab is a no-op, so the default
+    /// rock stands in until rock art is authored. Pick the rock BEFORE draping roots — swapping a
+    /// draped rock's collider mid-Ishitsuki would misalign the cables.
+    /// </summary>
+    public void SetRockModel(GameObject prefab)
+    {
+        if (prefab == null) return;
+        var srcFilter = prefab.GetComponentInChildren<MeshFilter>();
+        if (srcFilter == null || srcFilter.sharedMesh == null) return;
+
+        var myFilter = GetComponent<MeshFilter>();
+        if (myFilter != null) myFilter.sharedMesh = srcFilter.sharedMesh;
+
+        var srcRend = prefab.GetComponentInChildren<MeshRenderer>();
+        var myRend  = GetComponent<MeshRenderer>();
+        if (myRend != null && srcRend != null) myRend.sharedMaterials = srcRend.sharedMaterials;
+
+        if (rockCollider == null) rockCollider = GetComponent<Collider>();
+        if (rockCollider is MeshCollider mc) mc.sharedMesh = srcFilter.sharedMesh;
+
+        ApplyRockSize();
+    }
+
     // ── State ─────────────────────────────────────────────────────────────────
     public static bool RockGrabbed { get; private set; }
     bool rockGrabbed { get => RockGrabbed; set => RockGrabbed = value; }

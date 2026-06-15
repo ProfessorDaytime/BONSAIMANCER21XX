@@ -320,7 +320,9 @@ public class AutoStyler : MonoBehaviour
                     Log($"[AutoStyle] Trim fired node={id}");
                     float trimAz = GetBranchAzimuth(n);
                     var cutSite = n.parent;   // TrimNode wounds the parent — capture before the cut
-                    skeleton.TrimNode(n);
+                    ProgressionManager.AutomationActive = true;   // auto-styler cuts don't earn the player's badge
+                    try { skeleton.TrimNode(n); }
+                    finally { ProgressionManager.AutomationActive = false; }
                     CareLog.Add("Trim", $"Removed branch at {trimAz:F0}° — no open slot in its height band", id);
                     if (autoPaste && cutSite != null && cutSite.hasWound && !cutSite.pasteApplied)
                     {

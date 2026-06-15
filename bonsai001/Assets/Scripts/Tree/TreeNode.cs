@@ -52,6 +52,7 @@ public class TreeNode
     // Back-budding: trimming a tip stimulates dormant axillary buds on ancestors.
 
     public bool hasBud;              // terminal bud set; will activate next spring
+    public bool hasFlowerBud;        // flower bud set last autumn; opens into blossoms at bloomMonth
     public bool backBudStimulated;   // tip ancestry was trimmed; boosted lateral chance next spring
 
     /// <summary>World-space compass azimuth (degrees, 0=+Z, 90=+X) the next lateral spawned

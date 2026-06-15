@@ -50,6 +50,7 @@ public class SaveNode
 
     // Bud
     public bool hasBud;
+    public bool hasFlowerBud;
     public bool backBudStimulated;
     public float preferredLateralAzimuth = -1f;  // initializer = "no preference" for saves predating the field
 
@@ -716,6 +717,7 @@ public static class SaveManager
             branchVigor       = node.branchVigor,
 
             hasBud              = node.hasBud,
+            hasFlowerBud        = node.hasFlowerBud,
             backBudStimulated   = node.backBudStimulated,
             preferredLateralAzimuth = node.preferredLateralAzimuth,
             isTrimCutPoint      = node.isTrimCutPoint,

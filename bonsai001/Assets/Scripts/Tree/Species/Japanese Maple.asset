@@ -58,3 +58,15 @@ MonoBehaviour:
   leafSpringColor: {r: 0.18, g: 0.62, b: 0.12, a: 1}
   leafGrowDays: 14
   leafBudBreakColor: {r: 0.82, g: 0.55, b: 0.4, a: 1}
+  bloomType: 3
+  bloomColor: {r: 0.7, g: 0.2, b: 0.25, a: 1}
+  bloomMonth: 4
+  bloomBeforeLeaves: 0
+  bloomDurationDays: 10
+  floweringStartAge: 3
+  flowerBudChance: 0.5
+  fruitType: 3
+  fruitColor: {r: 0.55, g: 0.65, b: 0.3, a: 1}
+  fruitRipeColor: {r: 0.72, g: 0.5, b: 0.3, a: 1}
+  fruitSetMonth: 5
+  fruitRipeMonth: 9

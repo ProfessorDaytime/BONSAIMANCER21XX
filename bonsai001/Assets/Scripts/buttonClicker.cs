@@ -195,13 +195,21 @@ public class ButtonClicker : MonoBehaviour
     // ── Item Catalog (H) ──────────────────────────────────────────────────────
     [Header("Item Catalog (H)")]
     [SerializeField] ItemCatalog itemCatalog;   // pots / rocks / tables / ground-cover definitions
+    [SerializeField] GameObject  tablePlatform; // the display table/platform GO whose mesh a Table item swaps
     ItemCatalogPanel catalogPanel;              // shared modal card grid; created in InitUI
     ItemDefinition   pendingPotItem;            // pot chosen from the catalog (prefab = mesh-swap hook)
     Button           choosePotButton;           // "Choose pot…" injected into the repot panel
+    ItemDefinition   pendingRockItem;           // rock chosen from the catalog
+    Button           chooseRockButton;          // "Choose rock…" injected into the rock-size panel
+    ItemDefinition   pendingTableItem;          // table chosen from the catalog
+    Button           chooseTableButton;         // "Choose table…" (settings / new-game)
 
     // ── Quick-Start (Multi-Tree / Quick-Start) ────────────────────────────────
     QuickStartPanel  quickStartPanel;           // style + age picker
     Button           quickStartButton;          // "⚡ Quick-Start" injected into the species overlay
+
+    // ── Progression mode (Career / Sandbox) ───────────────────────────────────
+    Button           modeToggleButton;          // "Mode: …" injected into the species overlay
 
     // ── Rock size selection ───────────────────────────────────────────────────
     VisualElement rockSizePanel;
@@ -499,7 +507,6 @@ public class ButtonClicker : MonoBehaviour
         fungicideButton      = root.Q("FungicideButton")    as Button;
 
         repotPanel            = root.Q("RepotPanel");
-        SetupItemCatalog(root);
         repotRockToggleButton = root.Q("RepotRockToggleButton") as Button;
         repotConfirmButton    = root.Q("RepotConfirmButton")    as Button;
         soilDegradationLabel  = root.Q("SoilDegradationLabel") as Label;
@@ -579,7 +586,7 @@ public class ButtonClicker : MonoBehaviour
         { treeHealthCollapsed = !treeHealthCollapsed; ApplyPanelCollapse(treeStatsPanel, treeStatsTitle, "TREE HEALTH", treeHealthCollapsed); });
 
         // ── Scroll sensitivity ────────────────────────────────────────────────
-        const float scrollSpeed = 400f;
+        const float scrollSpeed = 80f;   // ≈ one species/save card per wheel tick (was 400 = several)
         var speciesScroll = root.Q<UnityEngine.UIElements.ScrollView>("SpeciesScrollView");
         if (speciesScroll != null) speciesScroll.mouseWheelScrollSize = scrollSpeed;
         var loadScroll = root.Q<UnityEngine.UIElements.ScrollView>("LoadMenuScrollView");
@@ -625,6 +632,8 @@ public class ButtonClicker : MonoBehaviour
         speciesConfirmButton  = root.Q("SpeciesConfirmButton") as Button;
         speciesConfirmButton?.RegisterCallback<ClickEvent>(_ => OnSpeciesConfirmClick());
         SetupQuickStart(root);
+        SetupModeToggle(root);    // Career/Sandbox pick beside the species Confirm
+        SetupItemCatalog(root);   // after repot/rock/species lookups so all inject targets exist
         BuildSortBar();
         BuildSpeciesCards();
 
@@ -855,6 +864,7 @@ public class ButtonClicker : MonoBehaviour
         if (skeleton != null) skeleton.OnWireSetGold += OnWireSetGold;
         WeedManager.OnFirstWeedSpawned   += OnFirstWeedSpawned;
         SaveManager.OnSaved              += ShowSaveToast;
+        ProgressionManager.OnToolUnlocked += OnToolUnlockedRefresh;
 
         // Sync overlay visibility to whatever state was set before OnEnable ran
         var initState = GameManager.Instance?.state ?? GameState.SpeciesSelect;
@@ -873,6 +883,10 @@ public class ButtonClicker : MonoBehaviour
                     loadMenuBackButton.style.display = DisplayStyle.None;
             }
         }
+
+        // Assert Career tool gates once everything is wired (no-op in Sandbox / no economy).
+        RefreshModeToggle();
+        ApplyToolGates();
     }
 
     void OnDisable()
@@ -883,6 +897,7 @@ public class ButtonClicker : MonoBehaviour
         if (skeleton != null) skeleton.OnWireSetGold -= OnWireSetGold;
         WeedManager.OnFirstWeedSpawned   -= OnFirstWeedSpawned;
         SaveManager.OnSaved              -= ShowSaveToast;
+        ProgressionManager.OnToolUnlocked -= OnToolUnlockedRefresh;
     }
 
     void Update()
@@ -1340,7 +1355,10 @@ public class ButtonClicker : MonoBehaviour
     void TogglePauseMenu()
     {
         if (pauseMenuOverlay == null) return;
-        bool opening = pauseMenuOverlay.style.display == DisplayStyle.None;
+        // Use resolvedStyle (the actual computed visibility) — style.display reads only the inline
+        // value, which is unset at startup when the menu is hidden via USS, so the first click would
+        // otherwise misread the toggle state and require a second click to open.
+        bool opening = pauseMenuOverlay.resolvedStyle.display == DisplayStyle.None;
         // Don't open the pause menu from non-gameplay states.
         if (opening)
         {
@@ -1567,6 +1585,10 @@ public class ButtonClicker : MonoBehaviour
 
     void OnGameStateChanged(GameState state)
     {
+        // Re-assert Career tool gates after any contextual button show/hide (no-op in Sandbox).
+        RefreshModeToggle();
+        ApplyToolGates();
+
         // Each time the game settles into a normal gameplay state, check for weeds.
         // MaybeShowTooltip's shownTooltips guard ensures the tooltip only ever shows once.
         if (IsNormalGameplayState(state) &&
@@ -1966,6 +1988,13 @@ public class ButtonClicker : MonoBehaviour
     void OnLoadMenuCardLoad(string slotId)
     {
         var leafMgr = skeleton?.GetComponent<LeafManager>();
+
+        // Multi-tree: save the CURRENT tree before switching, so in-session switching never loses
+        // progress — and a never-explicitly-saved current tree is preserved as its own slot
+        // (AutoSave creates one when ActiveSlotId is empty). Skip if we're reloading the same slot.
+        if (skeleton != null && skeleton.root != null && SaveManager.ActiveSlotId != slotId)
+            SaveManager.AutoSave(skeleton, leafMgr);
+
         bool ok = SaveManager.LoadSlot(slotId, skeleton, leafMgr);
         if (ok)
         {
@@ -2243,6 +2272,71 @@ public class ButtonClicker : MonoBehaviour
             choosePotButton.RegisterCallback<ClickEvent>(_ => OpenPotCatalog());
             repotPanel.Add(choosePotButton);
         }
+
+        // "Choose rock…" in the rock-size panel (shown during Ishitsuki rock placement).
+        if (rockSizePanel != null && chooseRockButton == null)
+        {
+            chooseRockButton = new Button { text = "Choose rock…" };
+            chooseRockButton.style.marginTop = 6;
+            chooseRockButton.RegisterCallback<ClickEvent>(_ => OpenRockCatalog());
+            rockSizePanel.Add(chooseRockButton);
+        }
+
+        // "Choose table…" on the new-game screen — the table is the display surface; selecting one
+        // swaps the platform mesh.
+        if (speciesConfirmButton != null && chooseTableButton == null)
+        {
+            chooseTableButton = new Button { text = "Choose table…" };
+            chooseTableButton.style.marginTop = 6;
+            chooseTableButton.RegisterCallback<ClickEvent>(_ => OpenTableCatalog());
+            (speciesConfirmButton.parent ?? root).Add(chooseTableButton);
+        }
+    }
+
+    void OpenRockCatalog()
+    {
+        if (catalogPanel == null) return;
+        catalogPanel.Open(ItemCategory.Rock, "Choose a Rock", pendingRockItem, rock =>
+        {
+            pendingRockItem = rock;
+            var placer = FindAnyObjectByType<RockPlacer>();
+            if (placer != null)
+            {
+                placer.rockSize = rock.rockSize;
+                placer.SetRockModel(rock.prefab);   // swaps the rock mesh when art exists (no-op on null)
+                placer.ApplyRockSize();             // apply the chosen size either way
+                RefreshRockSizeButtons(rock.rockSize);
+            }
+        });
+    }
+
+    void OpenTableCatalog()
+    {
+        if (catalogPanel == null) return;
+        catalogPanel.Open(ItemCategory.Table, "Choose a Table", pendingTableItem, ApplyTable);
+    }
+
+    // Swaps the display platform's mesh/materials (and MeshCollider, if any) to the chosen table.
+    // No-op without a target or art, so the default platform stands in until table models exist.
+    void ApplyTable(ItemDefinition table)
+    {
+        pendingTableItem = table;
+        if (tablePlatform == null)
+            tablePlatform = GameObject.Find("PlanterTable") ?? GameObject.Find("Platform");
+        if (tablePlatform == null || table.prefab == null) return;
+
+        var src = table.prefab.GetComponentInChildren<MeshFilter>();
+        if (src == null || src.sharedMesh == null) return;
+
+        var dstFilter = tablePlatform.GetComponent<MeshFilter>();
+        if (dstFilter != null) dstFilter.sharedMesh = src.sharedMesh;
+
+        var srcRend = table.prefab.GetComponentInChildren<MeshRenderer>();
+        var dstRend = tablePlatform.GetComponent<MeshRenderer>();
+        if (dstRend != null && srcRend != null) dstRend.sharedMaterials = srcRend.sharedMaterials;
+
+        var mc = tablePlatform.GetComponent<MeshCollider>();
+        if (mc != null) mc.sharedMesh = src.sharedMesh;
     }
 
     void OpenPotCatalog()
@@ -2291,6 +2385,73 @@ public class ButtonClicker : MonoBehaviour
         // QuickStartManager.Generate plants the species, applies the style, fast-forwards growth.
         quickStartPanel.Open(qsm.Styles, 10, (style, age) => qsm.Generate(selectedSpecies, style, age));
     }
+
+    // ── Progression mode (Career / Sandbox) ───────────────────────────────────
+
+    void SetupModeToggle(VisualElement root)
+    {
+        // Only meaningful with a ProgressionManager in the scene; otherwise stay hidden.
+        if (speciesConfirmButton == null || modeToggleButton != null) return;
+
+        modeToggleButton = new Button();
+        modeToggleButton.style.marginTop = 6;
+        modeToggleButton.RegisterCallback<ClickEvent>(_ => ToggleGameMode());
+        (speciesConfirmButton.parent ?? root).Add(modeToggleButton);
+        RefreshModeToggle();
+    }
+
+    void ToggleGameMode()
+    {
+        var pm = ProgressionManager.Instance;
+        if (pm == null) return;
+        pm.SetMode(pm.CurrentMode == GameMode.Career ? GameMode.Sandbox : GameMode.Career);
+        RefreshModeToggle();
+        ApplyToolGates();
+    }
+
+    void RefreshModeToggle()
+    {
+        if (modeToggleButton == null) return;
+        var pm = ProgressionManager.Instance;
+        if (pm == null) { modeToggleButton.style.display = DisplayStyle.None; return; }
+
+        modeToggleButton.style.display = DisplayStyle.Flex;
+        modeToggleButton.text = pm.CurrentMode == GameMode.Career
+            ? "Mode: Career \U0001F331"     // sprout
+            : "Mode: Sandbox ∞";       // infinity
+    }
+
+    /// <summary>Career-mode tool gating: locked tools are disabled + dimmed (not hidden, so they
+    /// never fight the existing contextual show/hide logic). Sandbox / no-economy leaves all enabled.
+    /// Re-asserted on state changes and when a tool unlocks.</summary>
+    void ApplyToolGates()
+    {
+        var pm = ProgressionManager.Instance;
+
+        void Gate(Button b, string tool)
+        {
+            if (b == null) return;
+            bool unlocked = pm == null || pm.IsToolUnlocked(tool);
+            b.SetEnabled(unlocked);
+            b.style.opacity = unlocked ? 1f : 0.4f;
+        }
+
+        Gate(trimButton,         "trim");
+        Gate(pasteButton,        "trim");
+        Gate(wireButton,         "wire");
+        Gate(removeWireButton,   "wire");
+        Gate(pinchButton,        "pinch");
+        Gate(defoliateButton,    "defoliate");
+        Gate(defoliateAllButton, "defoliate");
+        Gate(fertilizeButton,    "soil");
+        Gate(rootPruneButton,    "root");
+        Gate(airLayerButton,     "advanced");
+        Gate(placeRockButton,    "advanced");
+        Gate(graftButton,        "advanced");
+        Gate(promoteButton,      "advanced");
+    }
+
+    void OnToolUnlockedRefresh(string toolId) => ApplyToolGates();
 
     // Preset buttons only SELECT — nothing applies until Confirm Repot.
     void SelectSoilPreset(PotSoil.SoilPreset preset)
@@ -2894,10 +3055,10 @@ public class ButtonClicker : MonoBehaviour
         card.style.marginBottom    = 5;
         card.style.borderTopLeftRadius    = card.style.borderTopRightRadius    = 6;
         card.style.borderBottomLeftRadius = card.style.borderBottomRightRadius = 6;
-        card.style.backgroundColor = new StyleColor(new Color(0.10f, 0.14f, 0.10f));
+        card.style.backgroundColor = new StyleColor(UiTheme.Current.cardBg);
         card.style.borderTopWidth = card.style.borderBottomWidth =
             card.style.borderLeftWidth = card.style.borderRightWidth = 1;
-        SetCardBorderColor(card, new Color(0.25f, 0.25f, 0.22f));
+        SetCardBorderColor(card, UiTheme.Current.edge);
 
         // Left column: common name + scientific name
         var names = new VisualElement();
@@ -2954,26 +3115,24 @@ public class ButtonClicker : MonoBehaviour
 
     void SelectSpeciesCard(TreeSpecies sp, VisualElement card)
     {
-        // Deselect previous
+        // Deselect previous — back to the theme's normal card colour.
         if (selectedSpeciesCard != null)
         {
-            selectedSpeciesCard.style.backgroundColor = new StyleColor(new Color(0.10f, 0.14f, 0.10f));
-            SetCardBorderColor(selectedSpeciesCard, new Color(0.25f, 0.25f, 0.22f));
+            selectedSpeciesCard.style.backgroundColor = new StyleColor(UiTheme.Current.cardBg);
+            SetCardBorderColor(selectedSpeciesCard, UiTheme.Current.edge);
         }
 
         selectedSpecies     = sp;
         selectedSpeciesCard = card;
 
-        card.style.backgroundColor = new StyleColor(new Color(0.14f, 0.19f, 0.11f));
-        SetCardBorderColor(card, new Color(0.898f, 0.702f, 0.086f));  // gold
+        card.style.backgroundColor = new StyleColor(UiTheme.Current.cardSel);
+        SetCardBorderColor(card, UiTheme.Current.accent);
 
         // Enable confirm button
         if (speciesConfirmButton != null)
         {
-            speciesConfirmButton.style.backgroundColor =
-                new StyleColor(new Color(0.898f, 0.702f, 0.086f));
-            speciesConfirmButton.style.color =
-                new StyleColor(new Color(0.05f, 0.05f, 0.05f));
+            speciesConfirmButton.style.backgroundColor = new StyleColor(UiTheme.Current.accent);
+            speciesConfirmButton.style.color           = new StyleColor(UiTheme.Current.ink);
             speciesConfirmButton.pickingMode = PickingMode.Position;
         }
     }

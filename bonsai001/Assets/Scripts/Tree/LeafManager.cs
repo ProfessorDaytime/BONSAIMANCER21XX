@@ -74,6 +74,40 @@ public class LeafManager : MonoBehaviour
     // Shared material — one colour update drives all leaves
     Material leafMat;
 
+    // ── Needle foliage (conifers) ─────────────────────────────────────────────
+    // One tuft mesh + material is built per tree and shared by every branch tip, so
+    // a fully-needled conifer is one object per tip (not per needle). Built lazily the
+    // first time a needle species spawns foliage.
+    Mesh     needleTuftMesh;
+    Material needleMat;
+
+    bool IsNeedleSpecies => skeleton != null && skeleton.species != null
+                            && skeleton.species.foliageType != FoliageType.BroadLeaf;
+
+    bool IsEvergreen => skeleton != null && skeleton.species != null && skeleton.species.evergreen;
+
+    void EnsureNeedleAssets()
+    {
+        if (skeleton == null || skeleton.species == null) return;
+
+        if (needleTuftMesh == null)
+            needleTuftMesh = NeedleMesh.Build(skeleton.species.foliageType,
+                                              Mathf.Clamp(skeleton.species.needlesPerTuft, 4, 40));
+
+        if (needleMat == null)
+        {
+            Shader sh = Shader.Find("Universal Render Pipeline/Lit")
+                     ?? Shader.Find("Standard")
+                     ?? Shader.Find("Sprites/Default");
+            needleMat = new Material(sh) { enableInstancing = true };
+            Color c = skeleton.species.leafSpringColor;
+            if (needleMat.HasProperty("_BaseColor")) needleMat.SetColor("_BaseColor", c);
+            if (needleMat.HasProperty("_Color"))     needleMat.SetColor("_Color",     c);
+            if (needleMat.HasProperty("_Cull"))      needleMat.SetFloat("_Cull", 0f);   // two-sided
+            if (needleMat.HasProperty("_Smoothness")) needleMat.SetFloat("_Smoothness", 0.15f);
+        }
+    }
+
     // ── Unity ─────────────────────────────────────────────────────────────────
 
     void Awake()
@@ -139,6 +173,13 @@ public class LeafManager : MonoBehaviour
 
         if (state == GameState.LeafFall)
         {
+            // Evergreen needles persist year-round — no autumn colour shift, no drop.
+            if (IsEvergreen)
+            {
+                if (listDirty) RebuildFlatList();
+                return;
+            }
+
             if (listDirty) RebuildFlatList();
             Debug.Log($"[Leaves] LeafFall started | nodeLeaves={nodeLeaves.Count} allLeaves={allLeaves.Count}");
 
@@ -175,7 +216,7 @@ public class LeafManager : MonoBehaviour
         }
         UpdateOpeningBuds();
 
-        if (isLeafFall)
+        if (isLeafFall && !IsEvergreen)
         {
             fallDebugTimer += Time.deltaTime;
             if (fallDebugTimer >= 1f)
@@ -211,13 +252,17 @@ public class LeafManager : MonoBehaviour
         float rootPressure   = skeleton.RootPressureFactor();
         float refinement     = TreeRefinementFactor();
 
-        float scale = baseLeafScale
+        // Needle species size from species.needleLength; broadleaf from baseLeafScale.
+        float foliageBase = (IsNeedleSpecies && skeleton.species != null)
+            ? skeleton.species.needleLength : baseLeafScale;
+
+        float scale = foliageBase
             * Mathf.Lerp(1f, 0.40f, rootPressure   * rootPressureLeafShrink)
             * Mathf.Lerp(1f, 0.55f, refinement      * refinementLeafShrink)
             * Mathf.Lerp(1f, 0.60f, defoliationFactor);
 
         seasonLeafScale = scale;
-        Debug.Log($"[Leaves] seasonLeafScale={scale:F3} (base={baseLeafScale:F3} rootP={rootPressure:F2} refine={refinement:F2} defo={defoliationFactor:F2})");
+        Debug.Log($"[Leaves] seasonLeafScale={scale:F3} (base={foliageBase:F3} rootP={rootPressure:F2} refine={refinement:F2} defo={defoliationFactor:F2})");
     }
 
     /// <summary>Average refinementLevel across live branch terminals, normalized to [0,1].</summary>
@@ -366,6 +411,15 @@ public class LeafManager : MonoBehaviour
 
     void SpawnCluster(TreeNode node)
     {
+        // Needle species: one shared-mesh tuft per tip (no scatter, no staged unfurl).
+        if (IsNeedleSpecies)
+        {
+            nodeLeaves[node.id] = new List<GameObject>(1) { SpawnNeedleTuft(node) };
+            listDirty = true;
+            FinishBudOpen(node.id);
+            return;
+        }
+
         int count = leavesPerNodeRange > 0
             ? Random.Range(leavesPerNode - leavesPerNodeRange, leavesPerNode + leavesPerNodeRange + 1)
             : leavesPerNode;
@@ -449,6 +503,47 @@ public class LeafManager : MonoBehaviour
             curlFraction: Random.Range(0.05f, 0.30f)
         );
 
+        return go;
+    }
+
+    /// <summary>
+    /// Spawns a single procedural needle tuft at a branch tip (conifers). The tuft mesh
+    /// holds the whole bundle of needles, so this is one object per tip — not per needle —
+    /// and every tuft shares the tree's one needleTuftMesh + needleMat so the renderer
+    /// batches them. Reuses the Leaf component for scale-in, node-tracking, seasonal colour
+    /// and (deciduous conifers only) the autumn fall.
+    /// </summary>
+    GameObject SpawnNeedleTuft(TreeNode node)
+    {
+        EnsureNeedleAssets();
+
+        Vector3 branchWorldDir = skeleton.transform.TransformDirection(node.growDirection).normalized;
+        if (branchWorldDir.sqrMagnitude < 0.001f) branchWorldDir = Vector3.up;
+
+        var go = new GameObject("NeedleTuft");
+        go.transform.SetParent(skeleton.transform, worldPositionStays: false);
+        go.transform.localPosition = node.tipPosition;
+        // Outward orientation + free random roll — same mesh, varied look.
+        go.transform.rotation   = Quaternion.LookRotation(branchWorldDir, Vector3.up)
+                                * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
+        go.transform.localScale = Vector3.zero;   // Leaf.Start scales it in
+
+        go.AddComponent<MeshFilter>().sharedMesh         = needleTuftMesh;
+        var mr = go.AddComponent<MeshRenderer>();
+        mr.sharedMaterial    = needleMat;
+        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        var leaf         = go.AddComponent<Leaf>();
+        leaf.ownerNode   = node;
+        leaf.tipOffset   = Vector3.zero;
+        leaf.targetScale = Vector3.one * seasonLeafScale;
+        if (skeleton.species != null)
+        {
+            leaf.springColor = skeleton.species.leafSpringColor;
+            leaf.growDays    = skeleton.species.leafGrowDays;
+            leaf.youngTint   = skeleton.species.leafBudBreakColor;
+        }
+        // No ApplyDeformation — that twist/curl is for flat leaf blades, not needle tufts.
         return go;
     }
 
@@ -628,10 +723,23 @@ public class LeafManager : MonoBehaviour
         foreach (var node in skeleton.allNodes)
             if (!node.isTrimmed) liveUntrimmed.Add(node.id);
 
+        // Evergreen needles never drop in autumn, so the only chance to keep foliage at the
+        // live canopy tips is here: retire tufts on nodes that grew children (now interior).
+        HashSet<int> liveTerminals = null;
+        if (IsEvergreen)
+        {
+            liveTerminals = new HashSet<int>();
+            foreach (var node in skeleton.allNodes)
+                if (node.isTerminal && !node.isTrimmed && !node.isRoot)
+                    liveTerminals.Add(node.id);
+        }
+
         var toRemove = new List<int>();
         foreach (var kvp in nodeLeaves)
-            if (!liveUntrimmed.Contains(kvp.Key))
-                toRemove.Add(kvp.Key);
+        {
+            if (!liveUntrimmed.Contains(kvp.Key)) { toRemove.Add(kvp.Key); continue; }
+            if (liveTerminals != null && !liveTerminals.Contains(kvp.Key)) toRemove.Add(kvp.Key);
+        }
 
         foreach (int id in toRemove)
             StartFallingCluster(id);

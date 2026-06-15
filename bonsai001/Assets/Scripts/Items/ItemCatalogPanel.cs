@@ -18,19 +18,22 @@ public class ItemCatalogPanel
     VisualElement          overlay;        // full-screen scrim + panel; null when closed
     VisualElement          listContainer;
     Button                 confirmButton;
+    Label                  balanceLabel;   // shop balance header (null when no economy)
+    ItemCategory           openCategory;   // category currently shown (for list refresh after a buy)
     ItemDefinition         selected;
     VisualElement          selectedCard;
     Action<ItemDefinition> onConfirm;
 
-    static readonly Color Scrim    = new Color(0f, 0f, 0f, 0.72f);
-    static readonly Color PanelBg  = new Color(0.07f, 0.10f, 0.07f);
-    static readonly Color CardBg   = new Color(0.10f, 0.14f, 0.10f);
-    static readonly Color CardSel  = new Color(0.14f, 0.19f, 0.11f);
-    static readonly Color Gold     = new Color(0.898f, 0.702f, 0.086f);
-    static readonly Color Dim      = new Color(0.25f, 0.25f, 0.22f);
-    static readonly Color TextMain = new Color(0.92f, 0.88f, 0.78f);
-    static readonly Color TextSub  = new Color(0.52f, 0.65f, 0.52f);
-    static readonly Color Ink      = new Color(0.06f, 0.06f, 0.06f);
+    // Colours come from the active UiTheme so the shop reskins with the equipped UI theme.
+    static Color Scrim    => UiTheme.Current.scrim;
+    static Color PanelBg  => UiTheme.Current.panelBg;
+    static Color CardBg   => UiTheme.Current.cardBg;
+    static Color CardSel  => UiTheme.Current.cardSel;
+    static Color Gold     => UiTheme.Current.accent;
+    static Color Dim      => UiTheme.Current.edge;
+    static Color TextMain => UiTheme.Current.textMain;
+    static Color TextSub  => UiTheme.Current.textSub;
+    static Color Ink      => UiTheme.Current.ink;
 
     public bool IsOpen => overlay != null;
 
@@ -47,10 +50,12 @@ public class ItemCatalogPanel
     {
         Close();
         this.onConfirm = onConfirm;
+        openCategory   = category;
         selected       = current;
         selectedCard   = null;
 
         overlay = new VisualElement();
+        overlay.name = "pm-overlay";   // GameUiThemer skips "pm-" elements (we self-theme)
         overlay.style.position        = Position.Absolute;
         overlay.style.left  = overlay.style.right = overlay.style.top = overlay.style.bottom = 0f;
         overlay.style.backgroundColor = new StyleColor(Scrim);
@@ -73,6 +78,19 @@ public class ItemCatalogPanel
         header.style.marginBottom = 10;
         header.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Bold);
         panel.Add(header);
+
+        // Balance header — only when the economy is present (so the catalog still works without it).
+        balanceLabel = null;
+        if (ProgressionManager.Instance != null)
+        {
+            balanceLabel = new Label();
+            balanceLabel.style.color        = new StyleColor(Gold);
+            balanceLabel.style.fontSize     = 13;
+            balanceLabel.style.marginBottom = 8;
+            balanceLabel.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Bold);
+            panel.Add(balanceLabel);
+            UpdateBalanceLabel();
+        }
 
         var scroll = new ScrollView(ScrollViewMode.Vertical);
         scroll.style.flexGrow = 1;
@@ -116,7 +134,35 @@ public class ItemCatalogPanel
 
     VisualElement MakeCard(ItemDefinition it)
     {
-        bool locked = !it.unlockedByDefault;   // future: query the progression system for unlockId
+        // Resolve shop state. Without a ProgressionManager the catalog ignores the economy
+        // (free = unlockedByDefault), so it keeps working in scenes with no progression.
+        var  pm = ProgressionManager.Instance;
+        bool milestoneLocked, owned, purchasable;
+        if (pm == null)
+        {
+            milestoneLocked = !it.unlockedByDefault;
+            owned           = !milestoneLocked;
+            purchasable     = false;
+        }
+        else
+        {
+            bool granted    = pm.Owns(it.Id);
+            milestoneLocked = !it.unlockedByDefault && !granted;          // must be earned via a milestone
+            owned           = granted || (it.unlockedByDefault && it.cost <= 0);
+            purchasable     = !milestoneLocked && !owned && it.cost > 0;
+        }
+        bool locked = milestoneLocked;
+
+        // UI-theme cards preview their OWN palette so you can see what you're buying; everything
+        // else uses the active theme's colours.
+        var   ct        = it.category == ItemCategory.UiTheme ? UiTheme.Get(it.themeId) : null;
+        Color cCardBg   = ct != null ? ct.cardBg   : CardBg;
+        Color cCardSel  = ct != null ? ct.cardSel  : CardSel;
+        Color cAccent   = ct != null ? ct.accent   : Gold;
+        Color cEdge     = ct != null ? ct.edge     : Dim;
+        Color cTextMain = ct != null ? ct.textMain : TextMain;
+        Color cTextSub  = ct != null ? ct.textSub  : TextSub;
+        Color cInk      = ct != null ? ct.ink      : Ink;
 
         var card = new VisualElement();
         card.style.flexDirection = FlexDirection.Row;
@@ -125,8 +171,8 @@ public class ItemCatalogPanel
         card.style.paddingLeft = card.style.paddingRight = 12;
         card.style.marginBottom = 5;
         Round(card, 6);
-        card.style.backgroundColor = new StyleColor(it == selected ? CardSel : CardBg);
-        Border(card, it == selected ? Gold : Dim, 1);
+        card.style.backgroundColor = new StyleColor(it == selected ? cCardSel : cCardBg);
+        Border(card, it == selected ? cAccent : cEdge, 1);
 
         var swatch = new VisualElement();
         swatch.style.width = swatch.style.height = 40;
@@ -142,7 +188,7 @@ public class ItemCatalogPanel
 
         var name = new Label(it.Label);
         name.style.fontSize = 14;
-        name.style.color    = new StyleColor(TextMain);
+        name.style.color    = new StyleColor(cTextMain);
         name.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Bold);
         col.Add(name);
 
@@ -150,7 +196,7 @@ public class ItemCatalogPanel
         {
             var desc = new Label(it.description);
             desc.style.fontSize   = 10;
-            desc.style.color      = new StyleColor(TextSub);
+            desc.style.color      = new StyleColor(cTextSub);
             desc.style.whiteSpace = WhiteSpace.Normal;
             col.Add(desc);
         }
@@ -165,8 +211,26 @@ public class ItemCatalogPanel
             card.Add(lockTag);
             card.style.opacity = 0.5f;
         }
-        else
+        else if (purchasable)
         {
+            bool affordable = ProgressionManager.Instance != null
+                              && ProgressionManager.Instance.CanAfford(it.cost);
+            var buy = MakeButton($"✦ {it.cost}", affordable ? cAccent : cEdge,
+                                                 affordable ? cInk    : new Color(0.5f, 0.5f, 0.5f));
+            buy.style.marginLeft = 8;
+            buy.SetEnabled(affordable);
+            buy.RegisterCallback<ClickEvent>(e => { e.StopPropagation(); TryBuy(it, card); });
+            card.Add(buy);
+            // Not selectable until bought; dim slightly to read as "for sale".
+            card.style.opacity = 0.85f;
+        }
+        else   // owned / free
+        {
+            var ownTag = new Label("✓");
+            ownTag.style.fontSize  = 12;
+            ownTag.style.color     = new StyleColor(cTextSub);
+            ownTag.style.marginLeft = 8;
+            card.Add(ownTag);
             card.RegisterCallback<ClickEvent>(_ => Select(it, card));
         }
 
@@ -174,18 +238,62 @@ public class ItemCatalogPanel
         return card;
     }
 
+    /// <summary>Attempts to buy an item with Aesthetic Points; on success grants ownership and
+    /// swaps the card to its owned state (selected).</summary>
+    void TryBuy(ItemDefinition it, VisualElement oldCard)
+    {
+        var pm = ProgressionManager.Instance;
+        if (pm == null || it.cost <= 0) return;
+        if (!pm.TrySpend(it.cost, $"Bought {it.Label}")) return;   // not affordable → no change
+        pm.GrantItem(it.Id);
+
+        // The bought item is now owned and becomes the selection; rebuild the whole list so every
+        // card re-evaluates affordability against the new balance.
+        selected = it;
+        RefreshList();
+        UpdateBalanceLabel();
+        RefreshConfirm();
+    }
+
+    /// <summary>Rebuilds the card list for the open category (after a purchase changes ownership/balance).</summary>
+    void RefreshList()
+    {
+        if (listContainer == null) return;
+        listContainer.Clear();
+        selectedCard = null;
+        var items = catalog != null ? catalog.ByCategory(openCategory) : new List<ItemDefinition>();
+        foreach (var it in items) listContainer.Add(MakeCard(it));
+    }
+
+    void UpdateBalanceLabel()
+    {
+        if (balanceLabel == null || ProgressionManager.Instance == null) return;
+        balanceLabel.text = $"✦ {ProgressionManager.Instance.Balance} AP";
+    }
+
     void Select(ItemDefinition it, VisualElement card)
     {
-        if (selectedCard != null)
+        // Each card uses its own theme's colours (so a UI-theme card's selection previews that theme).
+        if (selectedCard != null && selected != null)
         {
-            selectedCard.style.backgroundColor = new StyleColor(CardBg);
-            Border(selectedCard, Dim, 1);
+            var (bg, _, _, edge) = CardColors(selected);
+            selectedCard.style.backgroundColor = new StyleColor(bg);
+            Border(selectedCard, edge, 1);
         }
         selected     = it;
         selectedCard = card;
-        card.style.backgroundColor = new StyleColor(CardSel);
-        Border(card, Gold, 1);
+        var (_, sel, accent, _) = CardColors(it);
+        card.style.backgroundColor = new StyleColor(sel);
+        Border(card, accent, 1);
         RefreshConfirm();
+    }
+
+    /// <summary>Palette for a card — its own theme's colours for UI-theme items, else the active theme.</summary>
+    (Color cardBg, Color cardSel, Color accent, Color edge) CardColors(ItemDefinition it)
+    {
+        var ct = it != null && it.category == ItemCategory.UiTheme ? UiTheme.Get(it.themeId) : null;
+        return ct != null ? (ct.cardBg, ct.cardSel, ct.accent, ct.edge)
+                          : (CardBg, CardSel, Gold, Dim);
     }
 
     void RefreshConfirm()

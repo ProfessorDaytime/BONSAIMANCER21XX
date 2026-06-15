@@ -420,14 +420,17 @@ future balance passes only touch one function.
 
 ---
 
-## 7. Leaf System
+## 7. Leaf & Needle Foliage System
 
-**Files:** `LeafManager.cs`, `Leaf.cs`
+**Files:** `LeafManager.cs`, `Leaf.cs`, `NeedleMesh.cs`
 
 ### What it does
-Manages the full lifecycle of leaf instances: spring spawn, summer position
-tracking (so leaves follow wire-bent branches), autumn colour progression,
-and stochastic fall animation.
+Manages the full lifecycle of foliage instances: spring spawn, summer position
+tracking (so foliage follows wire-bent branches), autumn colour progression,
+and stochastic fall animation. Broadleaf species use leaf prefab clusters;
+conifers use procedural **needle tufts** (see the Needle Foliage subsection and
+§45). The `Leaf` component drives both — needles reuse it for scale-in,
+tracking, colour and (deciduous conifers) fall.
 
 ### LeafManager responsibilities
 
@@ -479,6 +482,23 @@ Each `Leaf` MonoBehaviour on a live leaf instance:
 - `FallColorProgress` is driven by in-game days × `fallColorSpeed` / `FALL_COLOR_DAYS`
   (25 days). At `SeasonalGrowthRate = 1.0` and `TIMESCALE = 200`, one in-game
   day is ~7 real seconds, so a speed-1 leaf fully browns in ~3 real minutes.
+
+### Needle foliage (conifers)
+When `species.foliageType != BroadLeaf`, `SpawnCluster()` branches to
+`SpawnNeedleTuft()` instead of the leaf-prefab path. The efficiency principle:
+**never one object/mesh per needle** — `NeedleMesh.Build()` makes a single
+"tuft" mesh (a whole bundle of needles), one tuft GameObject sits at each branch
+tip, and every tuft in a tree shares that one mesh + material (built lazily in
+`EnsureNeedleAssets`). A tuft reuses the `Leaf` component for everything except
+`ApplyDeformation` (the leaf-blade twist/curl doesn't apply to needles).
+- `seasonLeafScale` uses `species.needleLength` as its base for needle species,
+  so refinement / pot-bound miniaturization shrinks needles just like leaves.
+- **Evergreen** (`species.evergreen == true`): the `LeafFall` handler and
+  `RollLeafFall` are skipped so needles persist year-round; `CleanupOrphanedLeaves`
+  additionally retires tufts on now-interior nodes each spring so foliage stays
+  at the canopy tips. **Deciduous conifers** (dawn redwood, swamp cypress) set
+  `evergreen == false` and drop like broadleaf.
+- Full geometry detail (foliage types, double-sided needle winding) is in §45.
 
 ---
 
@@ -1744,3 +1764,151 @@ Menu `Bonsai → Create Default Styles` regenerates `Moyogi.asset` and `SCurve.a
 - `shapedNodeIds` is not serialized — reloading resets it. Wires re-apply on the next spring but nodes re-enter `Growing` state briefly.
 - GL indicators are drawn in `OnRenderObject()` which fires for every camera. In multi-camera setups (e.g. Scene view + Game view) you may see doubled lines; this is cosmetic only.
 - `actionPreviewDays` controls how far ahead trims/wires/pinches are scheduled, not how long indicators stay visible — intent indicators are always on.
+
+---
+
+## 45. Needle Foliage Geometry
+
+**Files:** `NeedleMesh.cs`, `LeafManager.cs`, `TreeSpecies.cs`
+
+### What it does
+Builds the procedural conifer foliage that the Leaf system spawns (see §7). One
+**tuft** mesh per tree holds a whole bundle of needles; one tuft GameObject sits
+at each branch tip. This keeps a conifer at one object per tip — not per needle —
+and lets every tuft share the tree's single mesh + material.
+
+### `FoliageType` (on `TreeSpecies`)
+| Type | Look | Species |
+|---|---|---|
+| `BroadLeaf` | leaf prefab clusters (not a tuft) | all broadleaf |
+| `PineFascicle` | long needles in bundles fanning forward | 3 pines |
+| `SpruceRadial` | short needles radiating all round the twig | 2 spruces, 2 cedars |
+| `FeatheryFrond` | flat fern-like spray in the local XZ plane | dawn redwood, swamp cypress |
+| `Scale` | short dense radial (approximates scale leaves) | juniper |
+
+### Tuft construction
+`NeedleMesh.Build(type, needleCount)` returns a **unit-scale** mesh oriented with
++Z = branch-outward and the origin at the tip (the LeafManager scales/orients it
+per species + season). Each needle is a **double-sided tapered quad** via
+`AddNeedle` — front tris + a reversed back set with their own duplicated verts,
+so `RecalculateNormals` lights both faces. Thin foliage must never go dark
+edge-on; the winding is derived algebraically (`cross(side, dir) = face`), not by
+eye — see the `feedback_mesh_winding` lesson.
+
+### Per-species fields (`TreeSpecies`)
+| Field | Meaning |
+|---|---|
+| `foliageType` | which tuft shape (or BroadLeaf) |
+| `evergreen` | needles persist year-round (no autumn drop) |
+| `needlesPerTuft` | per-tip needle density (4–40) |
+| `needleLength` | overall tuft size; season miniaturization shrinks it further |
+
+### Gotchas
+- The mesh is built per **tree** (lazily), so two trees of the same species hold
+  separate `Mesh` instances — fine, each tree batches its own tufts.
+- `Leaf`'s per-instance `MaterialPropertyBlock` colour disqualifies SRP batching,
+  so each tuft is its own draw call. Acceptable at bonsai tip counts (~50–200) and
+  consistent with the existing leaf system; a follow-up could bake colour variety
+  into the shared material instead.
+- Needle species default `foliageType = BroadLeaf` if the `.asset` omits the field,
+  so existing broadleaf species are untouched.
+
+---
+
+## 46. Flower / Blossom & Fruit System
+
+**Files:** `FlowerManager.cs` (contains `FlowerManager` + `Flower`), `TreeSpecies.cs`, `TreeNode.cs`
+
+### What it does
+Species-specific flowering and fruiting, riding the same bud cycle as leaves.
+Flower buds set in autumn (`hasFlowerBud` on `TreeNode`, only once the tree is
+mature enough), open into procedural blossoms in spring, hold, drop petals, then
+(fruiting species) set fruit, ripen via a colour shift, and drop.
+
+### Lifecycle (`FlowerManager.OnMonth`)
+- **`bloomMonth`** (if `bloomType != None`): blossoms open at flower-bud sites.
+  `bloomBeforeLeaves` species (cherry, plum, magnolia) bloom on bare branches first.
+- **`fruitSetMonth`** (if `fruitType != None`): fruit forms; fruit-only species
+  (figs, cones) skip the blossom.
+- **`fruitRipeMonth`**: fruit shifts from `fruitColor` to `fruitRipeColor`, then drops.
+
+### Procedural geometry (code-gen, no art)
+`BuildBlossom` (petal star), `BuildOcta` / `BuildRaceme` (hanging cluster), berry/
+fig spheres, cone, samara — all built with verified outward winding and a URP/Lit
+material via `MatFor` (two-sided, `_Cull = 0`). The `Flower` component grows in,
+holds, then `FallNow`/`FallAfter` drives drift + spin + shrink + destroy, paced by
+`Time.deltaTime * TIMESCALE / 24`.
+
+### `BloomType` / `FruitType` (on `TreeSpecies`)
+`BloomType`: None, Blossom, Raceme, Catkin. `FruitType`: None, Berry, Fig, Samara,
+Cone, Pome. Plus `bloomColor`, `bloomMonth`, `bloomBeforeLeaves`, `bloomDurationDays`,
+`floweringStartAge`, `flowerBudChance`, `fruitColor`, `fruitRipeColor`,
+`fruitSetMonth`, `fruitRipeMonth`.
+
+### Species coverage (14 of 17)
+Cherry (pink blossom before leaves + red berry), Wisteria (purple racemes), Japanese
+Maple (catkin + samara), Ficus (figs), Juniper (berry), and all 9 conifers (cones).
+Elm, Silver Birch, Weeping Willow are still bare (birch/willow want catkins — a
+follow-up).
+
+### Gotchas
+- `CareLog.Add(action, reason)` takes two required strings — `Add("Bloom", $"…")`.
+- Flower-bud + wound-scar nodes keep aging during the heal loop and call
+  `meshBuilder?.SetDirty()` so blooms/fruit refresh.
+- `hasFlowerBud` is persisted by `SaveManager` (SaveNode) and restored on load.
+
+---
+
+## 47. Progression, Economy & Journal
+
+**Files:** `Progression/ProgressionProfile.cs`, `ProgressionManager.cs`, `ProgressionHUD.cs`,
+`Journal.cs`, `JournalPanel.cs`. Design: `Docs/PROGRESSION_DESIGN.md`.
+
+### What it does
+A zen meta-layer over the sim: a soft **Aesthetic Points** currency (cosmetics only, never
+power), gentle milestones + a Journal/Encyclopedia, and two modes — **Sandbox** (everything
+unlocked) and **Career** (tools unlock gradually). Add `ProgressionManager` + `ProgressionHUD`
+components to the scene to enable it; everything degrades gracefully when they're absent.
+
+### Global profile (separate from tree save slots)
+`ProgressionProfile` is one JSON file at `persistentDataPath/profile.json` holding `aestheticPoints`,
+`gameMode`, and set-lists `unlockedTools` / `ownedItemIds` / `milestones` / `journalEntries`. It
+accumulates across **every** tree you grow (so you don't re-learn or re-earn on tree #2).
+
+### ProgressionManager (scene singleton)
+- **Currency:** `Award` / `TrySpend` / `CanAfford`; `OnCurrencyChanged(balance, delta, reason)`.
+  Earned each autumn (`LeafFall`) as `seasonStewardshipReward × average tree health`, plus
+  milestone lump sums.
+- **Milestones:** `ReachMilestone(id)` (registered `ProgressionMilestone`s) or the dynamic overload
+  for per-species ones; fires `OnMilestone` + files a Journal entry + awards points. Survival
+  milestones (`survive_5/10/25`, from `root.birthYear`) evaluate each state change in both modes.
+- **Career gating:** `IsToolUnlocked(tool)` (always true in Sandbox); `EvaluateUnlocks` unlocks tools
+  on self-readable, persisted triggers — branch max-depth, tree age, `RootPressureFactor` — firing
+  `OnToolUnlocked`. `SetMode` switches Career/Sandbox.
+- **Cosmetic ownership:** `Owns` / `GrantItem` (consumed by the Item Catalog shop, §H).
+
+### HUD + Journal
+`ProgressionHUD` self-attaches to the `UIDocument` root: an **✦ AP balance chip** (top-centre, click
+to open the Journal) + award/milestone/unlock **toasts**. `JournalPanel` (UI Toolkit, like
+ItemCatalogPanel) shows **Achievements** (earned milestones) and an **Encyclopedia** — Techniques /
+Phenomena / Species — from the static `Journal` registry, each entry gated by a predicate over the
+profile, with a `(unlocked/total)` count and greyed locked stubs.
+
+### Milestone hooks (where the first-time events fire)
+One-liners call `ProgressionManager.Instance?.ReachMilestone(...)`: `TreeSkeleton.TrimNode`
+(`first_trim`), `TreeInteraction.ConfirmWire` (`first_wire`), `PotSoil.Repot` (`first_repot`),
+`FlowerManager.Bloom` / `SetFruit` (`first_bloom` / `first_fruit`).
+
+**Player-only technique badges:** the auto-styler must not earn the player's achievements. A static
+`ProgressionManager.AutomationActive` flag is set (try/finally) around `AutoStyler.UpdatePendingActions`'
+trim and `QuickStartManager`'s repot; the `first_trim` / `first_repot` hooks skip while it's set.
+`first_wire` lives on the **player** wire site (`ConfirmWire`), not the shared `OnWireSetGold` event
+(which fires later when a wire *sets* — including auto-styler wires). Bloom / fruit / survival are
+natural phenomena and fire regardless of who shaped the tree.
+
+### Gotchas
+- Gating uses `SetEnabled` + dim, **not** display, so it never fights buttonClicker's contextual
+  show/hide; re-asserted in `OnGameStateChanged`.
+- Default mode is **Sandbox** — nothing is gated until the player picks Career on the New Game
+  (species-select) screen via the injected **Mode** toggle.
+- The mesh/economy run independently of tree saves; deleting a save slot does not reset the profile.

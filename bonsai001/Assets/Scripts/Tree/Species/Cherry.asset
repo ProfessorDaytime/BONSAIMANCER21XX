@@ -14,21 +14,21 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   speciesName: Cherry
   scientificName: Prunus serrulata
-  baseGrowSpeed: 0.20
+  baseGrowSpeed: 0.25
   depthSpeedDecay: 0.85
   depthsPerYear: 3
-  baseElongation: 0.05
+  baseElongation: 0.07
   elongationDepthDecay: 0.70
-  branchSegmentLength: 1.00
-  segmentLengthDecay: 0.80
+  branchSegmentLength: 1.50
+  segmentLengthDecay: 0.82
   rootSegmentLength: 0.7
-  baseBranchChance: 0.72
-  branchChanceDepthDecay: 0.90
-  springLateralChance: 0.78
-  oldWoodBudChance: 0.04
-  backBudBaseChance: 0.14
+  baseBranchChance: 0.50
+  branchChanceDepthDecay: 0.88
+  springLateralChance: 0.45
+  oldWoodBudChance: 0.05
+  backBudBaseChance: 0.16
   budType: 0
-  apicalDominance: 0.25
+  apicalDominance: 0.35
   apicalVigorBonus: 0.15
   vigorDecayRate: 0.15
   wireDaysToSet: 170
@@ -58,3 +58,15 @@ MonoBehaviour:
   leafSpringColor: {r: 0.22, g: 0.58, b: 0.14, a: 1}
   leafGrowDays: 15
   leafBudBreakColor: {r: 0.78, g: 0.62, b: 0.45, a: 1}
+  bloomType: 1
+  bloomColor: {r: 1, g: 0.78, b: 0.86, a: 1}
+  bloomMonth: 3
+  bloomBeforeLeaves: 1
+  bloomDurationDays: 14
+  floweringStartAge: 3
+  flowerBudChance: 0.6
+  fruitType: 1
+  fruitColor: {r: 0.5, g: 0.65, b: 0.3, a: 1}
+  fruitRipeColor: {r: 0.7, g: 0.1, b: 0.12, a: 1}
+  fruitSetMonth: 5
+  fruitRipeMonth: 7

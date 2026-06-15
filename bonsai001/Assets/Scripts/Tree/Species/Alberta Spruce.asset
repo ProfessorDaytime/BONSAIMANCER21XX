@@ -14,6 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   speciesName: Alberta Spruce
   scientificName: Picea glauca 'Conica'
+  foliageType: 2
+  evergreen: 1
+  needlesPerTuft: 26
+  needleLength: 0.24
   baseGrowSpeed: 0.08
   depthSpeedDecay: 0.82
   depthsPerYear: 1
@@ -59,3 +63,10 @@ MonoBehaviour:
   canDefoliate: 0
   leafGrowDays: 32
   leafBudBreakColor: {r: 0.68, g: 0.84, b: 0.44, a: 1}
+  fruitType: 4
+  fruitColor: {r: 0.42, g: 0.5, b: 0.32, a: 1}
+  fruitRipeColor: {r: 0.52, g: 0.4, b: 0.28, a: 1}
+  fruitSetMonth: 5
+  fruitRipeMonth: 10
+  floweringStartAge: 5
+  flowerBudChance: 0.4

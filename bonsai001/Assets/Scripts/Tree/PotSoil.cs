@@ -309,6 +309,9 @@ public class PotSoil : MonoBehaviour
     {
         int prevSeasonsSinceRepot = seasonsSinceRepot;  // capture before reset
 
+        if (!ProgressionManager.AutomationActive)
+            ProgressionManager.Instance?.ReachMilestone("first_repot");   // player repots only, not Quick-Start
+
         ApplyPreset(newPreset);
         soilDegradation   = 0f;
         saturationLevel   = 0f;

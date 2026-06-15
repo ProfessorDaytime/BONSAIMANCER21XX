@@ -14,6 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   speciesName: Juniper
   scientificName: Juniperus spp.
+  foliageType: 4
+  evergreen: 1
+  needlesPerTuft: 18
+  needleLength: 0.26
   baseGrowSpeed: 0.14
   depthSpeedDecay: 0.85
   depthsPerYear: 2
@@ -59,3 +63,10 @@ MonoBehaviour:
   canDefoliate: 0
   leafGrowDays: 30
   leafBudBreakColor: {r: 0.55, g: 0.72, b: 0.45, a: 1}
+  fruitType: 1
+  fruitColor: {r: 0.45, g: 0.55, b: 0.35, a: 1}
+  fruitRipeColor: {r: 0.25, g: 0.35, b: 0.6, a: 1}
+  fruitSetMonth: 5
+  fruitRipeMonth: 10
+  floweringStartAge: 4
+  flowerBudChance: 0.4

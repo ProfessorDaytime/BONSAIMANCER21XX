@@ -889,6 +889,7 @@ public class TreeSkeleton : MonoBehaviour
             node.refinementLevel    = sn.refinementLevel;
             node.branchVigor        = sn.branchVigor;
             node.hasBud             = sn.hasBud;
+            node.hasFlowerBud       = sn.hasFlowerBud;
             node.backBudStimulated  = sn.backBudStimulated;
             node.preferredLateralAzimuth = sn.preferredLateralAzimuth;
             node.isTrimCutPoint     = sn.isTrimCutPoint;
@@ -4238,6 +4239,13 @@ public class TreeSkeleton : MonoBehaviour
     {
         int termCount = 0;
         int latCount  = 0;
+
+        // Flowering species also set FLOWER buds in autumn — they open into blossoms at bloomMonth
+        // next spring (FlowerManager). Gated on maturity so young seedlings don't bloom.
+        bool canFlower = species != null
+                         && (species.bloomType != BloomType.None || species.fruitType != FruitType.None)
+                         && (GameManager.year - startYear) >= species.floweringStartAge;
+
         foreach (var node in allNodes)
         {
             if (node.isTrimmed || node.isRoot) continue;
@@ -4251,6 +4259,8 @@ public class TreeSkeleton : MonoBehaviour
                 if (node.hasBud) continue;
 
                 node.hasBud = true;
+                if (canFlower && UnityEngine.Random.value < species.flowerBudChance)
+                    node.hasFlowerBud = true;
                 if (showTerminalBuds && budPrefab != null)
                 {
                     var bud = Instantiate(budPrefab, transform);
@@ -4342,6 +4352,9 @@ public class TreeSkeleton : MonoBehaviour
             Debug.LogWarning("TreeSkeleton: cannot trim the root node.");
             return;
         }
+
+        if (!ProgressionManager.AutomationActive)
+            ProgressionManager.Instance?.ReachMilestone("first_trim");   // player cuts only, not the auto-styler
 
         TreeNode parent = node.parent;
 

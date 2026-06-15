@@ -14,6 +14,10 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   speciesName: Japanese Black Pine
   scientificName: Pinus thunbergii
+  foliageType: 1
+  evergreen: 1
+  needlesPerTuft: 10
+  needleLength: 0.62
   baseGrowSpeed: 0.18
   depthSpeedDecay: 0.85
   depthsPerYear: 2
@@ -59,3 +63,10 @@ MonoBehaviour:
   canDefoliate: 0
   leafGrowDays: 35
   leafBudBreakColor: {r: 0.8, g: 0.86, b: 0.58, a: 1}
+  fruitType: 4
+  fruitColor: {r: 0.4, g: 0.5, b: 0.3, a: 1}
+  fruitRipeColor: {r: 0.45, g: 0.32, b: 0.2, a: 1}
+  fruitSetMonth: 5
+  fruitRipeMonth: 11
+  floweringStartAge: 5
+  flowerBudChance: 0.4

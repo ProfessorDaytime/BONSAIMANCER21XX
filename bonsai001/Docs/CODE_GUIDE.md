@@ -14,7 +14,10 @@ All the "tree brain" components live on **one GameObject** in the scene. That Ga
 | `AutoStyler` | Reads the graph, schedules trimming/wiring/pinching |
 | `TreeMeshBuilder` | Reads the graph, builds the single unified mesh |
 | `TreeInteraction` | Handles raycasts, highlights, and player tool input |
-| `LeafManager` | Spawns/removes leaf prefab instances |
+| `LeafManager` | Spawns/removes foliage — leaf prefab clusters (broadleaf) or needle tufts (conifers) |
+| `NeedleMesh` | Static builder for procedural conifer needle-tuft meshes |
+| `FlowerManager` | Species flowering + fruiting lifecycle (blossoms, racemes, catkins, berries, cones…) |
+| `ProgressionManager` | Soft economy (Aesthetic Points), milestones, Career/Sandbox tool gating |
 | `WireRenderer` | Renders the metal wire coils on wired nodes |
 | `BarkFlakerManager` | Manages the bark-flaking visual on wounds |
 
@@ -224,6 +227,14 @@ Leaves are separate `GameObject` instances (the `leafPrefab`), parented to the t
 **LeafFall**: `RollLeafFall()` runs each frame. Each leaf has a fall-color progress (0 = green, 1 = brown). The chance of falling on any given day scales with color progress — green leaves rarely fall, brown leaves fall quickly.
 
 **Cleanup**: `CleanupOrphanedLeaves()` runs at spring start and removes clusters from nodes that were trimmed.
+
+**Needle foliage (conifers)**: when `species.foliageType != BroadLeaf`, `SpawnCluster()` calls `SpawnNeedleTuft()` instead — one procedural tuft (`NeedleMesh`) per branch tip, sharing the tree's one mesh + material, reusing the `Leaf` component. Evergreen species (`species.evergreen`) skip the autumn fall and keep needles year-round; deciduous conifers drop like leaves. See SYSTEMS.md §7 and §45.
+
+---
+
+## FlowerManager
+
+Species flowering + fruiting (`FlowerManager.cs`, which also holds the `Flower` component). Rides the bud cycle: flower buds set in autumn (`TreeNode.hasFlowerBud`, gated on `floweringStartAge`), open into procedural blossoms at `species.bloomMonth`, drop petals, then fruiting species set + ripen + drop fruit. All meshes are code-generated (no art). `BloomType` (None/Blossom/Raceme/Catkin) and `FruitType` (None/Berry/Fig/Samara/Cone/Pome) live on `TreeSpecies`. 14 of 17 species are configured (all 9 conifers bear cones). See SYSTEMS.md §46.
 
 ---
 
