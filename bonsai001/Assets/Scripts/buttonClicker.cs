@@ -49,6 +49,12 @@ public class ButtonClicker : MonoBehaviour
     VisualElement selectedSpeciesCard;
 
     enum SpeciesSortMode { None, Growth, Water, Care, Soil }
+
+    // Tree-type FILTER (independent of the sort): All / big groups / finer genera.
+    enum SpeciesFilter { All, Conifer, Broadleaf, Pine, Spruce, Cedar, Cypress }
+    SpeciesFilter currentFilter = SpeciesFilter.All;
+    Button        activeFilterBtn;
+    VisualElement speciesFilterBar;
     SpeciesSortMode currentSort    = SpeciesSortMode.Care;
     bool            sortDescending = true;
     Button          activeSortBtn;
@@ -211,6 +217,9 @@ public class ButtonClicker : MonoBehaviour
     // ── Progression mode (Career / Sandbox) ───────────────────────────────────
     Button           modeToggleButton;          // "Mode: …" injected into the species overlay
 
+    // Row that holds PLANT SEED + the injected species-overlay buttons side by side.
+    VisualElement    speciesButtonRow;
+
     // ── Rock size selection ───────────────────────────────────────────────────
     VisualElement rockSizePanel;
     Button        rockSizeSButton, rockSizeMButton, rockSizeLButton, rockSizeXLButton;
@@ -265,7 +274,17 @@ public class ButtonClicker : MonoBehaviour
     Label         speciesLabel;
     Button        pauseButton;
     VisualElement pauseMenuOverlay;
+    VisualElement pauseMenuPanel;
     Button        resumeButton;
+
+    // ── In-game UI theming (Themeable In-Game UI Rebuild) ──────────────────────
+    // buttonClicker colours its own UXML panels from the active UiTheme, the same way the menus do.
+    // Each element's original colours are captured once (from resolvedStyle, after layout), then
+    // re-mapped into the palette and re-applied on theme change.
+    readonly System.Collections.Generic.Dictionary<VisualElement, UiThemePainter.Captured> themeCaptured
+        = new System.Collections.Generic.Dictionary<VisualElement, UiThemePainter.Captured>();
+    readonly System.Collections.Generic.List<VisualElement> themedScrims
+        = new System.Collections.Generic.List<VisualElement>();
 
     // Tab buttons & content panels
     Button        tabBtnTime;
@@ -631,9 +650,11 @@ public class ButtonClicker : MonoBehaviour
         speciesSortBar        = root.Q("SpeciesSortBar");
         speciesConfirmButton  = root.Q("SpeciesConfirmButton") as Button;
         speciesConfirmButton?.RegisterCallback<ClickEvent>(_ => OnSpeciesConfirmClick());
+        SetupSpeciesButtonRow(root);   // single row that the injected buttons join
         SetupQuickStart(root);
         SetupModeToggle(root);    // Career/Sandbox pick beside the species Confirm
         SetupItemCatalog(root);   // after repot/rock/species lookups so all inject targets exist
+        BuildFilterBar();
         BuildSortBar();
         BuildSpeciesCards();
 
@@ -659,6 +680,7 @@ public class ButtonClicker : MonoBehaviour
         speciesLabel     = root.Q("SpeciesLabel")      as Label;
         pauseButton      = root.Q("PauseButton")      as Button;
         pauseMenuOverlay = root.Q("PauseMenuOverlay");
+        pauseMenuPanel   = root.Q("PauseMenuPanel");
         resumeButton     = root.Q("ResumeButton")     as Button;
 
         // ── Speed toggle ─────────────────────────────────────────────────────
@@ -685,6 +707,7 @@ public class ButtonClicker : MonoBehaviour
         tabContentGrowth    = root.Q("TabContentGrowth");
         tabContentIshitsuki = root.Q("TabContentIshitsuki");
         tabContentDebug     = root.Q("TabContentDebug");
+        SetupTrainingToggle();
 
         toggleScaleCubes    = root.Q("ToggleScaleCubes")    as Toggle;
 
@@ -865,6 +888,7 @@ public class ButtonClicker : MonoBehaviour
         WeedManager.OnFirstWeedSpawned   += OnFirstWeedSpawned;
         SaveManager.OnSaved              += ShowSaveToast;
         ProgressionManager.OnToolUnlocked += OnToolUnlockedRefresh;
+        UiTheme.OnThemeChanged           += RefreshThemeAll;
 
         // Sync overlay visibility to whatever state was set before OnEnable ran
         var initState = GameManager.Instance?.state ?? GameState.SpeciesSelect;
@@ -898,6 +922,7 @@ public class ButtonClicker : MonoBehaviour
         WeedManager.OnFirstWeedSpawned   -= OnFirstWeedSpawned;
         SaveManager.OnSaved              -= ShowSaveToast;
         ProgressionManager.OnToolUnlocked -= OnToolUnlockedRefresh;
+        UiTheme.OnThemeChanged           -= RefreshThemeAll;
     }
 
     void Update()
@@ -1241,7 +1266,15 @@ public class ButtonClicker : MonoBehaviour
                 _                     => new StyleColor(new Color(0.9f, 0.7f, 0.2f)),    // amber — all hidden
             };
 
-        if (showStats) RefreshStatsPanel();
+        if (showStats)
+        {
+            RefreshStatsPanel();
+            // Paint the stat panels in the active theme (deferred so resolvedStyle is laid out).
+            ThemePanel(treeStatsPanel);
+            ThemePanel(rootHealthPanel);
+            ThemePanel(stylePanel);
+            ThemePanel(careLogPanel);
+        }
     }
 
     /// <summary>
@@ -1374,6 +1407,7 @@ public class ButtonClicker : MonoBehaviour
             GameManager.Instance.TogglePause();
             SyncSlidersFromGame();  // refresh values each time menu opens
             SelectTab(0);           // always open on Time tab
+            ThemeOverlay(pauseMenuOverlay);   // paint the settings panel in the active theme
         }
         else
         {
@@ -1384,8 +1418,26 @@ public class ButtonClicker : MonoBehaviour
         }
     }
 
+    int currentTabIndex = 0;
+
+    /// <summary>Injects the "Record Training Data" toggle into the Settings → Debug tab (off by
+    /// default). No-op without a TrainingRecorder in the scene.</summary>
+    void SetupTrainingToggle()
+    {
+        if (tabContentDebug == null) return;
+        var t = new Toggle("Record Training Data");
+        t.style.marginTop = 6;
+        t.SetValueWithoutNotify(TrainingRecorder.Instance != null && TrainingRecorder.Instance.Recording);
+        t.RegisterValueChangedCallback(e =>
+        {
+            if (TrainingRecorder.Instance != null) TrainingRecorder.Instance.Recording = e.newValue;
+        });
+        tabContentDebug.Add(t);
+    }
+
     void SelectTab(int index)
     {
+        currentTabIndex = index;
         // Content panels
         if (tabContentTime      != null) tabContentTime.style.display      = index == 0 ? DisplayStyle.Flex : DisplayStyle.None;
         if (tabContentGrowth    != null) tabContentGrowth.style.display    = index == 1 ? DisplayStyle.Flex : DisplayStyle.None;
@@ -1402,15 +1454,127 @@ public class ButtonClicker : MonoBehaviour
     void SetTabStyle(Button btn, bool active)
     {
         if (btn == null) return;
-        btn.style.backgroundColor = active
-            ? new StyleColor(new Color(0.898f, 0.702f, 0.086f))   // gold
-            : new StyleColor(new Color(0.157f, 0.157f, 0.157f));  // dark
-        btn.style.color = active
-            ? new StyleColor(new Color(0.04f, 0.04f, 0.04f))      // near-black
-            : new StyleColor(new Color(0.627f, 0.627f, 0.627f));  // grey
+        // Active = accent fill + ink text; inactive = card surface + muted text. Theme-driven.
+        btn.style.backgroundColor = new StyleColor(active ? UiTheme.Current.accent : UiTheme.Current.cardBg);
+        btn.style.color           = new StyleColor(active ? UiTheme.Current.ink    : UiTheme.Current.textSub);
         btn.style.unityFontStyleAndWeight = active
             ? new StyleEnum<FontStyle>(FontStyle.Bold)
             : new StyleEnum<FontStyle>(FontStyle.Normal);
+    }
+
+    // ── In-game UI theming (Themeable In-Game UI Rebuild) ──────────────────────
+
+    /// <summary>Themes an overlay: its scrim from the palette, then walks the content for colouring.
+    /// Deferred one frame so resolvedStyle is valid when each element's original colour is captured.</summary>
+    void ThemeOverlay(VisualElement overlay)
+    {
+        if (overlay == null) return;
+        overlay.schedule.Execute(() =>
+        {
+            if (overlay.panel == null) return;
+            overlay.style.backgroundColor = new StyleColor(UiTheme.Current.scrim);
+            if (!themedScrims.Contains(overlay)) themedScrims.Add(overlay);
+            foreach (var child in overlay.Children()) ThemeWalk(child);
+        });
+    }
+
+    /// <summary>Themes a non-overlay panel (no scrim) — walks it for colouring, deferred a frame so
+    /// resolvedStyle is laid out when each element's original colour is captured.</summary>
+    void ThemePanel(VisualElement panel)
+    {
+        if (panel == null) return;
+        panel.schedule.Execute(() => { if (panel.panel != null) ThemeWalk(panel); });
+    }
+
+    /// <summary>Themes the entire game-UI root (toolbar, date, corner controls, …). Skips the
+    /// self-theming progression overlays (`pm-*`) and the explicitly-themed tooltip. Deferred a
+    /// frame so resolvedStyle is laid out; capture-once makes repeat calls cheap.</summary>
+    void ThemeRoot()
+    {
+        var r = buttonDocument != null ? buttonDocument.rootVisualElement : null;
+        if (r == null) return;
+        r.schedule.Execute(() => { if (r.panel != null) ThemeWalkRoot(r); });
+    }
+
+    void ThemeWalkRoot(VisualElement e)
+    {
+        if (e == null) return;
+        string n = e.name;
+        // Skip the self-theming progression overlays, the overlays themed explicitly elsewhere
+        // (their scrims would otherwise be mis-mapped to a panel colour), and the species list /
+        // sort / filter (those are explicitly theme-coloured in code — the classifier would fight them).
+        if (!string.IsNullOrEmpty(n) && (n.StartsWith("pm-") || n == "TooltipOverlay" ||
+            n == "PauseMenuOverlay" || n == "CalendarOverlay" ||
+            n == "SpeciesListContainer" || n == "SpeciesSortBar" || n == "SpeciesFilterBar")) return;
+
+        if (!themeCaptured.TryGetValue(e, out var cap))
+        {
+            cap = UiThemePainter.Capture(e);
+            themeCaptured[e] = cap;
+        }
+        UiThemePainter.Apply(e, cap);
+        for (int i = 0; i < e.childCount; i++) ThemeWalkRoot(e[i]);
+    }
+
+    void ThemeWalk(VisualElement e)
+    {
+        if (e == null) return;
+        if (!themeCaptured.TryGetValue(e, out var cap))
+        {
+            cap = UiThemePainter.Capture(e);
+            themeCaptured[e] = cap;
+        }
+        UiThemePainter.Apply(e, cap);
+        foreach (var child in e.Children()) ThemeWalk(child);
+    }
+
+    /// <summary>Explicit theming for the tooltip (small, named elements — no classifier guessing,
+    /// so its panel never mis-maps and the title/body stay readable).</summary>
+    void ThemeTooltip()
+    {
+        if (tooltipOverlay == null) return;
+        tooltipOverlay.style.backgroundColor = new StyleColor(UiTheme.Current.scrim);
+
+        var panel = tooltipOverlay.childCount > 0 ? tooltipOverlay[0] : null;
+        if (panel != null)
+        {
+            panel.style.backgroundColor = new StyleColor(UiTheme.Current.panelBg);
+            SetCardBorderColor(panel, UiTheme.Current.edge);
+        }
+        if (tooltipTitleLabel != null) tooltipTitleLabel.style.color = new StyleColor(UiTheme.Current.accent);
+        if (tooltipBodyLabel  != null) tooltipBodyLabel.style.color  = new StyleColor(UiTheme.Current.textMain);
+        if (tooltipDismissButton != null)
+        {
+            tooltipDismissButton.style.backgroundColor = new StyleColor(UiTheme.Current.accent);
+            tooltipDismissButton.style.color           = new StyleColor(UiTheme.Current.ink);
+            SetCardBorderColor(tooltipDismissButton, UiTheme.Current.edge);
+        }
+    }
+
+    /// <summary>Re-applies the active theme to everything captured so far (on theme change).</summary>
+    void RefreshThemeAll()
+    {
+        ThemeTooltip();
+        for (int i = themedScrims.Count - 1; i >= 0; i--)
+        {
+            var s = themedScrims[i];
+            if (s == null) { themedScrims.RemoveAt(i); continue; }
+            s.style.backgroundColor = new StyleColor(UiTheme.Current.scrim);
+        }
+        foreach (var kv in themeCaptured)
+            if (kv.Key != null && kv.Key.panel != null) UiThemePainter.Apply(kv.Key, kv.Value);
+
+        // Re-assert the active tab's themed highlight (SelectTab colours are theme-driven too).
+        if (pauseMenuOverlay != null) SelectTab(currentTabIndex);
+
+        // Repaint the species-select screen if it's open (its cards/sort/filter are theme-coloured
+        // explicitly in code, so they rebuild rather than relying on the classifier walk).
+        if (speciesSelectOverlay != null && speciesSelectOverlay.resolvedStyle.display == DisplayStyle.Flex)
+        {
+            BuildFilterBar();
+            BuildSortBar();
+            BuildSpeciesCards();
+        }
     }
 
     /// <summary>Push current live values into the menu sliders on open.</summary>
@@ -1589,6 +1753,10 @@ public class ButtonClicker : MonoBehaviour
         RefreshModeToggle();
         ApplyToolGates();
 
+        // Paint the whole game UI (toolbar, date, corner controls, anything newly shown) in the
+        // active theme. Cheap after the first capture; covers everything the explicit panels don't.
+        ThemeRoot();
+
         // Each time the game settles into a normal gameplay state, check for weeds.
         // MaybeShowTooltip's shownTooltips guard ensures the tooltip only ever shows once.
         if (IsNormalGameplayState(state) &&
@@ -1608,6 +1776,7 @@ public class ButtonClicker : MonoBehaviour
             {
                 if (tooltipTitleLabel != null) tooltipTitleLabel.text = GameManager.TooltipTitle;
                 if (tooltipBodyLabel  != null) tooltipBodyLabel.text  = GameManager.TooltipBody;
+                ThemeTooltip();   // paint the tooltip in the active theme
             }
         }
 
@@ -2287,9 +2456,9 @@ public class ButtonClicker : MonoBehaviour
         if (speciesConfirmButton != null && chooseTableButton == null)
         {
             chooseTableButton = new Button { text = "Choose table…" };
-            chooseTableButton.style.marginTop = 6;
+            StyleSpeciesRowButton(chooseTableButton);
             chooseTableButton.RegisterCallback<ClickEvent>(_ => OpenTableCatalog());
-            (speciesConfirmButton.parent ?? root).Add(chooseTableButton);
+            (speciesButtonRow ?? speciesConfirmButton.parent ?? root).Add(chooseTableButton);
         }
     }
 
@@ -2353,6 +2522,41 @@ public class ButtonClicker : MonoBehaviour
     }
 
     // ── Quick-Start — fast-grow a developed tree from the new-game screen ──────
+    /// <summary>Wraps PLANT SEED + the injected species-overlay buttons (Quick-Start / Mode / Choose
+    /// table) into one centered row. Created before the injections so they can join it.</summary>
+    void SetupSpeciesButtonRow(VisualElement root)
+    {
+        if (speciesConfirmButton == null || speciesButtonRow != null) return;
+        var parent = speciesConfirmButton.parent ?? root;
+
+        speciesButtonRow = new VisualElement { name = "SpeciesButtonRow" };
+        speciesButtonRow.style.flexDirection  = FlexDirection.Row;
+        speciesButtonRow.style.justifyContent = Justify.Center;
+        speciesButtonRow.style.alignItems     = Align.Center;
+        speciesButtonRow.style.flexWrap       = Wrap.NoWrap;
+        speciesButtonRow.style.marginTop      = 18;
+
+        // Drop the row where PLANT SEED is, then move PLANT SEED into it as the first item.
+        int idx = parent.IndexOf(speciesConfirmButton);
+        parent.Insert(idx < 0 ? parent.childCount : idx, speciesButtonRow);
+
+        speciesConfirmButton.style.marginTop   = 0;
+        speciesConfirmButton.style.width        = new StyleLength(StyleKeyword.Auto);
+        speciesConfirmButton.style.height       = 42;
+        speciesConfirmButton.style.paddingLeft  = speciesConfirmButton.style.paddingRight = 22;
+        speciesConfirmButton.style.marginLeft   = speciesConfirmButton.style.marginRight  = 5;
+        speciesButtonRow.Add(speciesConfirmButton);   // reparents from the column into the row
+    }
+
+    /// <summary>Common flat-row styling for a button joining the species button row.</summary>
+    void StyleSpeciesRowButton(Button b)
+    {
+        b.style.marginTop  = 0;
+        b.style.height     = 42;
+        b.style.marginLeft = b.style.marginRight = 5;
+        b.style.paddingLeft = b.style.paddingRight = 14;
+    }
+
     void SetupQuickStart(VisualElement root)
     {
         quickStartPanel = new QuickStartPanel(root);
@@ -2362,9 +2566,9 @@ public class ButtonClicker : MonoBehaviour
         if (speciesConfirmButton != null && quickStartButton == null)
         {
             quickStartButton = new Button { text = "⚡ Quick-Start" };
-            quickStartButton.style.marginTop = 6;
+            StyleSpeciesRowButton(quickStartButton);
             quickStartButton.RegisterCallback<ClickEvent>(_ => OpenQuickStart());
-            (speciesConfirmButton.parent ?? root).Add(quickStartButton);
+            (speciesButtonRow ?? speciesConfirmButton.parent ?? root).Add(quickStartButton);
         }
     }
 
@@ -2394,9 +2598,9 @@ public class ButtonClicker : MonoBehaviour
         if (speciesConfirmButton == null || modeToggleButton != null) return;
 
         modeToggleButton = new Button();
-        modeToggleButton.style.marginTop = 6;
+        StyleSpeciesRowButton(modeToggleButton);
         modeToggleButton.RegisterCallback<ClickEvent>(_ => ToggleGameMode());
-        (speciesConfirmButton.parent ?? root).Add(modeToggleButton);
+        (speciesButtonRow ?? speciesConfirmButton.parent ?? root).Add(modeToggleButton);
         RefreshModeToggle();
     }
 
@@ -2920,13 +3124,77 @@ public class ButtonClicker : MonoBehaviour
 
     // ── Species Selection ────────────────────────────────────────────────────
 
+    /// <summary>Small pill button used by the sort + filter bars.</summary>
+    Button MakeBarButton(string text)
+    {
+        var b = new Button { text = text };
+        b.style.height       = 26;
+        b.style.paddingLeft  = b.style.paddingRight = 10;
+        b.style.marginRight  = 5;
+        b.style.marginBottom = 4;
+        b.style.fontSize     = 11;
+        b.style.borderTopLeftRadius    = b.style.borderTopRightRadius    = 4;
+        b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 4;
+        b.style.borderTopWidth = b.style.borderBottomWidth =
+            b.style.borderLeftWidth = b.style.borderRightWidth = 1;
+        return b;
+    }
+
+    /// <summary>Type-filter row (above the sort row): filter the species, then sort within the result.</summary>
+    void BuildFilterBar()
+    {
+        if (speciesSortBar == null) return;
+
+        if (speciesFilterBar == null)
+        {
+            speciesFilterBar = new VisualElement { name = "SpeciesFilterBar" };
+            speciesFilterBar.style.flexDirection = FlexDirection.Row;
+            speciesFilterBar.style.flexWrap      = Wrap.Wrap;
+            speciesFilterBar.style.alignItems    = Align.Center;
+            speciesFilterBar.style.alignSelf     = Align.FlexStart;   // left-aligned, like the Sort bar
+            speciesFilterBar.style.width         = Length.Percent(100);
+            speciesFilterBar.style.marginBottom  = 10;
+            var parent = speciesSortBar.parent;
+            if (parent != null) parent.Insert(parent.IndexOf(speciesSortBar), speciesFilterBar);  // above sort
+        }
+        speciesFilterBar.Clear();
+        activeFilterBtn = null;
+
+        var label = new Label("Type: ");
+        label.style.color     = new StyleColor(UiTheme.Current.textSub);
+        label.style.fontSize  = 11;
+        label.style.alignSelf = Align.Center;
+        label.style.marginRight = 6;
+        speciesFilterBar.Add(label);
+
+        foreach (SpeciesFilter f in System.Enum.GetValues(typeof(SpeciesFilter)))
+        {
+            var ff = f;
+            var btn = MakeBarButton(f.ToString());
+            bool isActive = (f == currentFilter);
+            SetSortBtnStyle(btn, isActive, false);
+            if (isActive) activeFilterBtn = btn;
+            btn.RegisterCallback<ClickEvent>(_ => OnFilterButtonClick(ff, btn));
+            speciesFilterBar.Add(btn);
+        }
+    }
+
+    void OnFilterButtonClick(SpeciesFilter f, Button btn)
+    {
+        if (activeFilterBtn != null) SetSortBtnStyle(activeFilterBtn, false, false);
+        currentFilter   = f;
+        activeFilterBtn = btn;
+        SetSortBtnStyle(btn, true, false);
+        BuildSpeciesCards();
+    }
+
     void BuildSortBar()
     {
         if (speciesSortBar == null) return;
         speciesSortBar.Clear();
 
         var label = new Label("Sort: ");
-        label.style.color    = new StyleColor(new Color(0.55f, 0.65f, 0.55f));
+        label.style.color    = new StyleColor(UiTheme.Current.textSub);
         label.style.fontSize = 11;
         label.style.alignSelf = Align.Center;
         label.style.marginRight = 6;
@@ -2976,15 +3244,10 @@ public class ButtonClicker : MonoBehaviour
     void SetSortBtnStyle(Button btn, bool active, bool descending)
     {
         if (btn == null) return;
-        btn.style.backgroundColor = active
-            ? new StyleColor(new Color(0.898f, 0.702f, 0.086f))
-            : new StyleColor(new Color(0.15f, 0.20f, 0.15f));
-        btn.style.color = active
-            ? new StyleColor(new Color(0.06f, 0.06f, 0.06f))
-            : new StyleColor(new Color(0.60f, 0.70f, 0.60f));
-        var borderCol = active
-            ? new StyleColor(new Color(0.898f, 0.702f, 0.086f))
-            : new StyleColor(new Color(0.30f, 0.38f, 0.30f));
+        // Theme-driven: active = accent fill + ink text; inactive = card surface + muted text.
+        btn.style.backgroundColor = new StyleColor(active ? UiTheme.Current.accent : UiTheme.Current.cardBg);
+        btn.style.color           = new StyleColor(active ? UiTheme.Current.ink    : UiTheme.Current.textSub);
+        var borderCol = new StyleColor(active ? UiTheme.Current.accent : UiTheme.Current.edge);
         btn.style.borderTopColor = btn.style.borderBottomColor =
             btn.style.borderLeftColor = btn.style.borderRightColor = borderCol;
     }
@@ -2993,7 +3256,7 @@ public class ButtonClicker : MonoBehaviour
     {
         if (availableSpecies == null) return new TreeSpecies[0];
         var list = new System.Collections.Generic.List<TreeSpecies>(availableSpecies);
-        list.RemoveAll(s => s == null);
+        list.RemoveAll(s => s == null || !MatchesFilter(s, currentFilter));   // type filter first
 
         System.Comparison<TreeSpecies> cmp = currentSort switch
         {
@@ -3010,6 +3273,28 @@ public class ButtonClicker : MonoBehaviour
             if (sortDescending) list.Reverse();
         }
         return list.ToArray();
+    }
+
+    // ── Tree-type filter ──────────────────────────────────────────────────────
+    static string GenusOf(TreeSpecies sp) =>
+        string.IsNullOrEmpty(sp.scientificName) ? "" : sp.scientificName.Split(' ')[0];
+
+    static bool MatchesFilter(TreeSpecies sp, SpeciesFilter f)
+    {
+        if (sp == null) return false;
+        bool conifer = sp.foliageType != FoliageType.BroadLeaf;
+        string g = GenusOf(sp);
+        switch (f)
+        {
+            case SpeciesFilter.All:       return true;
+            case SpeciesFilter.Conifer:   return conifer;
+            case SpeciesFilter.Broadleaf: return !conifer;
+            case SpeciesFilter.Pine:      return g == "Pinus";
+            case SpeciesFilter.Spruce:    return g == "Picea";
+            case SpeciesFilter.Cedar:     return g == "Cedrus" || g == "Cryptomeria";
+            case SpeciesFilter.Cypress:   return g == "Taxodium" || g == "Metasequoia";  // bald cypress + dawn redwood
+            default:                      return true;
+        }
     }
 
     static float CareScore(TreeSpecies sp) =>
@@ -3035,8 +3320,8 @@ public class ButtonClicker : MonoBehaviour
         if (reselect != null && selectedSpecies != null)
         {
             selectedSpeciesCard = reselect;
-            reselect.style.backgroundColor = new StyleColor(new Color(0.14f, 0.19f, 0.11f));
-            SetCardBorderColor(reselect, new Color(0.898f, 0.702f, 0.086f));
+            reselect.style.backgroundColor = new StyleColor(UiTheme.Current.cardSel);
+            SetCardBorderColor(reselect, UiTheme.Current.accent);
         }
         else if (firstCard != null)
         {
@@ -3068,12 +3353,12 @@ public class ButtonClicker : MonoBehaviour
 
         var nameLabel = new Label(sp.speciesName);
         nameLabel.style.fontSize = 15;
-        nameLabel.style.color    = new StyleColor(new Color(0.92f, 0.88f, 0.78f));
+        nameLabel.style.color    = new StyleColor(UiTheme.Current.textMain);
         nameLabel.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Bold);
 
         var sciLabel = new Label(sp.scientificName);
         sciLabel.style.fontSize = 11;
-        sciLabel.style.color    = new StyleColor(new Color(0.52f, 0.65f, 0.52f));
+        sciLabel.style.color    = new StyleColor(UiTheme.Current.textSub);
         sciLabel.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Italic);
 
         names.Add(nameLabel);
@@ -3572,6 +3857,7 @@ public class ButtonClicker : MonoBehaviour
         CalShowView(calMonthView);
         SwitchCalTab(0);   // always open on Schedule tab
         calendarOverlay.style.display = DisplayStyle.Flex;
+        ThemeOverlay(calendarOverlay);   // paint the calendar in the active theme
         GameManager.Instance?.UpdateGameState(GameState.CalendarOpen);
 
         MaybeShowTooltip("calendar_schedule_v3",

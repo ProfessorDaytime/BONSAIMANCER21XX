@@ -139,7 +139,9 @@ public class CustomizeManager : MonoBehaviour
             case ItemCategory.Music:
                 MusicManager.Instance?.Apply(def);
                 break;
-            // Decoration manager lands in a later increment.
+            case ItemCategory.Decoration:
+                DecorationManager.Instance?.Apply(def);
+                break;
             default:
                 Debug.Log($"[Customize] {cat} apply not implemented yet ({def?.Label}).");
                 break;
@@ -158,6 +160,9 @@ public class CustomizeManager : MonoBehaviour
 
         var music = CurrentEquipped(ItemCategory.Music);
         if (music != null) MusicManager.Instance?.Apply(music);
+
+        var decor = CurrentEquipped(ItemCategory.Decoration);
+        if (decor != null) DecorationManager.Instance?.Apply(decor);
     }
 
     ItemDefinition CurrentEquipped(ItemCategory cat)
@@ -173,19 +178,21 @@ public class CustomizeManager : MonoBehaviour
 
     static string EquippedId(ProgressionProfile p, ItemCategory cat) => cat switch
     {
-        ItemCategory.Background => p.equippedBackground,
-        ItemCategory.Music      => p.equippedMusic,
-        ItemCategory.UiTheme    => p.equippedTheme,
-        _                       => "",
+        ItemCategory.Background  => p.equippedBackground,
+        ItemCategory.Music       => p.equippedMusic,
+        ItemCategory.UiTheme     => p.equippedTheme,
+        ItemCategory.Decoration  => p.equippedDecoration,
+        _                        => "",
     };
 
     static void SetEquippedId(ProgressionProfile p, ItemCategory cat, string id)
     {
         switch (cat)
         {
-            case ItemCategory.Background: p.equippedBackground = id; break;
-            case ItemCategory.Music:      p.equippedMusic      = id; break;
-            case ItemCategory.UiTheme:    p.equippedTheme      = id; break;
+            case ItemCategory.Background:  p.equippedBackground = id; break;
+            case ItemCategory.Music:       p.equippedMusic      = id; break;
+            case ItemCategory.UiTheme:     p.equippedTheme      = id; break;
+            case ItemCategory.Decoration:  p.equippedDecoration = id; break;
         }
     }
 

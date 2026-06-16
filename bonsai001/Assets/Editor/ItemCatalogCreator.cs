@@ -59,6 +59,13 @@ public static class ItemCatalogCreator
         AddMusic(catalog, "Rainfall",     "Gentle rain.",                  120, new Color(0.40f, 0.50f, 0.70f));
         AddMusic(catalog, "Forest Birds", "Dawn chorus.",                  120, new Color(0.40f, 0.60f, 0.35f));
 
+        // Decorations — an accent placed beside the tree (DecorationManager). None is free; Stone
+        // Lantern is built-in/procedural; the rest are slots: drop a prefab on each Decor_* asset.
+        AddDecoration(catalog, "None",         "No decoration.",            0, "",        new Color(0.30f, 0.30f, 0.32f));
+        AddDecoration(catalog, "Stone Lantern","A small stone tōrō lantern.",100, "lantern", new Color(0.55f, 0.55f, 0.52f));
+        AddDecoration(catalog, "Figurine",     "Drop in a figurine model.", 120, "",        new Color(0.50f, 0.42f, 0.35f));
+        AddDecoration(catalog, "Accent Stone", "Drop in a stone model.",     90, "",        new Color(0.45f, 0.45f, 0.42f));
+
         string catPath = AssetDatabase.GenerateUniqueAssetPath($"{Dir}/ItemCatalog.asset");
         AssetDatabase.CreateAsset(catalog, catPath);
         AssetDatabase.SaveAssets();
@@ -132,6 +139,19 @@ public static class ItemCatalogCreator
         def.cost        = cost;
         def.swatchColor = swatch;
         // audioClip left null — author drops an AudioClip onto the generated asset.
+        SaveDef(cat, def);
+    }
+
+    static void AddDecoration(ItemCatalog cat, string label, string desc, int cost, string proceduralId, Color swatch)
+    {
+        var def = ScriptableObject.CreateInstance<ItemDefinition>();
+        def.name         = "Decor_" + label.Replace(" ", "");
+        def.displayName  = label;
+        def.description  = desc;
+        def.category     = ItemCategory.Decoration;
+        def.cost         = cost;
+        def.proceduralId = proceduralId;   // "lantern" = built-in; else drop a prefab onto the asset
+        def.swatchColor  = swatch;
         SaveDef(cat, def);
     }
 

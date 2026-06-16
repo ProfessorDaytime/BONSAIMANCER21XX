@@ -163,6 +163,9 @@ the **same** `ItemCatalogPanel`. What's new per category is only (a) the **apply
   - **Music** ✅ built — `MusicManager` (own AudioSource) crossfades to the equipped track;
     `ItemDefinition.audioClip` holds it (null = silence). Tracks are author-supplied (drop AudioClips
     onto the `Music_*` assets); the catalog ships a free "Silence" + 4 named slots.
-  - **Decoration (#21)** — `DecorationManager` places a figurine/accent near the tree.
+  - **Decoration (#21)** ✅ built — `DecorationManager` places a figurine/accent beside the tree;
+    a Decoration `ItemDefinition` supplies a `prefab` or a built-in `proceduralId` (ships a procedural
+    "Stone Lantern" so it works with zero art); one shown at a time, equipped-state persisted. Set the
+    manager's `anchor` to where decorations sit (or it offsets from the planter/tree).
 
-Build order for this expansion: **Backgrounds + scaffolding ✅** → **UI Themes ✅** → **Music ✅** → Decoration.
+Build order for this expansion: **Backgrounds + scaffolding ✅** → **UI Themes ✅** → **Music ✅** → **Decoration ✅**. (Item #21 complete.)

@@ -311,6 +311,7 @@ public class PotSoil : MonoBehaviour
 
         if (!ProgressionManager.AutomationActive)
             ProgressionManager.Instance?.ReachMilestone("first_repot");   // player repots only, not Quick-Start
+        TrainingRecorder.Instance?.RecordAction("Repot", -1, $"{{\"preset\":\"{newPreset}\",\"size\":\"{newSize}\"}}");
 
         ApplyPreset(newPreset);
         soilDegradation   = 0f;

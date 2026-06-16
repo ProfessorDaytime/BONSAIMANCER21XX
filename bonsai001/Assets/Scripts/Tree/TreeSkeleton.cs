@@ -4313,6 +4313,8 @@ public class TreeSkeleton : MonoBehaviour
             return;
         }
 
+        TrainingRecorder.Instance?.RecordAction("Pinch", node.id);
+
         // Stop growth at current length — soft tissue only, no woody wound.
         // Do NOT set isTrimmed: that would exclude this node from autumn SetBuds,
         // preventing any regrowth next spring. Instead freeze it in place so
@@ -4355,6 +4357,7 @@ public class TreeSkeleton : MonoBehaviour
 
         if (!ProgressionManager.AutomationActive)
             ProgressionManager.Instance?.ReachMilestone("first_trim");   // player cuts only, not the auto-styler
+        TrainingRecorder.Instance?.RecordAction("Trim", node.id);
 
         TreeNode parent = node.parent;
 
@@ -5386,6 +5389,7 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     public void WireNode(TreeNode node, Vector3 targetDirectionLocal)
     {
+        TrainingRecorder.Instance?.RecordAction("Wire", node != null ? node.id : -1);
         if (node.hasWire && node.wireSetProgress > 0f)
         {
             float damage = Mathf.Lerp(0.05f, 0.25f, node.wireSetProgress);
@@ -5584,6 +5588,7 @@ public class TreeSkeleton : MonoBehaviour
     /// </summary>
     public void UnwireNode(TreeNode node)
     {
+        TrainingRecorder.Instance?.RecordAction("Unwire", node != null ? node.id : -1);
         if (node.wireSetProgress < 1f)
         {
             Vector3 prevDir    = node.growDirection;
@@ -6098,6 +6103,7 @@ public class TreeSkeleton : MonoBehaviour
     public void ApplyPaste(TreeNode node)
     {
         if (!node.hasWound || node.pasteApplied) return;
+        TrainingRecorder.Instance?.RecordAction("Paste", node.id);
         node.pasteApplied = true;
 
         // Paste is now visualised via vertex.b in the unified tree mesh.

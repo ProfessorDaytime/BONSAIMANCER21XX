@@ -67,6 +67,11 @@ public class ItemDefinition : ScriptableObject
              "Null = silence (a valid 'no music' choice).")]
     public AudioClip audioClip;
 
+    [Header("Decoration category (DecorationManager)")]
+    [Tooltip("Decoration category only: id of a built-in procedural decoration to spawn when there's " +
+             "no `prefab` (e.g. 'lantern'). If `prefab` is set, it's used instead. Empty + null prefab = none.")]
+    public string proceduralId = "";
+
     /// <summary>Display name fallback so a card always has a label.</summary>
     public string Label => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
 

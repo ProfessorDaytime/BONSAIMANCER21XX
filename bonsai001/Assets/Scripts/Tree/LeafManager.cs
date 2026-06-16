@@ -595,6 +595,7 @@ public class LeafManager : MonoBehaviour
     public void DefoliateNode(TreeNode node)
     {
         if (!nodeLeaves.ContainsKey(node.id)) return;
+        TrainingRecorder.Instance?.RecordAction("Defoliate", node.id);
 
         // Strip leaves with fall animation
         StartFallingCluster(node.id);
@@ -623,6 +624,7 @@ public class LeafManager : MonoBehaviour
     /// </summary>
     public void DefoliateAll()
     {
+        TrainingRecorder.Instance?.RecordAction("DefoliateAll", -1);
         var ids = new List<int>(nodeLeaves.Keys);
         foreach (int id in ids)
             StartFallingCluster(id);

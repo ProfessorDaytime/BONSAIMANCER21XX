@@ -224,23 +224,39 @@ public class FlowerManager : MonoBehaviour
     }
 
     // ── Procedural geometry ──────────────────────────────────────────────────
-    // Flat blossom in the XY plane (normal +Z): `petals` pointed petals around a center.
+    // Showy blossom facing +Z: `petals` rounded petals that CUP upward (a shallow bowl) around a
+    // lower central throat, so they catch light and read as a real flower from many angles.
+    // Each petal is a fan from the centre across a 7-point rounded rim (CCW = upward normals).
     static Mesh BuildBlossom(int petals)
     {
-        var verts = new List<Vector3> { Vector3.zero };
+        var verts = new List<Vector3> { new Vector3(0f, 0f, 0f) };   // 0 = central throat (lowest)
         var tris  = new List<int>();
-        const float R = 0.5f, baseR = 0.16f;
+
+        const float baseR = 0.12f, midR = 0.34f, tipR = 0.52f;   // petal radii: attach → widest → tip
+        const float zBase = 0.02f, zMid = 0.05f, zTip = 0.09f;   // cup: petals lift toward the tip
+
         for (int p = 0; p < petals; p++)
         {
-            float mid = (p + 0.5f) / petals * Mathf.PI * 2f;
-            float hw  = Mathf.PI / petals * 0.85f;
-            Vector3 left  = new Vector3(Mathf.Cos(mid - hw) * baseR, Mathf.Sin(mid - hw) * baseR, 0f);
-            Vector3 tip   = new Vector3(Mathf.Cos(mid) * R, Mathf.Sin(mid) * R, 0.06f);
-            Vector3 right = new Vector3(Mathf.Cos(mid + hw) * baseR, Mathf.Sin(mid + hw) * baseR, 0f);
+            float a  = (p + 0.5f) / petals * Mathf.PI * 2f;
+            float hw = Mathf.PI / petals * 0.95f;                // half-width — petals nearly meet
+
+            Vector3 P(float r, float off, float z) =>
+                new Vector3(Mathf.Cos(a + off) * r, Mathf.Sin(a + off) * r, z);
+
             int b = verts.Count;
-            verts.Add(left); verts.Add(tip); verts.Add(right);
-            tris.Add(0); tris.Add(b);     tris.Add(b + 1);
-            tris.Add(0); tris.Add(b + 1); tris.Add(b + 2);
+            // Rounded petal rim, CCW from the −side to the +side.
+            verts.Add(P(baseR,        -hw * 0.5f, zBase));   // b+0  base −
+            verts.Add(P(midR,         -hw,        zMid));    // b+1  widest −
+            verts.Add(P(tipR,         -hw * 0.3f, zTip));    // b+2  shoulder −
+            verts.Add(P(tipR * 1.04f,  0f,        zTip));    // b+3  tip
+            verts.Add(P(tipR,         +hw * 0.3f, zTip));    // b+4  shoulder +
+            verts.Add(P(midR,         +hw,        zMid));    // b+5  widest +
+            verts.Add(P(baseR,        +hw * 0.5f, zBase));   // b+6  base +
+
+            for (int i = 0; i < 6; i++)
+            {
+                tris.Add(0); tris.Add(b + i); tris.Add(b + i + 1);   // fan from the throat
+            }
         }
         return Finish(verts, tris, "Blossom");
     }

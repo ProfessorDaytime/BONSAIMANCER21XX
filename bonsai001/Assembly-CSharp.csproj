@@ -68,6 +68,7 @@
      <Compile Include="Assets\Scripts\Tree\TreeNode.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeMeshBuilder.cs" />
      <Compile Include="Assets\Scripts\Tree\PreGrowRootsToSoil_backup_2026-03-31.cs" />
+     <Compile Include="Assets\Scripts\Progression\UiThemePainter.cs" />
      <Compile Include="Assets\Scripts\Tools\ToolManager.cs" />
      <Compile Include="Assets\Scripts\BezierSpline.cs" />
      <Compile Include="Assets\Scripts\RockPlacer.cs" />
@@ -97,6 +98,8 @@
      <Compile Include="Assets\Scripts\Progression\UiTheme.cs" />
      <Compile Include="Assets\Scripts\ProceduralConeBackup.cs" />
      <Compile Include="Assets\Scripts\QuickStartManager.cs" />
+     <Compile Include="Assets\Scripts\Progression\DecorationManager.cs" />
+     <Compile Include="Assets\Scripts\TrainingRecorder.cs" />
      <Compile Include="Assets\Scripts\Tree\AutoStyler.cs" />
      <Compile Include="Assets\Scripts\Progression\ProgressionHUD.cs" />
      <Compile Include="Assets\Scripts\Progression\CustomizeManager.cs" />

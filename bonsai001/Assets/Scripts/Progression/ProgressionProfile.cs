@@ -28,6 +28,7 @@ public class ProgressionProfile
     public string equippedBackground = "";
     public string equippedMusic      = "";
     public string equippedTheme      = "";
+    public string equippedDecoration = "";
 
     /// <summary>Adds <paramref name="id"/> to a set-list if not already present. Returns true if it was new.</summary>
     public bool Add(List<string> set, string id)
