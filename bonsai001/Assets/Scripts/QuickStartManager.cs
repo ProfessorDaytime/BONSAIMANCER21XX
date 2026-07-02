@@ -172,7 +172,9 @@ public class QuickStartManager : MonoBehaviour
                      : totalYears >= 6  ? PotSoil.PotSize.S
                      :                    PotSoil.PotSize.XS;
             ProgressionManager.AutomationActive = true;   // generated tree's repot isn't the player's "first repot"
-            try { potSoil.Repot(skeleton, potSoil.preset, size, size != potSoil.potSize); }
+            // Force the pot size to re-apply so the rootArea scale is reset to `size` (the fast-grow
+            // pot advancement can leave it oversized → a giant rake soil ball otherwise).
+            try { potSoil.Repot(skeleton, potSoil.preset, size, sizeChanged: true); }
             finally { ProgressionManager.AutomationActive = false; }
         }
 

@@ -44,6 +44,7 @@
      <Compile Include="Assets\Scripts\FullscreenPrompt.cs" />
      <Compile Include="Assets\Scripts\Progression\BackgroundManager.cs" />
      <Compile Include="Assets\Scripts\Tree\NeedleMesh.cs" />
+     <Compile Include="Assets\Scripts\Tree\DrainageHole.cs" />
      <Compile Include="Assets\Scripts\ChangeColor.cs" />
      <Compile Include="Assets\Scripts\Tree\NodeHealth.cs" />
      <Compile Include="Assets\Scripts\ProceduralCone.cs" />
@@ -154,6 +155,9 @@
     <Reference Include="UnityEngine.AIModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.AIModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.AMDModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.AMDModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.ARModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.ARModule.dll</HintPath>
     </Reference>
@@ -211,6 +215,9 @@
     <Reference Include="UnityEngine.GridModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.GridModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.HierarchyModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.HierarchyModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.HierarchyCoreModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.HierarchyCoreModule.dll</HintPath>
     </Reference>
@@ -249,6 +256,9 @@
     </Reference>
     <Reference Include="UnityEngine.MultiplayerModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.MultiplayerModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.NVIDIAModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.NVIDIAModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.ParticleSystemModule.dll</HintPath>

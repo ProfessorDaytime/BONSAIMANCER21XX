@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -215,9 +216,10 @@ public class PotSoil : MonoBehaviour
     [Range(0f, 1f)] public float compaction = 0f;
 
     /// <summary>
-    /// Effective drainage rate accounting for degradation and fresh-repot compaction.
+    /// Effective drainage rate accounting for degradation, fresh-repot compaction, and the pot's
+    /// drainage holes (more/bigger holes drain faster; few or clogged holes risk waterlogging).
     /// </summary>
-    public float EffectiveDrainageRate => drainageRate * (1f - soilDegradation * 0.70f) * (1f - compaction * 0.5f);
+    public float EffectiveDrainageRate => drainageRate * (1f - soilDegradation * 0.70f) * (1f - compaction * 0.5f) * HoleDrainageFactor;
 
     /// <summary>
     /// Effective water retention accounting for degradation and compaction (both hold more water).
@@ -231,6 +233,131 @@ public class PotSoil : MonoBehaviour
     /// Range: ~0.35 (very retentive) → ~1.55 (very free-draining).
     /// </summary>
     public float DrainRateMultiplier => Mathf.Lerp(1.55f, 0.35f, EffectiveWaterRetention);
+
+    // ── Drainage holes ──────────────────────────────────────────────────────────
+    // Holes live on the bottom face of the rootArea box, expressed in box-LOCAL space
+    // (the same space TreeSkeleton uses for root containment: |x|,|z| ≤ 0.5, bottom at y = -0.5).
+    // So a hole is a disc (centre.x, centre.y → box-local x,z) of the given local radius. Authored
+    // by placing DrainageHole cylinders in the pot model; falls back to a procedural pattern when a
+    // pot has none yet, so the drainage + root-escape mechanics work before pots are authored.
+
+    public struct Hole { public Vector2 centre; public float radius; }   // box-local XZ centre + radius
+
+    readonly List<Hole> drainageHoles = new List<Hole>();
+    float totalHoleArea;
+    bool  holesReady;
+
+    // Total disc area of the procedural default pattern — the "normal pot" baseline (factor = 1).
+    const float BaselineHoleArea = 0.063f;   // π·(0.075² + 4·0.06²)
+
+    public IReadOnlyList<Hole> DrainageHoles { get { EnsureHoles(); return drainageHoles; } }
+
+    /// <summary>
+    /// Drainage multiplier from the pot's holes, relative to a normally-holed pot. More/bigger holes
+    /// drain faster (&gt;1, less waterlogging); few or clogged holes drain slower (&lt;1, rot risk).
+    /// </summary>
+    public float HoleDrainageFactor
+    {
+        get { EnsureHoles(); return Mathf.Clamp(totalHoleArea / BaselineHoleArea, 0.4f, 1.6f); }
+    }
+
+    void EnsureHoles() { if (!holesReady) RefreshDrainageHoles(); }
+
+    /// <summary>
+    /// (Re)collect drainage holes from DrainageHole cylinder markers in the scene, converting each to
+    /// a box-local disc and hiding its renderer. Falls back to a procedural pattern when none exist.
+    /// Call after the pot's rootArea transform changes (e.g. a repot that resizes the pot).
+    /// </summary>
+    public void RefreshDrainageHoles()
+    {
+        drainageHoles.Clear();
+        var rootArea = GetComponent<TreeSkeleton>()?.GetRootAreaTransform();
+
+        var markers = FindObjectsByType<DrainageHole>(FindObjectsSortMode.None);
+        if (rootArea != null && markers != null && markers.Length > 0)
+        {
+            foreach (var m in markers)
+            {
+                if (m == null) continue;
+                Vector3 local = rootArea.InverseTransformPoint(m.transform.position);
+                // World radius → box-local. The box scale differs on X vs Z, so average the two
+                // axes (a circular hole becomes a slight ellipse in box-local; close enough for the disc test).
+                float rLocal = (m.WorldRadius / Mathf.Max(0.001f, rootArea.lossyScale.x)
+                              + m.WorldRadius / Mathf.Max(0.001f, rootArea.lossyScale.z)) * 0.5f;
+                drainageHoles.Add(new Hole { centre = new Vector2(local.x, local.z), radius = Mathf.Max(0.01f, rLocal) });
+                if (m.hideInGame)
+                    foreach (var r in m.GetComponentsInChildren<Renderer>()) r.enabled = false;
+            }
+        }
+        else
+        {
+            // Procedural default: one central hole plus a ring of four. Keep in sync with BaselineHoleArea.
+            drainageHoles.Add(new Hole { centre = new Vector2(0f, 0.05f), radius = 0.075f });
+            const float ring = 0.32f;
+            for (int i = 0; i < 4; i++)
+            {
+                float a = (i + 0.5f) / 4f * Mathf.PI * 2f;
+                drainageHoles.Add(new Hole { centre = new Vector2(Mathf.Cos(a) * ring, Mathf.Sin(a) * ring), radius = 0.06f });
+            }
+        }
+
+        totalHoleArea = 0f;
+        foreach (var h in drainageHoles) totalHoleArea += Mathf.PI * h.radius * h.radius;
+        holesReady = true;
+    }
+
+    /// <summary>
+    /// True if box-local floor point (x,z) lies within any drainage hole disc — used by the root
+    /// system to let pot-bound roots grow out through a hole instead of being clamped at the floor.
+    /// </summary>
+    public bool IsOverHole(float boxLocalX, float boxLocalZ)
+    {
+        EnsureHoles();
+        foreach (var h in drainageHoles)
+        {
+            float dx = boxLocalX - h.centre.x, dz = boxLocalZ - h.centre.y;
+            if (dx * dx + dz * dz <= h.radius * h.radius) return true;
+        }
+        return false;
+    }
+
+    [Header("Debug")]
+    [Tooltip("Draw the derived drainage-hole discs on the pot floor (GL overlay) to verify placement.")]
+    public bool debugDrawHoles = false;
+    static Material glMat;
+
+    void OnRenderObject()
+    {
+        if (!debugDrawHoles) return;
+        EnsureHoles();
+        var rootArea = GetComponent<TreeSkeleton>()?.GetRootAreaTransform();
+        if (rootArea == null || drainageHoles.Count == 0) return;
+
+        if (glMat == null)
+        {
+            glMat = new Material(Shader.Find("Hidden/Internal-Colored")) { hideFlags = HideFlags.HideAndDontSave };
+            glMat.SetInt("_ZWrite", 0);
+            glMat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);   // draw over geometry
+        }
+        glMat.SetPass(0);
+        GL.PushMatrix();
+        GL.MultMatrix(rootArea.localToWorldMatrix);   // hole discs are in box-local space, floor at y = -0.5
+        GL.Begin(GL.LINES);
+        GL.Color(new Color(0.3f, 0.8f, 1f, 1f));
+        const int seg = 24;
+        foreach (var h in drainageHoles)
+        {
+            for (int i = 0; i < seg; i++)
+            {
+                float a0 = i        / (float)seg * Mathf.PI * 2f;
+                float a1 = (i + 1)  / (float)seg * Mathf.PI * 2f;
+                GL.Vertex3(h.centre.x + Mathf.Cos(a0) * h.radius, -0.5f, h.centre.y + Mathf.Sin(a0) * h.radius);
+                GL.Vertex3(h.centre.x + Mathf.Cos(a1) * h.radius, -0.5f, h.centre.y + Mathf.Sin(a1) * h.radius);
+            }
+        }
+        GL.End();
+        GL.PopMatrix();
+    }
 
     /// <summary>
     /// Called once per growing season from TreeSkeleton.StartNewGrowingSeason.
@@ -323,6 +450,7 @@ public class PotSoil : MonoBehaviour
             potSize = newSize;
             var rootArea = skeleton.GetRootAreaTransform();
             ApplyPotSize(rootArea);
+            RefreshDrainageHoles();   // rootArea scale changed — re-derive box-local hole discs
             Debug.Log($"[Soil] Pot size → {newSize} | year={GameManager.year}");
         }
 

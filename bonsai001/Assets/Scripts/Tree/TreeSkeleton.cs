@@ -503,6 +503,12 @@ public class TreeSkeleton : MonoBehaviour
              "spreading by radius. Leave empty to use the legacy radial spread system.")]
     [SerializeField] Transform rootAreaTransform;
 
+    // Drainage-hole root escape: cached once per growth pass so the per-node floor checks don't
+    // re-GetComponent / re-walk the tree. _holeEscapePressure is RootPressureFactor() at pass start;
+    // roots only escape through a hole once the tree is genuinely pot-bound (> 0.4).
+    PotSoil _holePotSoil;
+    float   _holeEscapePressure;
+
     [Header("Root Health")]
     [Tooltip("Maximum root depth counted toward the root health score. 1 = only first segments off the trunk; 3 captures the full surface flare.")]
     [SerializeField] int rootHealthMaxDepth = 3;
@@ -1987,6 +1993,10 @@ public class TreeSkeleton : MonoBehaviour
         float vigorFactor = Mathf.Max(0.05f, 1f - (float)currentBranchCount / maxBranchNodes);
         Debug.Log($"[Tree] branchNodes={currentBranchCount}/{maxBranchNodes} vigorFactor={vigorFactor:F2}");
 
+        // Drainage-hole escape: cache the pot + pot-bound pressure once for this growth pass.
+        _holePotSoil        = GetComponent<PotSoil>();
+        _holeEscapePressure = RootPressureFactor();
+
         foreach (var terminal in terminals)
         {
             float baseSegLen  = (terminal.isRoot ? rootSegmentLength : branchSegmentLength) * globalSegmentScale;
@@ -2016,21 +2026,35 @@ public class TreeSkeleton : MonoBehaviour
 
                 bool isIshitsuki = isIshitsukiMode;
                 float distRatio  = RootDistRatio(terminal);
-                if (!isIshitsuki && distRatio >= 1.3f) continue;  // beyond hard outer boundary — stop
+                // Escaped roots may poke a bit further (down past the floor through a hole) than the
+                // normal outer boundary before they too stop.
+                float boundary   = terminal.escapedRoot ? 1.9f : 1.3f;
+                if (!isIshitsuki && distRatio >= boundary) continue;  // beyond hard outer boundary — stop
 
                 // Terminal clamp: if this root tip has already escaped the side or bottom
                 // of the pot box, stop it permanently rather than letting it grow further out.
                 // Top-face escape (surface roots) is left alone — it looks realistic.
+                // Exception: a pot-bound root reaching the floor over a drainage hole grows out
+                // through it (escapedRoot) — a visible "needs repotting" tell.
                 if (!isIshitsuki && rootAreaTransform != null)
                 {
                     Vector3 tipW  = transform.TransformPoint(terminal.tipPosition);
                     Vector3 local = rootAreaTransform.InverseTransformPoint(tipW);
                     bool outsideSide   = Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.z) > 0.5f;
                     bool outsideBottom = local.y < -0.5f;
-                    if (outsideSide || outsideBottom)
+                    if (outsideSide)
                     {
                         terminal.isTrimmed = true;
                         continue;
+                    }
+                    if (outsideBottom)
+                    {
+                        // Escape only through a hole, and only once the tree is genuinely pot-bound
+                        // (or this root already started escaping last season — keep it going).
+                        bool overHole  = _holePotSoil != null && _holePotSoil.IsOverHole(local.x, local.z);
+                        bool canEscape = overHole && (terminal.escapedRoot || _holeEscapePressure > 0.4f);
+                        if (canEscape) terminal.escapedRoot = true;
+                        else { terminal.isTrimmed = true; continue; }
                     }
                 }
                 // In Ishitsuki mode, training-wire cable growth is handled exclusively by
@@ -2051,6 +2075,7 @@ public class TreeSkeleton : MonoBehaviour
 
                 var cont = CreateNode(terminal.tipPosition, ContinuationDirection(terminal), nodeRadius, childLength, terminal);
                 cont.isRoot         = true;
+                cont.escapedRoot    = terminal.escapedRoot;   // a root growing out a hole stays escaped
                 // Air-layer roots transition to normal underground roots once they reach soil.
                 Vector3 terminalTipW = transform.TransformPoint(terminal.tipPosition);
                 bool stillAboveSoil  = terminal.isAirLayerRoot &&
@@ -3678,8 +3703,12 @@ public class TreeSkeleton : MonoBehaviour
         AddFace(-rootAreaTransform.right,   Mathf.InverseLerp(0.5f - margin,  0.5f, -areaLocal.x), 1.0f);
         AddFace( rootAreaTransform.forward, Mathf.InverseLerp(0.5f - margin,  0.5f,  areaLocal.z), 1.0f);
         AddFace(-rootAreaTransform.forward, Mathf.InverseLerp(0.5f - margin,  0.5f, -areaLocal.z), 1.0f);
-        // Bottom (floor): strong deflection — roots must not escape downward
-        AddFace(-rootAreaTransform.up,      Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.y), 1.0f);
+        // Bottom (floor): strong deflection — roots must not escape downward... unless the tree is
+        // pot-bound and this tip is over a drainage hole, in which case let it descend out the hole.
+        bool floorEscape = _holePotSoil != null && _holeEscapePressure > 0.4f
+                           && _holePotSoil.IsOverHole(areaLocal.x, areaLocal.z);
+        if (!floorEscape)
+            AddFace(-rootAreaTransform.up,  Mathf.InverseLerp(-0.5f + margin, -0.5f, areaLocal.y), 1.0f);
         // Top (soil surface): weak deflection — let roots emerge slightly above soil
         AddFace( rootAreaTransform.up,      Mathf.InverseLerp( 0.5f - margin,  0.5f,  areaLocal.y), 0.3f);
 

@@ -691,6 +691,12 @@ public class RootRakeManager : MonoBehaviour
             soilRadius = 1.3f;
             soilHeight = 1.0f;
         }
+
+        // Safety clamp: a stale/oversized rootArea scale (e.g. after fast-grow pot advancement) must
+        // never balloon the ball past the largest real pot. Slab is the widest (radius ≈ 2.2).
+        soilRadius = Mathf.Clamp(soilRadius, 0.5f, 2.6f);
+        soilHeight = Mathf.Clamp(soilHeight, 0.35f, 1.4f);
+
         // Verticality floor: the rootArea box can be quite flat, which would collapse the
         // ball to a single cell layer — keep it a proper rounded ball relative to its width.
         float radiusY = Mathf.Max(soilHeight * 0.55f, soilRadius * 0.5f);

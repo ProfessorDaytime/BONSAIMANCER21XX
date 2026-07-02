@@ -68,6 +68,13 @@ public class BarkFlakerManager : MonoBehaviour
 
     int lastSpringYear = -1;
 
+    [Tooltip("Chance per flake each spring to peel off and fall, so bark turns over and never piles up.")]
+    [SerializeField] [Range(0f, 1f)] float shedChancePerSeason = 0.35f;
+
+    // Flakes that have peeled off and are drifting down before being destroyed.
+    class FallingFlake { public GameObject go; public Vector3 vel; public Vector3 spin; public float age; }
+    readonly List<FallingFlake> fallingFlakes = new List<FallingFlake>();
+
     // ── Unity ─────────────────────────────────────────────────────────────────
 
     void Awake()
@@ -93,11 +100,49 @@ public class BarkFlakerManager : MonoBehaviour
         RefreshFlakes();
     }
 
+    // ── Falling (peeled) flakes ───────────────────────────────────────────────
+    void Update()
+    {
+        if (fallingFlakes.Count == 0) return;
+        float dt = Time.deltaTime;   // real-time so peeled bark always falls at a visible rate
+        for (int i = fallingFlakes.Count - 1; i >= 0; i--)
+        {
+            var f = fallingFlakes[i];
+            if (f.go == null) { fallingFlakes.RemoveAt(i); continue; }
+            f.vel.y -= 0.9f * dt;                                   // gravity
+            f.go.transform.position += f.vel * dt;
+            f.go.transform.Rotate(f.spin * dt, Space.Self);        // tumble
+            f.age += dt;
+            if (f.age > 4f) { Destroy(f.go); fallingFlakes.RemoveAt(i); }
+        }
+    }
+
+    /// <summary>Detach a flake and let it drift down + tumble, then self-destruct (peeled bark).</summary>
+    void ShedFlake(GameObject go)
+    {
+        if (go == null) return;
+        go.transform.SetParent(null, worldPositionStays: true);
+        fallingFlakes.Add(new FallingFlake
+        {
+            go   = go,
+            vel  = new Vector3(Random.Range(-0.12f, 0.12f), Random.Range(-0.05f, 0.05f), Random.Range(-0.12f, 0.12f)),
+            spin = Random.insideUnitSphere * Random.Range(40f, 160f),
+            age  = 0f,
+        });
+    }
+
+    void ShedCluster(int nodeId)
+    {
+        if (!nodeFlakes.TryGetValue(nodeId, out var list)) return;
+        foreach (var go in list) ShedFlake(go);
+        nodeFlakes.Remove(nodeId);
+    }
+
     // ── Flake Management ──────────────────────────────────────────────────────
 
     void RefreshFlakes()
     {
-        // Remove flakes from nodes that are now trimmed or no longer valid
+        // Bark peels from nodes that are now trimmed or no longer valid (it falls, not vanishes).
         var toRemove = new List<int>();
         var liveIds  = new HashSet<int>();
         foreach (var node in skeleton.allNodes)
@@ -105,7 +150,7 @@ public class BarkFlakerManager : MonoBehaviour
         foreach (var id in nodeFlakes.Keys)
             if (!liveIds.Contains(id)) toRemove.Add(id);
         foreach (var id in toRemove)
-            DestroyFlakeCluster(id);
+            ShedCluster(id);
 
         // Spawn / top-up flakes on eligible nodes
         float treeAge = GameManager.year - skeleton.plantingYear;
@@ -119,7 +164,7 @@ public class BarkFlakerManager : MonoBehaviour
             if (!node.isTerminal && node.children.Count > 0 && node.depth == 0 && node.radius < 0.12f) continue;
 
             int target = TargetFlakeCount(node, treeAge);
-            if (target == 0) { DestroyFlakeCluster(node.id); continue; }
+            if (target == 0) { ShedCluster(node.id); continue; }
 
             if (!nodeFlakes.TryGetValue(node.id, out var list))
             {
@@ -127,15 +172,24 @@ public class BarkFlakerManager : MonoBehaviour
                 nodeFlakes[node.id] = list;
             }
 
-            // Remove excess
+            // Turnover: some flakes peel off and fall each season, then fresh bark replaces them —
+            // so old flakes never accumulate as litter.
+            for (int i = list.Count - 1; i >= 0; i--)
+                if (Random.value < shedChancePerSeason)
+                {
+                    ShedFlake(list[i]);
+                    list.RemoveAt(i);
+                }
+
+            // Remove excess (also peels off)
             while (list.Count > target)
             {
                 int last = list.Count - 1;
-                if (list[last] != null) Destroy(list[last]);
+                ShedFlake(list[last]);
                 list.RemoveAt(last);
             }
 
-            // Add missing
+            // Add missing (fresh bark)
             while (list.Count < target)
                 list.Add(SpawnFlake(node));
         }

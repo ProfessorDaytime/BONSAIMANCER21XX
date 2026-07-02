@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-06-14 · Flower/fruit system (all 9 conifers cone), needle foliage for conifers, plus the H item menus and Quick-Start/Multi-Tree from earlier this phase. See "Completed This Phase" below for the full list and the Completed Items Log at the bottom for prior phases.
+Last updated: 2026-07-02 · Added **Fable 5 Work Orders** section (time-boxed audit — see below). · Flower/fruit system (all 9 conifers cone), needle foliage for conifers, plus the H item menus and Quick-Start/Multi-Tree from earlier this phase. See "Completed This Phase" below for the full list and the Completed Items Log at the bottom for prior phases.
 
 ---
 
@@ -18,7 +18,117 @@ Pending work in recommended priority order. Detailed specs are under "Pending �
 | ✅ | **19 — Gamification & Tutorial Progression** | ✅ core complete 2026-06-14 (`Docs/PROGRESSION_DESIGN.md`) — all 4 slices built: economy + zen core, cosmetic shop, Career/Sandbox gating + mode toggle, and the Journal/Encyclopedia (Achievements + Techniques/Phenomena/Species) with real milestone hooks (trim/wire/repot/bloom/fruit/survival). Remaining = ongoing balance tuning + optional richer tutorials. |
 | ✅ | **21 — Decoration & Cosmetic Unlockables** | ✅ **done 2026-06-15** — all 4 cosmetic categories via the AP shop: Backgrounds, UI Themes (+ full game-UI theming), Music, and **Decoration placeables** (`DecorationManager` places a figurine/accent beside the tree; prefab or built-in procedural "Stone Lantern"; equipped-state persisted). `CustomizeManager` + ⚙ menu drive all four. See `Docs/PROGRESSION_DESIGN.md` §7. |
 | 3 | **Backlog — Auto-Style Training Data Recorder** | ✅ **phase 1 built 2026-06-15** — `TrainingRecorder` writes one JSONL line per styling/care action (context + compact per-node tree snapshot) to `persistentDataPath/training/<session>.jsonl`. Hooks: Trim/Pinch/Wire/Unwire/Paste/Defoliate(All)/Repot; labelled `source=player|auto` via `ProgressionManager.AutomationActive`. Toggle in Settings → Debug (off by default). **Setup:** add a `TrainingRecorder` component. Phase 2 (consent, gzip, upload) remains. |
+| 🔧 | **Pot Drainage Holes — root escape + drainage** | ✅ **mechanics built 2026-06-22** — `DrainageHole` cylinder marker; `PotSoil` collects holes (cylinder-derived **or** a procedural center+ring fallback) into box-local discs, hides the cylinders, scales `EffectiveDrainageRate` by total hole area (`HoleDrainageFactor`), and exposes `IsOverHole`. Pot-bound roots (`RootPressureFactor > 0.4`) over a hole grow out through the floor instead of being clamped (`TreeNode.escapedRoot`); floor deflection + the outer-boundary limit yield over holes. Debug GL overlay (`debugDrawHoles`) draws the discs. **Remaining:** author hole cylinders on real pots (waits on pot pipeline), tune drainage/escape balance, phase-2 clog feedback loop (escaped roots reduce drainage over time). See "Pending — Detailed Specs". |
+| 3 | **Pots & Rocks content + scale standardization** | 🆕 raised 2026-06-15. Author real-size pots (starting 2-in) + rocks; first settle the project's tangled scale (rootArea design ~0.016 vs PotDimensions 2.6 vs rock scale 45 — no single unit convention). Pick one convention (e.g. 1 unit = 1 cm), fix `PotDimensions`/import/prefab; or calibrate new meshes visually against the existing pot. |
 | 4 | **K — Additional AutoStyler Styles** | **Lowest priority.** Blocked on user (descriptions + reference images). Chokkan / Shakan / cascade / windswept / broom / literati. |
+
+---
+
+## Fable 5 Work Orders (time-boxed — window closes ~2026-07-08)
+
+Prioritized for a temporary Fable 5 window. Ordering favors **large, cross-cutting, whole-file reasoning** jobs that a smaller model handles poorly, with self-contained realism wins as reaches. Each item is spec'd so it can be handed straight to a fresh Fable 5 session. Audit basis: 2026-07-02.
+
+| # | Item | Type | Why Fable 5 |
+|---|------|------|-------------|
+| F1 | **AutoStyler slot-fill — forced back-budding** | Cross-system | Retested: plateaus at 36% (5/14 slots); needs epicormic budding on old wood |
+| F1b | **Black spider-leg spikes around pot rim** | Bug triage | Root-escape/exposure mis-targeting? triage before scoping |
+| F2 | **Needle system upgrade** (variety, instancing, candles, year-round drop, LOD) | Self-contained | Contained system, high realism/effort ratio |
+| F3 | **Jin / Shari deadwood** | Feature | New system off an existing hook |
+| F4 | **Procedural bark flaking by species** | Feature | Replaces placeholder; 18-type bark logic |
+| F5 | **TreeSkeleton partial-class split** | Refactor | 6,156-line file — whole-file reasoning |
+| F6 | **Wind / ambient foliage motion** | Realism | Rides existing sag/elastic system |
+| F7 | **Nebari — surface root flare** | Realism | Extends root system |
+| F8 | **AutoStyler periodic repot / soil refresh** | Bug/sim gap | Auto-care never actually repots; mature trees starve in dead soil |
+
+---
+
+**F1. AutoStyler convergence — fill empty slots via forced back-budding** *(retest done 2026-07-02)*
+
+- **Measured (2026-07-02, Ficus, Moyogi, Hands-Off):** **36% match at ~10 yr, still 36% at ~20 yr — fully plateaued.** The earlier "~17%" note is obsolete; ignore it.
+- **Root cause (confirmed in the log, NOT slow convergence — a hard ceiling):** every spring the styler reports `RefreshSlots — 6 scaffold candidates` and `Slots 5/14 — Maintaining:5 Empty:9`. The tree only ever grows **6 primary scaffold branches**; 5 fill style slots and the **other 9 slots stay empty forever**. 5 ÷ 14 = 36%, mathematically pinned. Over 20 years the trunk produced **zero new scaffold branches**.
+- **Why stimulation fails:** `StimulateEmptySlots` fires every February (`[AutoStyle] February — stimulated 5 empty slots (directional)`) and nudges the *azimuth* of the nearest trunk node — but if that node already spent its single lateral it never buds again, so candidate count stays at 6. The stimulation changes direction, never creates a branch.
+- **The fix (re-scoped from "converge faster" → "make empty slots grow branches"):** implement genuine **epicormic / forced back-budding on old bare wood** — the real bonsai mechanic (cut back to bare trunk → dormant bud breaks). When an empty slot is stimulated, force a NEW lateral bud to break at that slot's target height + azimuth on the trunk, even on a node that already has a child. Gate on vigor/energy so it's earned, not free. Verify candidate count climbs past 6 and Empty count falls year over year.
+- **Ceiling math:** filling even 4 of the 9 dead slots → ~64% with no other change; the wire-pacing / `MatchPercent` work is all downstream and can't help until the branches exist.
+- **De-prioritized sub-symptom:** the pinch pass fires on large node batches per tick (`[AutoStyle] Pinch fired` on nodes 2955→2825) — check it's not thrashing, but it's secondary to the slot ceiling.
+- **Scope:** `AutoStyler.StimulateEmptySlots`/`RefreshSlots`, `TreeSkeleton.SpawnChildren` (forced-bud path on lignified trunk nodes), `TreeNode` (bud-break-on-old-wood flag). **Files:** `Tree/AutoStyler.cs`, `Tree/TreeSkeleton.cs`, `Tree/TreeNode.cs`.
+
+---
+
+**F1b. Black spider-leg spikes around the pot rim** *(new — spotted 2026-07-02, needs triage)*
+
+- **Symptom:** thin black spikes radiate horizontally from the soil/pot rim all the way around and droop over the pot edge (visible in both 20-yr and 30-yr screenshots, Ficus). Reads as unshaded/exposed roots or dead stubs, not styling.
+- **Triage first:** determine if these are escaped/exposed roots (relates to `escapedRoot` + drainage-hole escape, see memory `project_drainage_holes` and `project_root_teleport_propagation`), Ficus aerial roots, or dead-branch stubs rendering without a material. Horizontal spread around the *entire rim* (rather than down through holes) suggests the root-escape/exposure path is mis-targeting — compare against the known root-spider-leg bugs. Confirm intended vs bug before scoping.
+- **Files (likely):** `Tree/TreeSkeleton.cs` (root containment/escape), `Tree/TreeMeshBuilder.cs` (root render/material).
+
+---
+
+**F2. Needle Foliage — realism + variety upgrade** *(builds on the 2026-06-14 needle system)*
+
+Current state: one shared tuft mesh + material per tree, one GameObject per tip (`NeedleMesh.cs`, `LeafManager.SpawnNeedleTuft`). Sound architecture, first-pass content. Upgrades, roughly in order:
+
+- **Tuft variety** — every tip currently uses the ONE identical tuft mesh → visible repetition across hundreds of tips. Build a small pool (3–4) of tuft-mesh variants per `FoliageType` and index by `node.id`. Still one material, still batches.
+- **Per-tip colour variety via instancing** — `LeafManager.EnsureNeedleAssets` already sets `needleMat.enableInstancing = true` but then writes one flat `_BaseColor` for the whole tree. Use a `MaterialPropertyBlock` per tuft for subtle hue/value jitter (and health/season tint) **without breaking batching** — this was already the noted follow-up.
+- **Year-round needle drop** *(new — user request)* — a small percentage of needles should fall continuously all year, not just the deciduous-conifer autumn drop. Evergreen conifers shed old interior needles constantly (2–4 yr needle lifespan). Implement as a low-rate ambient shed: occasionally spawn a single falling-needle mesh from a random tuft (reuse the `Leaf` fall path / a lightweight falling quad), independent of season. Rate ∝ canopy size; higher in autumn. Keep it cheap (pooled, capped concurrent count).
+- **Pine "candle" extension** — spring growth candles (elongating light-green new shoots that then open into needles). Noted follow-up, unbuilt.
+- **LOD / distance form** — thousands of double-sided quads × every tip; with multi-tree this compounds. Collapse tufts to a cheaper billboard/impostor at distance or when zoomed out.
+- **Broadleaf-evergreen flag** for ficus (keeps leaves year-round without being a needle species).
+- **Scope:** `NeedleMesh.cs` (variant pool), `LeafManager.cs` (instancing block, ambient shed, LOD), `TreeSpecies.cs` (broadleaf-evergreen flag). **Files:** `Tree/NeedleMesh.cs`, `Tree/LeafManager.cs`, `Leaf.cs`, `Tree/TreeSpecies.cs`.
+
+---
+
+**F3. Jin / Shari — deadwood** *(realism — off the existing wound hook)*
+
+Deadwood is one of the most iconic bonsai features and is currently only a stubbed hook (the wound system left "a hook for jin/deadwood"; `TreeSkeleton.cs:3080` has a placeholder teal cylinder for the air-layer site).
+
+- **Jin** — a stripped, bleached deadwood branch tip. Player tool (or AutoStyler advanced step): convert a trimmed/dead branch end into deadwood instead of healing it — strip bark, taper to a point, recolour to weathered silver-grey, add lengthwise fissures.
+- **Shari** — deadwood stripped down the trunk/branch surface (a bark-stripped channel exposing bleached heartwood) that the live vein grows around over seasons.
+- **Interaction with existing systems:** deadwood nodes don't heal (skip `WoundHealProgress`), don't grow foliage, and read as dead in health/narrative. Lime-sulphur "bleaching" as an optional care action.
+- **Geometry:** procedural, code-gen (consistent with the whole project — no art). Reuse the wound-disc / bark-vertex approach.
+- **Scope:** new deadwood state on `TreeNode`, `TreeMeshBuilder` (stripped/bleached geometry + shader path in `BarkVertexColor.shader`), `TreeSkeleton` (jin/shari conversion, heal opt-out), a tool entry in `buttonClicker`. **Files:** `Tree/TreeNode.cs`, `Tree/TreeMeshBuilder.cs`, `Tree/TreeSkeleton.cs`, `buttonClicker.cs`, `BarkVertexColor.shader`, `SaveManager.cs`.
+
+---
+
+**F4. Procedural bark flaking by species** *(realism — replaces placeholder)*
+
+`BarkFlakerManager.cs` is explicitly a placeholder (flat curved quad "until artist-modelled flakes are ready"). You have 18 botanical bark types mapped across 17 species (see memory `reference_bark_types`) — drive flaking from that instead of a single quad.
+
+- **Per-bark-type flaking:** plate bark (pine — large jigsaw plates), shaggy/strip (juniper, cedar — long vertical peels), lenticel/paper (birch — horizontal papery curls), smooth (beech — minimal), fissured (elm, oak). Flake shape/size/shed behaviour keyed to bark type.
+- **Shed over time** — flakes loosen and drop as the trunk thickens (ties into existing trunk-growth), revealing fresh bark colour beneath. Cheap falling flake reuse from the soil-clod / leaf-fall pattern.
+- **Scope:** `BarkFlakerManager.cs` (per-type geometry + shed), read bark type from `TreeSpecies`. **Files:** `Tree/BarkFlakerManager.cs`, `Tree/TreeSpecies.cs`.
+
+---
+
+**F5. TreeSkeleton partial-class split** *(refactor — pure whole-file reasoning)*
+
+`TreeSkeleton.cs` is **6,156 lines** and owns growth, roots, wounds, mesh coordination, water, wire, pinch, sag, and health — past the size that's safely hand-editable, and it's the file every other work order touches. Split into `partial class TreeSkeleton` files by subsystem (e.g. `TreeSkeleton.Growth.cs`, `.Roots.cs`, `.Wounds.cs`, `.Health.cs`, `.Care.cs`) with **zero behaviour change** — mechanical, but requires understanding the whole file at once, which is exactly Fable 5's strength. Do this **before** F1/F3 if possible so later edits land in smaller files. (Logging cleanup is intentionally NOT part of this — the Debug.Log spam goes away before player testing anyway.)
+
+- **Scope:** `TreeSkeleton.cs` → multiple `partial` files; no signature or logic changes; verify compile + a clean 30-yr run matches pre-split behaviour.
+
+---
+
+**F6. Wind / ambient foliage motion** *(realism)*
+
+No ambient motion exists today; every screenshot reads static. You already have leaf weight + elastic spring-back (`elasticSagDeg`, `ApplyDailySag`), so the sway can ride that system rather than a new one.
+
+- Subtle per-branch wind sway (low-frequency noise, amplitude ∝ 1/branch-strength so fine tips move most), plus a gentle leaf/needle flutter. Gust variation. Must stay cheap at high timescale and during cinematic/beauty-shot holds.
+- **Scope:** `TreeSkeleton` sag/elastic hook or a light dedicated `WindManager`; foliage flutter in `Leaf` / needle tuft. **Files:** `Tree/TreeSkeleton.cs` (or new `WindManager.cs`), `Leaf.cs`, `Tree/LeafManager.cs`.
+
+---
+
+**F7. Nebari — surface root flare** *(realism)*
+
+Root-over-rock and drainage-hole escape are done; the next root-realism tier is visible surface root flare (nebari) at the trunk base — the radial buttressing roots that signal a mature, well-developed bonsai. Extend the existing root system to render prominent surface roots flaring from the trunk base into the soil surface, thickening with tree age/trunk girth.
+
+- **Scope:** root generation in `TreeSkeleton` (surface-root flare at base), `TreeMeshBuilder` (flare geometry blend into trunk). **Files:** `Tree/TreeSkeleton.cs`, `Tree/TreeMeshBuilder.cs`.
+
+---
+
+**F8. AutoStyler periodic repot / soil refresh** *(sim gap found 2026-07-02 — likely also fixes the mature-tree health plateau)*
+
+- **Problem:** under Hands-Off care the auto-styler never actually repots. `AutoStyler.AdvancePotPhase()` (the only pot action) is a one-way **pot-size upsize** on an age schedule (XS→S at yr 6, →M at yr 13, →L at yr 26) and early-outs unless the target size is larger than current — so it fires **at most 3 times in the tree's life and never again after year 26**. It calls `PotSoil.ApplyPotSize()` (geometry only), **not** `PotSoil.Repot()`, so it never resets `soilDegradation`, `saturationLevel`, or `seasonsSinceRepot`, and never applies fresh soil or root-prune. (Confirmed by the UI's "Since Repot" counter climbing to 16+ seasons and never resetting.)
+- **Consequence:** `PotSoil.SeasonTick` keeps degrading soil toward `soilDegradation → 1.0`, drifting drainage/retention off the species' preferred values and stacking soil-mismatch nutrient penalties. A mature tree is slowly starved in dead soil it can never escape — the probable cause of the ~40% avg-health plateau seen alongside F1 (moisture fine, but "the tree is struggling"). Real bonsai are root-pruned + given fresh soil every **2–5 years for their whole life**.
+- **Fix:** add a genuine periodic repot to the auto-care cycle — when `seasonsSinceRepot` exceeds a species/style interval (≈ every 2–4 yr, lengthening as the tree matures), call `PotSoil.Repot()` in early spring (month 2–4 for the good-timing bonus) with a species-appropriate `SoilPreset`, taking the normal repot stress and triggering a root-prune. Keep the existing size-advancement (pass `sizeChanged` only when a size step is also due). Log it to the CareLog. Verify `seasonsSinceRepot` cycles back to 0 and mature-tree avg health recovers over a long run.
+- **Scope:** `AutoStyler.AdvancePotPhase` (or a new `PeriodicRepot` alongside it), `PotSoil.Repot`. **Files:** `Tree/AutoStyler.cs`, `Tree/PotSoil.cs`.
 
 ---
 
@@ -165,6 +275,19 @@ Shipped: every repot now enters the rake step (`IsPotBound` gate removed — tha
 ## Pending — Detailed Specs
 
 *(One spec per pending item; priority order is in the Active Priority Queue table above.)*
+
+**Pot Drainage Holes — root escape + drainage** *(raised 2026-06-15)*
+
+**Goal:** simulate the drainage holes in the bottom of pots. Roots grow out through them when the tree is root-bound (a visible "needs repotting" tell), and the holes drive water drainage.
+
+- **Hole data (authoring):** per-pot holes marked with **visible cylinder GameObjects** placed at each drainage hole in the pot (under a `DrainageHoles` parent, tagged via a small `DrainageHole` marker component or a name convention). The cylinder is WYSIWYG: its **XZ position = hole centre**, **XZ scale/diameter = hole size**, **Y axis = drainage direction** through the bottom. At runtime `PotSoil` collects them into `(localCentre, radius)` discs and **disables their MeshRenderers** (invisible in-game, GameObjects kept so they can be re-shown for editing). Rides the pot's scale automatically (avoids the unit mess). A pot's drainage capacity = Σ πr² over its holes.
+- **Root escape:** the root system already clamps roots at the pot floor (`TreeSkeleton.SpawnChildren` bottom-face containment). Add: when a root tip hits the floor, if it's within a hole's radius **don't clamp** — let it keep growing down/out below the pot (flag `escapedRoot`, render poking out the bottom). Gate on pot-bound pressure so roots only push out once crowded; reinforces the existing repot prompt.
+- **Drainage/water:** `PotSoil` drain rate scales with total hole area — more/bigger holes → drains faster (less waterlogging); fewer/clogged → higher saturation → root-rot risk. **Phase-2 feedback loop:** escaped roots clog the holes over time → drainage drops → saturation climbs → another repot signal.
+- **Show holes:** modelled into the pot mesh (visual) + a debug GL/gizmo overlay drawing hole positions + radii for authoring/tuning.
+- **Depends on:** the pot-making pipeline + scale standardization (holes are authored per pot).
+- **Scope:** `ItemDefinition`/`PotSoil` (hole data + drainage), `TreeSkeleton` (root escape in `SpawnChildren`/containment, `escapedRoot` flag + render), debug overlay.
+
+---
 
 **Themeable In-Game UI Rebuild** *(raised 2026-06-15 — TOP PRIORITY)*
 
