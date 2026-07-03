@@ -363,6 +363,13 @@ public class TreeSkeleton : MonoBehaviour
     /// <summary>In-game days since last auto-water. Prevents firing more than once per in-game day at high timescale.</summary>
     float autoWaterCooldownDays = 0f;
 
+    // True only for the frame in which auto-water fired. The grow tick's drought
+    // accumulator checks it: during an editor hitch one frame spans many in-game days,
+    // so water→drain→bone-dry all happens inside a single frame and the tree banked
+    // ~12 "dry days" per frame WHILE being watered every frame (2026-07-02 deaths at
+    // "over 1 frames" hitches). A watered frame is not a dry frame.
+    bool wateredThisFrame = false;
+
     [Header("Weeds")]
     [Tooltip("Radius (world units) on the soil surface within which weeds can spawn. " +
              "Should roughly match the pot rim radius.")]
@@ -1324,14 +1331,23 @@ public class TreeSkeleton : MonoBehaviour
 
         // Auto-care: runs regardless of grow state (dormancy, leaf fall, TimeGo, etc.)
         // Only requires root to exist so we don't fire before the tree is initialised.
+        wateredThisFrame = false;
         if (root != null)
         {
             autoWaterCooldownDays += inGameDays;
-            if (autoWaterEnabled && soilMoisture < 0.5f && autoWaterCooldownDays >= 1.0f)
+            // Normal band keeps the 1-day cooldown so we don't water every frame.
+            // EMERGENCY band: at high timescale one frame is ~0.35–0.7 in-game days, so
+            // an XS pot can plunge from the 0.5 trigger to bone dry inside the cooldown
+            // gap — Quick-Start trees died of "drought" while being watered hundreds of
+            // times (2026-07-02). Below the drought threshold, water immediately.
+            bool warmBand  = soilMoisture < 0.5f && autoWaterCooldownDays >= 1.0f;
+            bool emergency = soilMoisture < droughtThreshold;
+            if (autoWaterEnabled && (warmBand || emergency))
             {
                 Water();
                 autoWaterJustFired    = true;
                 autoWaterCooldownDays = 0f;
+                wateredThisFrame      = true;
             }
             if (autoFertilizeEnabled && nutrientReserve < 0.6f)
             {
@@ -1402,12 +1418,40 @@ public class TreeSkeleton : MonoBehaviour
         float soilDrainMult = potSoil != null ? potSoil.DrainRateMultiplier : 1f;
         soilMoisture = Mathf.Max(0f, soilMoisture - drainRatePerDay * soilDrainMult * inGameDays * rate);
         if (soilMoisture < droughtThreshold)
-            droughtDaysAccumulated += inGameDays;
+        {
+            if (autoWaterEnabled)
+            {
+                // Post-drain emergency water — drought mechanism #4 (2026-07-02): the
+                // auto-care check runs BEFORE this drain, so at high timescale a single
+                // frame could carry moisture from above the 0.5 trigger straight through
+                // the drought threshold and bank 10+ phantom dry days that the waterer
+                // never had a chance to prevent (one-session log: every 40-yr Quick-Start
+                // died of "drought" while watering fired 2–4×/yr at TS=6000). If the
+                // auto-waterer is on, dryness the same frame is by definition not neglect.
+                Water();
+                autoWaterJustFired = true;
+                wateredThisFrame   = true;
+            }
+            else if (!wateredThisFrame)
+            {
+                droughtDaysAccumulated += inGameDays;
+            }
+        }
+        else if (droughtDaysAccumulated > 0f)
+        {
+            // Recovery unwinds the counter at 2× — droughtDeathDays means SUSTAINED
+            // dryness (per its tooltip: "consecutive days"), not the season's sum of
+            // brief dips. At high timescale the old cumulative counter banked hundreds
+            // of frame-quantized dips and killed well-watered Quick-Start trees
+            // (2026-07-02: "died from drought — 82 dry days" while auto-water fired).
+            droughtDaysAccumulated = Mathf.Max(0f, droughtDaysAccumulated - inGameDays * 2f);
+        }
 
-        // Drought death: extended time at zero moisture kills immediately
+        // Drought death: extended time at zero moisture kills immediately.
+        // (No second += here — the block above already counted this frame; the old
+        // double-count made every zero-moisture day worth two.)
         if (treeDeathEnabled && soilMoisture <= 0f)
         {
-            droughtDaysAccumulated += inGameDays;   // already counted above, but total at zero is what matters
             if (droughtDaysAccumulated >= droughtDeathDays)
             {
                 Debug.Log($"[Death] Tree died from drought — {droughtDaysAccumulated:F0} dry days | year={GameManager.year}");
@@ -2054,10 +2098,35 @@ public class TreeSkeleton : MonoBehaviour
                     Vector3 local = rootAreaTransform.InverseTransformPoint(tipW);
                     bool outsideSide   = Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.z) > 0.5f;
                     bool outsideBottom = local.y < -0.5f;
+                    bool outsideTop    = local.y >  0.5f;
                     if (outsideSide)
                     {
                         terminal.isTrimmed = true;
                         continue;
+                    }
+                    // Top face: roots may only surface NEAR THE TRUNK (nebari zone) — real
+                    // surface roots flare at the base, they don't carpet the pot. The first
+                    // attempt gated on depth ≤ 2, but depth is PER-CHORD here (one physical
+                    // root = a chain of same-depth segments, see memory
+                    // project_depth_chain_structure), so entire unlimited-length primary
+                    // chains were exempt and the juniper still wove a fat mat over the rim
+                    // (2026-07-02). Radius is the honest rule: inside 35% of the box
+                    // half-extent the root may breach (visible nebari); farther out it
+                    // stays underground or is trimmed. F7's mesh flare covers the base look.
+                    if (outsideTop)
+                    {
+                        float rimDistSq = local.x * local.x + local.z * local.z;
+                        // Surfaced roots HUG the soil: cap spread (the nebari ring) AND
+                        // height — the ring alone let roots pile a tower straight up
+                        // beside the trunk, burying the canopy (White Pine 2084: root
+                        // tower + shading near-death). 0.65 local ≈ 15% of the box
+                        // height above the rim: enough for a knuckle of exposed root,
+                        // not a chimney.
+                        if (rimDistSq > 0.35f * 0.35f || local.y > 0.65f)
+                        {
+                            terminal.isTrimmed = true;
+                            continue;
+                        }
                     }
                     if (outsideBottom)
                     {
@@ -2110,7 +2179,13 @@ public class TreeSkeleton : MonoBehaviour
             }
             else
             {
-                if (currentBranchCount >= maxBranchNodes) continue;  // hard cap reached
+                // Hard cap bounds the TWIG count — the leader must always extend. A heavy
+                // ramifier like Elm (springLateralChance 0.88, 0.9-len segments vs Ficus's
+                // 0.08 / 2.0) exhausts the whole node budget as low twigs within a few
+                // years, and the cap then froze apical growth entirely: a flat pancake of
+                // twigs with no trunk (2026-07-02). Depth ≤ 1 terminals (trunk tip +
+                // scaffold leaders) are few, so the overshoot is bounded.
+                if (currentBranchCount >= maxBranchNodes && terminal.depth > 1) continue;
 
                 // Bud break — hand the dormant bud GameObject to LeafManager, which keeps
                 // it visible (swelling) until its leaf cluster finishes unfurling. Falls
@@ -2952,6 +3027,14 @@ public class TreeSkeleton : MonoBehaviour
         foreach (var go in woundObjects.Values)
             if (go != null) Destroy(go);
         woundObjects.Clear();
+
+        // New tree = new node-id space (nextId restarts at 0). Managers that key state
+        // by node id MUST be cleared or the previous game's ids poison the new tree —
+        // found 2026-07-02: second-in-session Quick-Starts grew stunted because stale
+        // shapedNodeIds skipped trunk wiring and stale nodeLeaves entries starved the
+        // canopy (low treeEnergy).
+        GetComponent<AutoStyler>()?.ResetForNewTree();
+        GetComponent<LeafManager>()?.ResetForNewTree();
 
         allNodes.Clear();
         nextId               = 0;

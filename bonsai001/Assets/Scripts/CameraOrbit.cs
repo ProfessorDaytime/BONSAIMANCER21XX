@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering.Universal;
 
 /// <summary>
 /// Orbits the camera around a target point when the player clicks and drags
@@ -119,6 +120,23 @@ public class CameraOrbit : MonoBehaviour
 
     void Start()
     {
+        // Anti-aliasing: MSAA (URP asset, 4×) smooths geometry edges; TAA resolves the
+        // temporal shimmer of sub-pixel-thin needle quads while orbiting — the worst
+        // aliasing case here. Set in code so a scene/camera swap can't silently regress
+        // it. If TAA ever ghosts the wind-blown foliage, switch to
+        // AntialiasingMode.SubpixelMorphologicalAntiAliasing (SMAA, crisp but not temporal).
+        var camData = GetComponent<Camera>()?.GetUniversalAdditionalCameraData();
+        if (camData != null)
+        {
+            camData.antialiasing        = AntialiasingMode.TemporalAntiAliasing;
+            camData.antialiasingQuality = AntialiasingQuality.High;
+            Debug.Log($"[CameraOrbit] Anti-aliasing set: {camData.antialiasing} ({camData.antialiasingQuality}) — verify the camera inspector shows TAA in play mode.");
+        }
+        else
+        {
+            Debug.LogWarning("[CameraOrbit] No Camera/UniversalAdditionalCameraData found — TAA NOT applied.");
+        }
+
         if (target == null)
         {
             Debug.LogWarning("[CameraOrbit] No target assigned — orbit disabled.");

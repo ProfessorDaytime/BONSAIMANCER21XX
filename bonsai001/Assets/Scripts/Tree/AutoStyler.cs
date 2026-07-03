@@ -204,6 +204,25 @@ public class AutoStyler : MonoBehaviour
         if (glMat != null) Destroy(glMat);
     }
 
+    /// <summary>Clear ALL per-tree state. Called by TreeSkeleton.InitTree: node ids
+    /// restart from 0 on a new tree, so stale id sets from the previous game silently
+    /// poison the new one — found 2026-07-02 when a second in-session Quick-Start
+    /// started with its trunk ids already in shapedNodeIds (never trunk-wired) and
+    /// stale pending actions aimed at ghost ids → stunted, unstyled trees.</summary>
+    public void ResetForNewTree()
+    {
+        slots.Clear();
+        shapedNodeIds.Clear();
+        autoWiredTrunkIds.Clear();
+        autoWiredBranchIds.Clear();
+        pendingTrims.Clear(); pendingWires.Clear(); pendingWireDir.Clear();
+        pendingPinches.Clear(); pendingPinchSilhouette.Clear();
+        wireGoldDay.Clear();
+        wireAnimQueue.Clear(); queuedWireIds.Clear(); activeWireAnim = null;
+        pendingDefoliateDay = -1f;
+        lastDefoliateYear   = -999;
+    }
+
     // ── Update ────────────────────────────────────────────────────────────────
 
     void Update()
@@ -250,6 +269,46 @@ public class AutoStyler : MonoBehaviour
 
     void UpdateWireAnimation()
     {
+        // Quick-Start: apply queued wires INSTANTLY. The bend animation is deliberately
+        // real-time and one-at-a-time (watchable at any speed) — but at QS timescales one
+        // real second ≈ months of sim, so a short queue starved wires for sim-YEARS. The
+        // coil went on at hover-end while gold-tracking registration only happened at
+        // animation completion, leaving red, never-tracked wires the styler couldn't
+        // remove and runs the player couldn't cleanly unwire (measured 2026-07-02:
+        // 69 wired, only 26 removed). Nobody watches the fast-grow — skip the show.
+        if (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating
+            && (activeWireAnim != null || wireAnimQueue.Count > 0))
+        {
+            while (activeWireAnim != null || wireAnimQueue.Count > 0)
+            {
+                var anim = activeWireAnim ?? wireAnimQueue.Dequeue();
+                bool inProgress = activeWireAnim != null &&
+                                  (anim.phase == WireAnimPhase.Rotate || anim.phase == WireAnimPhase.Settle);
+                activeWireAnim = null;
+                queuedWireIds.Remove(anim.nodeId);
+
+                var n = FindNodeById(anim.nodeId);
+                if (n == null || n.isDead || n.isTrimmed) continue;
+                if (anim.phase == WireAnimPhase.Settle)  continue;          // already bent + registered
+                if (n.hasWire && !inProgress)            continue;          // conflicting fresh entry
+
+                if (!n.hasWire)
+                {
+                    skeleton.WireNode(n, anim.targetDir);
+                    n.wireSetSpeedMult = EffectiveWireSpeedMult;
+                }
+                // Snap the bend the animation would have eased through.
+                Quaternion delta = Quaternion.FromToRotation(n.growDirection, anim.targetDir);
+                n.growDirection = anim.targetDir.normalized;
+                skeleton.RotateAndPropagateDescendants(n, delta, null);
+                anim.trackingSet.Add(n.id);
+                LogWireApplied(n, anim.targetDir, anim.trackingSet);
+                Log($"[AutoStyle] Wire snapped on instantly (quick-start) node={n.id}");
+            }
+            skeleton.meshBuilder?.SetDirty();
+            return;
+        }
+
         if (activeWireAnim == null && wireAnimQueue.Count > 0)
         {
             activeWireAnim = wireAnimQueue.Dequeue();

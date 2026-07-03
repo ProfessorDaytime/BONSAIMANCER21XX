@@ -1173,6 +1173,10 @@ public class ButtonClicker : MonoBehaviour
     bool MaybeShowTooltip(string id, string title, string body)
     {
         if (!tooltipsEnabled) return false;
+        // Never during Quick-Start generation: tooltips enter TipPause and stall the
+        // fast-grow waiting for a click the player isn't there to give — and the tip
+        // burns its one-time id on a moment the player never saw (2026-07-02).
+        if (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating) return false;
         if (shownTooltips == null || shownTooltips.Contains(id)) return false;
         if (GameManager.Instance == null) return false;
         // Don't clobber an active tooltip — ShowTooltip would return early anyway,

@@ -27,13 +27,17 @@ public static class NeedleMesh
         var rng = new System.Random(7919 + (int)type * 131 + needleCount + variantSeed * 7717);
         float R(float a, float b) => (float)(a + rng.NextDouble() * (b - a));
 
+        // Widths run ~50% fatter than botanically strict — at gameplay zoom a strict
+        // needle is deep sub-pixel and no anti-aliasing rescues sub-pixel geometry:
+        // it shimmers ("fizz") while orbiting. Slightly wider quads cover whole pixels
+        // and read cleaner without visibly changing the tuft silhouette (2026-07-03).
         switch (type)
         {
             case FoliageType.PineFascicle:  BuildPine  (verts, tris, needleCount, R); break;
-            case FoliageType.SpruceRadial:  BuildRadial(verts, tris, needleCount, 0.55f, 0.030f, R); break;
+            case FoliageType.SpruceRadial:  BuildRadial(verts, tris, needleCount, 0.55f, 0.045f, R); break;
             case FoliageType.FeatheryFrond: BuildFrond (verts, tris, needleCount, R); break;
-            case FoliageType.Scale:         BuildRadial(verts, tris, needleCount, 0.28f, 0.055f, R); break;
-            default:                        BuildRadial(verts, tris, needleCount, 0.55f, 0.030f, R); break;
+            case FoliageType.Scale:         BuildRadial(verts, tris, needleCount, 0.28f, 0.060f, R); break;
+            default:                        BuildRadial(verts, tris, needleCount, 0.55f, 0.045f, R); break;
         }
 
         var mesh = new Mesh { name = "NeedleTuft_" + type + "_v" + variantSeed };
@@ -107,7 +111,7 @@ public static class NeedleMesh
             {
                 Vector3 jit = new Vector3(R(-0.10f, 0.10f), R(-0.10f, 0.10f), R(-0.04f, 0.04f));
                 Vector3 dir = (fdir + jit).normalized;
-                AddNeedle(v, t, baseC, dir, R(0.82f, 1.05f), 0.018f, 0.003f);
+                AddNeedle(v, t, baseC, dir, R(0.82f, 1.05f), 0.028f, 0.005f);
             }
         }
     }
@@ -140,7 +144,7 @@ public static class NeedleMesh
             for (int s = -1; s <= 1; s += 2)
             {
                 Vector3 dir = new Vector3(s * 0.85f, R(-0.06f, 0.06f), 0.4f).normalized;
-                AddNeedle(v, t, baseC, dir, 0.5f * taper * R(0.85f, 1.02f), 0.022f, 0.004f);
+                AddNeedle(v, t, baseC, dir, 0.5f * taper * R(0.85f, 1.02f), 0.032f, 0.006f);
             }
         }
         // A couple of needles continuing straight off the tip.

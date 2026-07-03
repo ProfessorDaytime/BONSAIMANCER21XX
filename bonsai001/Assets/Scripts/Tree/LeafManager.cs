@@ -124,7 +124,14 @@ public class LeafManager : MonoBehaviour
             if (needleMat.HasProperty("_BaseColor")) needleMat.SetColor("_BaseColor", c);
             if (needleMat.HasProperty("_Color"))     needleMat.SetColor("_Color",     c);
             if (needleMat.HasProperty("_Cull"))      needleMat.SetFloat("_Cull", 0f);   // two-sided
-            if (needleMat.HasProperty("_Smoothness")) needleMat.SetFloat("_Smoothness", 0.15f);
+            // Fully matte: hundreds of thin quads at ever-changing grazing angles turn
+            // any specular into per-frame white glints — the "sparkle" that survives AA
+            // (2026-07-03). Needles scatter light diffusely in reality anyway.
+            if (needleMat.HasProperty("_Smoothness")) needleMat.SetFloat("_Smoothness", 0f);
+            if (needleMat.HasProperty("_SpecularHighlights")) needleMat.SetFloat("_SpecularHighlights", 0f);
+            needleMat.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+            if (needleMat.HasProperty("_EnvironmentReflections")) needleMat.SetFloat("_EnvironmentReflections", 0f);
+            needleMat.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
         }
     }
 
@@ -807,6 +814,40 @@ public class LeafManager : MonoBehaviour
     ///   - Gained children (no longer terminal)
     /// Called at the start of each growing season.
     /// </summary>
+    /// <summary>Destroy all foliage and clear per-tree state. Called by
+    /// TreeSkeleton.InitTree: nodeLeaves is keyed by node id and ids restart from 0 on
+    /// a new tree, so stale entries survive the id-based orphan cleanup and make
+    /// SpawnSpringLeaves skip colliding tips — sparse canopy → low treeEnergy →
+    /// stunted second-in-session trees (found 2026-07-02). Also drops the cached
+    /// needle assets so a species change rebuilds them.</summary>
+    public void ResetForNewTree()
+    {
+        foreach (var kvp in nodeLeaves)
+            foreach (var go in kvp.Value)
+                if (go != null) Destroy(go);
+        nodeLeaves.Clear();
+        allLeaves.Clear();
+        listDirty = false;
+
+        pendingUnfurls.Clear();
+        foreach (var ob in openingBuds.Values)
+            if (ob.go != null) Destroy(ob.go);
+        openingBuds.Clear();
+
+        foreach (var go in airborneShedNeedles)
+            if (go != null) Destroy(go);
+        airborneShedNeedles.Clear();
+        shedAccumulator   = 0f;
+        defoliationFactor = 0f;
+
+        if (needleTuftVariants != null)
+            foreach (var m in needleTuftVariants)
+                if (m != null) Destroy(m);
+        needleTuftVariants = null;
+        if (needleMat      != null) { Destroy(needleMat);      needleMat      = null; }
+        if (shedNeedleMesh != null) { Destroy(shedNeedleMesh); shedNeedleMesh = null; }
+    }
+
     void CleanupOrphanedLeaves()
     {
         // Only remove leaves from trimmed or fully removed nodes.

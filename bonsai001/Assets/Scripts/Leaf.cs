@@ -176,7 +176,12 @@ public class Leaf : MonoBehaviour
         transform.Rotate(Vector3.forward, rotSpeed * Time.deltaTime, Space.Self);
         driftVelocity.y     -= 1.2f * Time.deltaTime;
 
-        if (fallTimer > 5f)
+        // Quick-Start: falling foliage is just debris nobody watches — vanish after a
+        // few frames instead of drifting for 5 real seconds (hundreds of leaves × 40
+        // autumns otherwise pile up as live GameObjects during the fast-grow).
+        float fallLifetime = (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating)
+            ? 0.05f : 5f;
+        if (fallTimer > fallLifetime)
             Destroy(gameObject);
     }
 

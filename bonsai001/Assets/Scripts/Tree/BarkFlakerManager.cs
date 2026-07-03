@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Spawns 3D bark-flake meshes on trunk and scaffold nodes for species with
@@ -77,7 +78,17 @@ public class BarkFlakerManager : MonoBehaviour
     void Awake()
     {
         skeleton = GetComponent<TreeSkeleton>();
+        cam      = Camera.main;
     }
+
+    // ── Peel-and-discard interaction ──────────────────────────────────────────
+    // RMB grabs a loose flake off the trunk (same button + RaycastAll idiom as
+    // WeedPuller so tree/table colliders don't block the pick); dragging carries it
+    // with the cursor; releasing discards it — peeled bark just vanishes. Grooming
+    // only, no sim effect.
+    Camera     cam;
+    GameObject heldFlake;
+    float      heldDistance;
 
     void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
     void OnDisable() => GameManager.OnGameStateChanged -= OnGameStateChanged;
@@ -121,9 +132,11 @@ public class BarkFlakerManager : MonoBehaviour
         _  => 1f,
     };
 
-    // ── Falling (peeled) flakes ───────────────────────────────────────────────
+    // ── Falling (peeled) flakes + peel interaction ────────────────────────────
     void Update()
     {
+        UpdateFlakePicking();
+
         if (fallingFlakes.Count == 0) return;
         float dt = Time.deltaTime;   // real-time so peeled bark always falls at a visible rate
         for (int i = fallingFlakes.Count - 1; i >= 0; i--)
@@ -134,8 +147,62 @@ public class BarkFlakerManager : MonoBehaviour
             f.go.transform.position += f.vel * dt;
             f.go.transform.Rotate(f.spin * dt, Space.Self);        // tumble
             f.age += dt;
-            if (f.age > 4f) { Destroy(f.go); fallingFlakes.RemoveAt(i); }
+            // Quick-Start: peeled bark vanishes after a few frames (same rule as leaves —
+            // falling debris nobody watches shouldn't accumulate during the fast-grow).
+            float flakeLifetime = (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating)
+                ? 0.05f : 4f;
+            if (f.age > flakeLifetime) { Destroy(f.go); fallingFlakes.RemoveAt(i); }
         }
+    }
+
+    void UpdateFlakePicking()
+    {
+        if (Mouse.current == null) return;
+        if (cam == null) { cam = Camera.main; if (cam == null) return; }
+
+        // Grab: RMB press over a flake (skip if a weed pull is already in progress).
+        if (Mouse.current.rightButton.wasPressedThisFrame && heldFlake == null)
+        {
+            if (WeedPuller.Instance != null && WeedPuller.Instance.IsPulling) return;
+            var ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+            var hits = Physics.RaycastAll(ray);
+            float best = float.MaxValue;
+            foreach (var h in hits)
+                if (h.collider.GetComponent<BarkFlake>() != null && h.distance < best)
+                { best = h.distance; heldFlake = h.collider.gameObject; }
+            if (heldFlake != null)
+            {
+                heldDistance = best;
+                ForgetFlake(heldFlake);                       // manager no longer owns it
+                heldFlake.transform.SetParent(null, true);
+            }
+            return;
+        }
+
+        if (heldFlake == null) return;
+
+        if (Mouse.current.rightButton.isPressed)
+        {
+            // Carry with the cursor at the grab depth, with a lazy tumble.
+            var ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+            heldFlake.transform.position = ray.GetPoint(heldDistance);
+            heldFlake.transform.Rotate(Vector3.up, 60f * Time.unscaledDeltaTime, Space.World);
+        }
+        else
+        {
+            // Dropped → discarded. Peeled bark doesn't litter the scene.
+            Destroy(heldFlake);
+            heldFlake = null;
+        }
+    }
+
+    /// <summary>Remove a flake GameObject from every manager list so RefreshFlakes /
+    /// the fall animation stop touching it (a grabbed flake belongs to the player's hand).</summary>
+    void ForgetFlake(GameObject go)
+    {
+        fallingFlakes.RemoveAll(f => f.go == go);   // grabbable mid-fall too
+        foreach (var kvp in nodeFlakes)
+            if (kvp.Value.Remove(go)) return;
     }
 
     /// <summary>Detach a flake and let it drift down + tumble, then self-destruct (peeled bark).</summary>
@@ -290,6 +357,11 @@ public class BarkFlakerManager : MonoBehaviour
         go.transform.localPosition = localPos;
         go.transform.rotation      = rot;
         go.transform.localScale    = Vector3.one * scale;
+
+        // Pickable: marker + a raycast collider (BoxCollider auto-fits the mesh bounds).
+        go.AddComponent<BarkFlake>();
+        if (go.GetComponent<Collider>() == null)
+            go.AddComponent<BoxCollider>();
 
         return go;
     }
@@ -498,3 +570,7 @@ public class BarkFlakerManager : MonoBehaviour
         return mesh;
     }
 }
+
+/// <summary>Marker for pickable bark flakes — BarkFlakerManager raycasts for this
+/// (mirrors how WeedPuller finds Weed components). Added via AddComponent only.</summary>
+public class BarkFlake : MonoBehaviour {}

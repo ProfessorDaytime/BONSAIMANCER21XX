@@ -122,7 +122,12 @@ public class WeedManager : MonoBehaviour
             Debug.Log("[Weeds] Herbicide aeration penalty applied.");
         }
 
-        if (activeWeeds.Count < maxWeeds && Random.value < spawnChancePerSeason)
+        // No weeds during Quick-Start generation: nobody is there to pull them, the
+        // auto-herbicide response destroys mycorrhizal networks + costs aeration on the
+        // generated tree (logged 254 networks nuked in one run), and the first-weed
+        // tutorial prompt fired mid-fast-grow (2026-07-02).
+        bool quickStarting = QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating;
+        if (!quickStarting && activeWeeds.Count < maxWeeds && Random.value < spawnChancePerSeason)
             SpawnWeed();
     }
 

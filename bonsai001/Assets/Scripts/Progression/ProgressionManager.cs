@@ -107,9 +107,16 @@ public class ProgressionManager : MonoBehaviour
         TryGrowSpeciesMilestone();
     }
 
+    /// <summary>True while Quick-Start is fast-growing a tree. Nothing that happens in
+    /// there is the player's stewardship — no points, no milestones (a generated 40-yr
+    /// tree must not instantly award "survived 25 years").</summary>
+    static bool QuickStartActive =>
+        QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating;
+
     // ── Currency ──────────────────────────────────────────────────────────────
     public void Award(int amount, string reason)
     {
+        if (QuickStartActive) return;
         if (amount <= 0 || Profile == null) return;
         Profile.aestheticPoints += amount;
         Profile.Save();
@@ -139,6 +146,7 @@ public class ProgressionManager : MonoBehaviour
 
     void ReachMilestoneInternal(string id, ProgressionMilestone def)
     {
+        if (QuickStartActive) return;   // generated trees earn nothing (see QuickStartActive)
         if (Profile == null || !Profile.Add(Profile.milestones, id)) return;   // already reached
         if (def != null) Profile.Add(Profile.journalEntries, def.journalId);
         Profile.Save();
