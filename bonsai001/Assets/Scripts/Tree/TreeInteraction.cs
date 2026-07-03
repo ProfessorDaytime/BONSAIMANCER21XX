@@ -332,6 +332,7 @@ public class TreeInteraction : MonoBehaviour
             case ToolType.Pinch:      return ColPinch;
             case ToolType.Defoliate:  return ColDefoliate;
             case ToolType.Graft:      return skeleton?.pendingGraftSource != null ? ColGraftTgt : ColGraft;
+            case ToolType.Jin:        return new Color(0.80f, 0.77f, 0.72f);   // weathered silver
             default:                  return Color.white;
         }
     }
@@ -483,6 +484,8 @@ public class TreeInteraction : MonoBehaviour
             HandleGraftHover();
         else if (GameManager.canPromote)
             HandlePromoteHover();
+        else if (GameManager.canJin)
+            HandleJinHover();
         else
             SetHighlight(null, HighlightMode.None);
     }
@@ -739,6 +742,28 @@ public class TreeInteraction : MonoBehaviour
                     SetHighlight(null, HighlightMode.None);
                     skeleton.TrimNode(node);
                 }
+            }
+            return;
+        }
+        SetHighlight(null, HighlightMode.None);
+    }
+
+    // ── Jin (strip a branch to deadwood) ──────────────────────────────────────
+
+    void HandleJinHover()
+    {
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        // Live branches only — no roots, no trunk base, nothing already jinned.
+        TreeNode node = PickNode(ray, out _,
+            n => n != skeleton.root && !n.isRoot && !n.isJin && !n.isTrimmed);
+        if (node != null)
+        {
+            SetHighlight(node, HighlightMode.TrimSubtree);
+            if (Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                SetHighlight(null, HighlightMode.None);
+                AudioManager.Instance?.PlaySFX("Trim");
+                skeleton.JinNode(node);
             }
             return;
         }

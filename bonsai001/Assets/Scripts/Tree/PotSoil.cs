@@ -111,7 +111,19 @@ public class PotSoil : MonoBehaviour
     {
         if (rootAreaTransform == null) return;
         var (w, d, h) = PotDimensions[(int)potSize];
-        rootAreaTransform.localScale = new Vector3(w, h, d);
+        // PotDimensions are WORLD units (see doc above) but this sets localScale — so a
+        // scaled parent silently broke the contract: one 2026-07-02 session logged the
+        // rootArea at 3.12×2.77 world (sane) AND 494×1000 (under a ~150×-scaled pot/table
+        // parent), causing the intermittent root starbursts. Divide out the parent's
+        // lossyScale so the box's world size is always exactly PotDimensions.
+        Vector3 ps = rootAreaTransform.parent != null
+            ? rootAreaTransform.parent.lossyScale : Vector3.one;
+        rootAreaTransform.localScale = new Vector3(
+            w / Mathf.Max(0.0001f, Mathf.Abs(ps.x)),
+            h / Mathf.Max(0.0001f, Mathf.Abs(ps.y)),
+            d / Mathf.Max(0.0001f, Mathf.Abs(ps.z)));
+        if (verboseLog)
+            Debug.Log($"[Soil] ApplyPotSize {potSize} | world={w}×{d}×{h} parentScale={ps} | year={GameManager.year}");
     }
 
     // ── Presets ───────────────────────────────────────────────────────────────

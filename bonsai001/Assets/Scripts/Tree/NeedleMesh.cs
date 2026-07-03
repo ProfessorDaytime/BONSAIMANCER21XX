@@ -15,14 +15,16 @@ using UnityEngine;
 /// </summary>
 public static class NeedleMesh
 {
-    /// <summary>Builds a unit-scale tuft (the LeafManager scales it per species/season).</summary>
-    public static Mesh Build(FoliageType type, int needleCount)
+    /// <summary>Builds a unit-scale tuft (the LeafManager scales it per species/season).
+    /// variantSeed picks a deterministic variant — LeafManager builds a small pool and
+    /// indexes it by node id, so tips don't all repeat the one identical tuft.</summary>
+    public static Mesh Build(FoliageType type, int needleCount, int variantSeed = 0)
     {
         var verts = new List<Vector3>(needleCount * 8);
         var tris  = new List<int>(needleCount * 12);
 
-        // Deterministic per (type, count) so the shared mesh looks stable across sessions.
-        var rng = new System.Random(7919 + (int)type * 131 + needleCount);
+        // Deterministic per (type, count, variant) so the shared meshes look stable across sessions.
+        var rng = new System.Random(7919 + (int)type * 131 + needleCount + variantSeed * 7717);
         float R(float a, float b) => (float)(a + rng.NextDouble() * (b - a));
 
         switch (type)
@@ -34,7 +36,22 @@ public static class NeedleMesh
             default:                        BuildRadial(verts, tris, needleCount, 0.55f, 0.030f, R); break;
         }
 
-        var mesh = new Mesh { name = "NeedleTuft_" + type };
+        var mesh = new Mesh { name = "NeedleTuft_" + type + "_v" + variantSeed };
+        mesh.SetVertices(verts);
+        mesh.SetTriangles(tris, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    /// <summary>One lone needle (double-sided tapered quad) — used for the year-round
+    /// evergreen shed, where single spent needles drift off the canopy.</summary>
+    public static Mesh BuildSingleNeedle()
+    {
+        var verts = new List<Vector3>(8);
+        var tris  = new List<int>(12);
+        AddNeedle(verts, tris, Vector3.zero, Vector3.forward, 0.6f, 0.025f, 0.004f);
+        var mesh = new Mesh { name = "ShedNeedle" };
         mesh.SetVertices(verts);
         mesh.SetTriangles(tris, 0);
         mesh.RecalculateNormals();

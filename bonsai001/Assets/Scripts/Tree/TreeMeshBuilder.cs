@@ -83,6 +83,35 @@ public class TreeMeshBuilder : MonoBehaviour
     // Set each ProcessNode call — tells AddRing whether to grip the rock surface.
     bool gripCurrentNode;
 
+    // ── Nebari (surface root flare) ───────────────────────────────────────────
+    // Mesh-level buttress ridges at the trunk base (F7, 2026-07-02): every ring vertex
+    // inside the flare zone is pushed radially outward from the trunk axis, modulated
+    // by a world-azimuth lobe pattern — so the trunk base flares into buttress roots
+    // that thicken with trunk girth. Deliberately NOT node-based surface roots: those
+    // interact with containment/pot-bound systems (see the F1b spider-leg triage).
+    // World-azimuth keying means the ridges never swim between rebuilds.
+
+    [Header("Nebari (Surface Root Flare)")]
+    [Tooltip("Buttress flare strength as a fraction of trunk base radius. 0 disables.")]
+    [SerializeField] [Range(0f, 1.5f)] float nebariStrength = 0.55f;
+
+    [Tooltip("Number of buttress lobes around the trunk base.")]
+    [SerializeField] [Range(3, 12)] int nebariLobes = 7;
+
+    [Tooltip("Lobe sharpness — higher = distinct ridges, lower = smooth swelling.")]
+    [SerializeField] [Range(1f, 8f)] float nebariSharpness = 3f;
+
+    [Tooltip("Flare zone height as a multiple of trunk base radius.")]
+    [SerializeField] [Range(0.5f, 6f)] float nebariZoneRadii = 2.8f;
+
+    [Tooltip("Trunk base radius before any flare appears (seedlings stay smooth).")]
+    [SerializeField] float nebariMinTrunkRadius = 0.05f;
+
+    // Captured once per BuildMesh from skeleton.root.
+    bool    nebariActive;
+    float   nebariBaseY, nebariZoneH, nebariTrunkR;
+    Vector3 nebariAxisXZ;   // trunk base position (XZ plane)
+
     [Tooltip("Enable per-second mesh build stats log. Off by default.")]
     [SerializeField] bool verboseLog = false;
 
@@ -265,6 +294,16 @@ public class TreeMeshBuilder : MonoBehaviour
         scarUVs.Clear();
         triRanges.Clear();
 
+        // Nebari: capture the flare frame from the trunk base for this build.
+        // Strength rides trunk girth, so young trees stay smooth and the flare
+        // broadens naturally as the trunk thickens with age.
+        nebariTrunkR = skeleton.root.radius;
+        nebariActive = nebariStrength > 0f && !skeleton.root.isRoot
+                       && nebariTrunkR >= nebariMinTrunkRadius;
+        nebariBaseY  = skeleton.root.worldPosition.y;
+        nebariZoneH  = Mathf.Max(0.01f, nebariTrunkR * nebariZoneRadii);
+        nebariAxisXZ = new Vector3(skeleton.root.worldPosition.x, 0f, skeleton.root.worldPosition.z);
+
         // Traverse the node graph depth-first.
         // -1 signals "generate a base ring for me" (only the root node needs this).
         ProcessNode(skeleton.root, -1, 0f, Vector3.zero, Vector3.zero);
@@ -416,7 +455,15 @@ public class TreeMeshBuilder : MonoBehaviour
 
         // Dead / deadwood override: ashen grey-brown tint
         Color baseColor, tipColor;
-        if (node.isDeadwood)
+        if (node.isJin)
+        {
+            // Stripped jin: fresh-cut tan heartwood weathering to bright lime-sulphur
+            // silver as jinBleach ticks up each spring (DiebackPass).
+            baseColor = tipColor = Color.Lerp(new Color(0.58f, 0.49f, 0.38f),
+                                              new Color(0.80f, 0.77f, 0.72f),
+                                              Mathf.Clamp01(node.jinBleach));
+        }
+        else if (node.isDeadwood)
         {
             baseColor = tipColor = new Color(0.38f, 0.32f, 0.26f);   // silver-grey deadwood
         }
@@ -897,6 +944,30 @@ public class TreeMeshBuilder : MonoBehaviour
             float sin   = Mathf.Sin(angle);
 
             Vector3 localPos = center + (axisRight * cos + axisFwd * sin) * radius;
+
+            // Nebari: inside the flare zone above the trunk base, push the vertex
+            // radially outward (horizontal only — buttresses spread, they don't climb),
+            // modulated by a world-azimuth lobe pattern. Applies to trunk rings AND
+            // near-surface root rings alike, so exposed roots merge into the flare.
+            if (nebariActive)
+            {
+                float hNorm = (localPos.y - nebariBaseY) / nebariZoneH;
+                if (hNorm > -0.6f && hNorm < 1f)
+                {
+                    // Full flare at/below the base (soil-line roots), fading to the zone top.
+                    float falloff = 1f - Mathf.Clamp01(hNorm);
+                    falloff *= falloff;
+                    Vector3 radial = new Vector3(localPos.x, 0f, localPos.z) - nebariAxisXZ;
+                    if (radial.sqrMagnitude > 1e-6f)
+                    {
+                        radial.Normalize();
+                        float az    = Mathf.Atan2(radial.x, radial.z);
+                        float ridge = Mathf.Pow(Mathf.Abs(Mathf.Sin(az * nebariLobes * 0.5f + 0.7f)),
+                                                nebariSharpness);
+                        localPos += radial * (nebariTrunkR * nebariStrength * falloff * (0.30f + ridge));
+                    }
+                }
+            }
 
             // Ishitsuki mesh gripping: push root ring verts to the rock surface
             // so the mesh hugs the rock rather than clipping through it.

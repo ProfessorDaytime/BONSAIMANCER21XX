@@ -75,6 +75,10 @@ public class SaveNode
     public int  shadedSeasons;
     public int  deadSeasons;
 
+    // Jin (deliberate deadwood) — false/0 in old saves
+    public bool  isJin;
+    public float jinBleach;
+
     // Fungal
     public float fungalLoad;
     public bool  isMycorrhizal;
@@ -735,6 +739,8 @@ public static class SaveManager
             isDeadwood    = node.isDeadwood,
             shadedSeasons = node.shadedSeasons,
             deadSeasons   = node.deadSeasons,
+            isJin         = node.isJin,
+            jinBleach     = node.jinBleach,
 
             fungalLoad          = node.fungalLoad,
             isMycorrhizal       = node.isMycorrhizal,

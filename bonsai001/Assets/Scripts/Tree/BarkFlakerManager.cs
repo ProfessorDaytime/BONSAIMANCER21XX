@@ -11,14 +11,11 @@ using UnityEngine;
 /// Flake count per node scales with tree age × (1 - health), giving the impression
 /// of a peeling, lived-in surface without overwhelming the scene.
 ///
-/// Placeholder mesh: simple curved quad until artist-modelled bark flakes are ready.
-/// Swap in by assigning the modelled prefab to barkFlakePrefab in the Inspector.
-/// Pivot of the prefab should be at the top edge so the flake "hangs" downward.
-///
-/// Peeling species: assign on TreeSpecies.barkType
-///   10 = horizontal rolling strips (Birch)
-///   12 = fibrous shreds            (Juniper, Cedar, Redwood)
-///   14 = spongy fibrous attached   (Cypress)
+/// Flake geometry + palette are procedural PER BARK TYPE (2026-07-02): pine jigsaw
+/// plates (9), blocky chunks (8), birch paper curls with the white/tan two-tone (10),
+/// long fibrous shreds (12), spongy strips (14) — each with its own shed rate and
+/// scale, sitting on the actual bark surface radius. An artist prefab assigned to
+/// barkFlakePrefab still overrides everything (pivot at top edge, hangs downward).
 /// </summary>
 public class BarkFlakerManager : MonoBehaviour
 {
@@ -90,15 +87,39 @@ public class BarkFlakerManager : MonoBehaviour
         if (state != GameState.BranchGrow) return;
         if (skeleton?.species == null)     return;
 
-        // Only active for peeling bark species (Types 10, 12, 14)
-        int bt = skeleton.species.barkType;
-        if (bt != 10 && bt != 12 && bt != 14) return;
+        // Active for every bark type that visibly flakes/plates/peels:
+        // 8 blocks, 9 large plates (pines), 10 peeling strips (birch),
+        // 12 fibrous shreds (juniper/cedar/redwood), 14 spongy fibrous (cypress).
+        if (!IsFlakingBarkType(skeleton.species.barkType)) return;
 
         if (GameManager.year <= lastSpringYear) return;
         lastSpringYear = GameManager.year;
 
         RefreshFlakes();
     }
+
+    static bool IsFlakingBarkType(int bt) => bt == 8 || bt == 9 || bt == 10 || bt == 12 || bt == 14;
+
+    // Per-type turnover: plates lock in for years; birch paper rolls off every season.
+    float TypeShedChance(int bt) => bt switch
+    {
+        9  => 0.10f,
+        8  => 0.15f,
+        10 => 0.45f,
+        12 => 0.35f,
+        14 => 0.25f,
+        _  => shedChancePerSeason,
+    };
+
+    static float TypeScale(int bt) => bt switch
+    {
+        9  => 1.6f,    // big jigsaw plates
+        8  => 1.1f,
+        10 => 1.0f,
+        12 => 1.25f,   // long hanging shreds
+        14 => 0.9f,
+        _  => 1f,
+    };
 
     // ── Falling (peeled) flakes ───────────────────────────────────────────────
     void Update()
@@ -173,9 +194,10 @@ public class BarkFlakerManager : MonoBehaviour
             }
 
             // Turnover: some flakes peel off and fall each season, then fresh bark replaces them —
-            // so old flakes never accumulate as litter.
+            // so old flakes never accumulate as litter. Rate depends on the bark type.
+            float shedChance = TypeShedChance(skeleton.species != null ? skeleton.species.barkType : 0);
             for (int i = list.Count - 1; i >= 0; i--)
-                if (Random.value < shedChancePerSeason)
+                if (Random.value < shedChance)
                 {
                     ShedFlake(list[i]);
                     list.RemoveAt(i);
@@ -211,21 +233,31 @@ public class BarkFlakerManager : MonoBehaviour
 
     GameObject SpawnFlake(TreeNode node)
     {
-        // Position: near node tip, scattered on the branch surface
-        Vector3 scatter = Random.insideUnitSphere * scatterRadius;
-        Vector3 localPos = node.tipPosition + scatter;
+        int bt = skeleton.species != null ? skeleton.species.barkType : 0;
 
-        // Orientation: roughly align with branch normal (outward from axis)
+        // Sit ON the bark: pick a point along the segment axis and push out to the
+        // surface radius there (the old scatter-around-the-tip left flakes floating).
+        float   t          = Random.Range(0.1f, 0.9f);
         Vector3 branchAxis = node.growDirection.normalized;
+        Vector3 axisPos    = Vector3.Lerp(node.worldPosition, node.tipPosition, t);
         Vector3 outward    = Vector3.ProjectOnPlane(Random.onUnitSphere, branchAxis).normalized;
         if (outward.sqrMagnitude < 0.001f) outward = Vector3.right;
+        float   surfaceR   = Mathf.Lerp(node.radius, node.tipRadius, t);
+        Vector3 localPos   = axisPos + outward * (surfaceR * 0.92f);
 
-        // Tilt the flake away from the surface by a small random angle
-        Vector3 tiltAxis = Vector3.Cross(outward, branchAxis).normalized;
-        float   tiltDeg  = Random.Range(-tiltJitter, tiltJitter);
-        Vector3 finalUp  = Quaternion.AngleAxis(tiltDeg, tiltAxis) * outward;
+        // Peel-away tilt around the circumferential tangent. Plates/blocks hug the
+        // surface; strips and paper lift their free edge off the trunk.
+        bool    hugs    = bt == 8 || bt == 9;
+        Vector3 tangent = Vector3.Cross(branchAxis, outward).normalized;
+        float   tiltDeg = hugs ? Random.Range(0f, tiltJitter * 0.35f)
+                               : Random.Range(3f, tiltJitter);
+        Vector3 peeled  = Quaternion.AngleAxis(tiltDeg, tangent) * outward;
 
-        Quaternion rot   = Quaternion.LookRotation(branchAxis, finalUp);
+        // Face outward (+Z = away from the trunk), body hanging down the axis (strips)
+        // or lying flat with a random roll (plates/blocks).
+        Quaternion rot = Quaternion.LookRotation(peeled, branchAxis)
+                       * Quaternion.Euler(0f, 0f, hugs ? Random.Range(0f, 360f)
+                                                       : Random.Range(-12f, 12f));
 
         GameObject go;
         if (barkFlakePrefab != null)
@@ -234,14 +266,14 @@ public class BarkFlakerManager : MonoBehaviour
         }
         else
         {
-            // ── Placeholder: a flat curved quad built at runtime ────────────
+            // ── Procedural flake, geometry + palette per bark type ───────────
             go = new GameObject("_BarkFlake");
             go.transform.SetParent(skeleton.transform, false);
             var mf = go.AddComponent<MeshFilter>();
             var mr = go.AddComponent<MeshRenderer>();
-            mf.sharedMesh = BuildCurvedQuad();
+            mf.sharedMesh = FlakeMeshForType(bt);
 
-            // Inherit the tree's bark material (same renderer as the trunk)
+            // Inherit the tree's bark material (vertex colours carry the flake palette)
             var treeMr = skeleton.GetComponent<MeshRenderer>();
             if (treeMr != null) mr.sharedMaterial = treeMr.sharedMaterial;
             else
@@ -254,7 +286,7 @@ public class BarkFlakerManager : MonoBehaviour
             }
         }
 
-        float scale = baseFlakeScale * Random.Range(0.70f, 1.30f);
+        float scale = baseFlakeScale * TypeScale(bt) * Random.Range(0.70f, 1.30f);
         go.transform.localPosition = localPos;
         go.transform.rotation      = rot;
         go.transform.localScale    = Vector3.one * scale;
@@ -275,6 +307,146 @@ public class BarkFlakerManager : MonoBehaviour
     {
         foreach (var id in new List<int>(nodeFlakes.Keys))
             DestroyFlakeCluster(id);
+    }
+
+    // ── Per-bark-type flake meshes ────────────────────────────────────────────
+    // One cached mesh per type; instance variety comes from scale/roll/tilt jitter.
+    // All meshes: pivot at the attachment edge, face +Z (verified against
+    // BuildCurvedQuad's clockwise-from-+Z winding), double-sided via FinishFlakeMesh,
+    // palette in vertex colours (the bark shader multiplies them).
+
+    static readonly Dictionary<int, Mesh> typeMeshCache = new Dictionary<int, Mesh>();
+
+    static Mesh FlakeMeshForType(int bt)
+    {
+        if (typeMeshCache.TryGetValue(bt, out var cached)) return cached;
+        Mesh mesh;
+        switch (bt)
+        {
+            case 9:  mesh = BuildPlate(7, 0.06f, new Color(0.47f, 0.37f, 0.28f),
+                                       new Color(0.62f, 0.38f, 0.22f)); break;   // pine plate, orange under
+            case 8:  mesh = BuildPlate(5, 0.03f, new Color(0.38f, 0.31f, 0.25f),
+                                       new Color(0.44f, 0.35f, 0.27f)); break;   // irregular block
+            case 10: mesh = BuildPaperCurl(); break;                              // birch paper
+            case 12: mesh = BuildShred();     break;                              // fibrous shred
+            case 14: mesh = BuildSpongyStrip(); break;                            // cypress sponge
+            default: mesh = BuildCurvedQuad(); break;
+        }
+        typeMeshCache[bt] = mesh;
+        return mesh;
+    }
+
+    /// <summary>Duplicates the geometry reversed for a lit backside, writes the two
+    /// palettes into vertex colours, recalculates normals/bounds.</summary>
+    static Mesh FinishFlakeMesh(string name, List<Vector3> verts, List<int> tris,
+                                Color front, Color back)
+    {
+        int n = verts.Count;
+        var allVerts = new List<Vector3>(verts);
+        allVerts.AddRange(verts);
+        var allTris = new List<int>(tris);
+        for (int i = 0; i < tris.Count; i += 3)
+        {
+            allTris.Add(n + tris[i]);
+            allTris.Add(n + tris[i + 2]);
+            allTris.Add(n + tris[i + 1]);
+        }
+        var colors = new Color[allVerts.Count];
+        for (int i = 0; i < n; i++)               colors[i] = front;
+        for (int i = n; i < allVerts.Count; i++)  colors[i] = back;
+
+        var mesh = new Mesh { name = name };
+        mesh.SetVertices(allVerts);
+        mesh.SetTriangles(allTris, 0);
+        mesh.SetColors(colors);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    /// <summary>Irregular polygon plate with a slight outward dome — pine jigsaw plates
+    /// (n=7, deep relief) and blocky bark chunks (n=5, shallow).</summary>
+    static Mesh BuildPlate(int sides, float dome, Color front, Color back)
+    {
+        var rng   = new System.Random(4241 + sides);
+        var verts = new List<Vector3> { new Vector3(0f, 0f, dome) };
+        for (int i = 0; i < sides; i++)
+        {
+            float a = i / (float)sides * Mathf.PI * 2f;
+            float r = 0.5f * (0.72f + (float)rng.NextDouble() * 0.38f);
+            verts.Add(new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, 0f));
+        }
+        var tris = new List<int>();
+        for (int i = 0; i < sides; i++)
+        {
+            // Clockwise from +Z so the dome faces away from the trunk.
+            tris.Add(0);
+            tris.Add(1 + (i + 1) % sides);
+            tris.Add(1 + i);
+        }
+        return FinishFlakeMesh(sides >= 7 ? "BarkPlate" : "BarkBlock", verts, tris, front, back);
+    }
+
+    /// <summary>Grid strip helper: cols×rows in XY (pivot top edge, hangs -Y), with a
+    /// per-row/column Z displacement supplied by `zAt(u, v)` and width taper by `widthAt(v)`.</summary>
+    static void BuildStripGrid(List<Vector3> verts, List<int> tris, int cols, int rows,
+                               float width, float length,
+                               System.Func<float, float, float> zAt,
+                               System.Func<float, float> widthAt)
+    {
+        for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++)
+        {
+            float u = (float)c / (cols - 1);
+            float v = (float)r / (rows - 1);
+            float w = width * widthAt(v);
+            verts.Add(new Vector3(Mathf.Lerp(-w, w, u) * 0.5f, 0.5f - v * length, zAt(u, v)));
+        }
+        for (int r = 0; r < rows - 1; r++)
+        for (int c = 0; c < cols - 1; c++)
+        {
+            int i = r * cols + c;
+            tris.Add(i);     tris.Add(i + 1);        tris.Add(i + cols);
+            tris.Add(i + 1); tris.Add(i + cols + 1); tris.Add(i + cols);
+        }
+    }
+
+    /// <summary>Birch: a papery horizontal strip whose free end rolls away from the
+    /// trunk — white face, tan inner side (the signature betula two-tone).</summary>
+    static Mesh BuildPaperCurl()
+    {
+        var verts = new List<Vector3>(); var tris = new List<int>();
+        BuildStripGrid(verts, tris, cols: 6, rows: 4, width: 1.1f, length: 0.45f,
+            zAt:      (u, v) => (1f - Mathf.Cos(v * Mathf.PI * 0.85f)) * 0.24f,   // roll outward as it descends
+            widthAt:  v => 1f);
+        return FinishFlakeMesh("BarkPaperCurl", verts, tris,
+                               new Color(0.88f, 0.85f, 0.80f),    // papery white outer
+                               new Color(0.72f, 0.55f, 0.38f));   // tan inner face
+    }
+
+    /// <summary>Juniper / cedar / redwood: a long narrow fibrous shred, wavering
+    /// slightly and tapering to a ragged point.</summary>
+    static Mesh BuildShred()
+    {
+        var verts = new List<Vector3>(); var tris = new List<int>();
+        BuildStripGrid(verts, tris, cols: 3, rows: 6, width: 0.20f, length: 1.05f,
+            zAt:      (u, v) => Mathf.Sin(v * 9f) * 0.03f,
+            widthAt:  v => Mathf.Lerp(1f, 0.25f, v));
+        return FinishFlakeMesh("BarkShred", verts, tris,
+                               new Color(0.45f, 0.38f, 0.30f),
+                               new Color(0.55f, 0.42f, 0.30f));
+    }
+
+    /// <summary>Swamp cypress: short, wide, soft spongy strip that stays close to the trunk.</summary>
+    static Mesh BuildSpongyStrip()
+    {
+        var verts = new List<Vector3>(); var tris = new List<int>();
+        BuildStripGrid(verts, tris, cols: 4, rows: 4, width: 0.36f, length: 0.6f,
+            zAt:      (u, v) => Mathf.Sin(u * Mathf.PI) * 0.05f,                  // gentle outward bulge
+            widthAt:  v => Mathf.Lerp(1f, 0.7f, v));
+        return FinishFlakeMesh("BarkSponge", verts, tris,
+                               new Color(0.52f, 0.34f, 0.24f),
+                               new Color(0.58f, 0.42f, 0.30f));
     }
 
     // ── Placeholder Mesh ──────────────────────────────────────────────────────

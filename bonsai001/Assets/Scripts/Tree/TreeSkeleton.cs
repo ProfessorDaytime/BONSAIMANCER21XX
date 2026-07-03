@@ -281,6 +281,16 @@ public class TreeSkeleton : MonoBehaviour
     [Tooltip("Multiplier applied to backBudBaseChance on nodes whose tip ancestry was trimmed (back-budding).")]
     [SerializeField] [Range(1f, 10f)] float backBudActivationBoost = 1f;
 
+    [Tooltip("Max styler-directed slot-fill buds (epicormic buds forced on old trunk wood by the\n" +
+             "AutoStyler's February stimulation) that break per spring. These bypass the branch cap\n" +
+             "and the vigor roll — otherwise a mature tree at maxBranchNodes can never grow the\n" +
+             "scaffold branches its style still needs. 0 disables forcing (probability path only).")]
+    [SerializeField] [Range(0, 8)] int maxForcedBudsPerSpring = 3;
+
+    [Tooltip("Minimum treeEnergy for a forced slot-fill bud to break — the tree must have the\n" +
+             "reserves to push a new structural shoot from old wood.")]
+    [SerializeField] [Range(0f, 1f)] float forcedBudMinEnergy = 0.5f;
+
     [Tooltip("Spawn the terminal bud prefab at tip nodes each autumn. Disable to hide bud objects without affecting bud growth logic.")]
     [SerializeField] bool showTerminalBuds = true;
 
@@ -911,6 +921,8 @@ public class TreeSkeleton : MonoBehaviour
             node.isDeadwood    = sn.isDeadwood;
             node.shadedSeasons = sn.shadedSeasons;
             node.deadSeasons   = sn.deadSeasons;
+            node.isJin         = sn.isJin;
+            node.jinBleach     = sn.jinBleach;
             node.fungalLoad          = sn.fungalLoad;
             node.isMycorrhizal       = sn.isMycorrhizal;
             node.healthySeasonsCount = sn.healthySeasonsCount;
@@ -2265,11 +2277,39 @@ public class TreeSkeleton : MonoBehaviour
         // to sprout a new lateral from dormant axillary buds.
         // Snapshot allNodes first — CreateNode appends to allNodes during iteration.
         int backBudCount = 0;
+        int forcedBudCount = 0;
         var backBudCandidates = new List<TreeNode>(allNodes);
         foreach (var node in backBudCandidates)
         {
             if (!node.backBudStimulated || node.isTrimmed || node.isRoot) continue;
             node.backBudStimulated = false;  // consume — only fires once per trim event
+
+            // Styler-directed slot fill: the AutoStyler's February stimulation set a target
+            // azimuth on this trunk node (preferredLateralAzimuth). That's a deliberate
+            // cultivation action — forcing an epicormic bud on old wood — so it must not
+            // starve behind canopy ramification. A mature tree sits AT maxBranchNodes with
+            // vigorFactor floored at 0.05, which made the probability path below effectively
+            // dead (~0.7%/yr) and pinned the style match at whatever scaffolds existed
+            // (measured 2026-07-02: 5/14 slots, flat for 20+ years). Forced buds bypass the
+            // cap + roll but are earned: energy-gated, capped per spring, and bounded overall
+            // by the style's empty-slot count.
+            bool styleDirected = node.preferredLateralAzimuth >= 0f && node.depth == 0;
+            if (styleDirected && forcedBudCount < maxForcedBudsPerSpring && treeEnergy >= forcedBudMinEnergy)
+            {
+                float fChord   = branchSegmentLength * globalSegmentScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                int   fSubdivs = SubdivsForChord(fChord);
+                float fSegLen  = fSubdivs > 1 ? fChord / fSubdivs : fChord;
+                fSegLen = Mathf.Max(fSegLen, minSegmentLength) * Mathf.Max(0.1f, 1f - apicalDominance);
+                // No refinementLevel inherit — a new scaffold wants long structural extension,
+                // not the short internodes of a ramified twig.
+                var fLat = CreateNode(node.tipPosition, LateralDirection(node), terminalRadius, fSegLen, node);
+                fLat.isRoot = false;
+                if (fSubdivs > 1) fLat.subdivisionsLeft = fSubdivs - 1;
+                currentBranchCount++;
+                forcedBudCount++;
+                backBudCount++;
+                continue;
+            }
 
             if (currentBranchCount >= maxBranchNodes) continue;  // hard cap
 
@@ -2295,7 +2335,7 @@ public class TreeSkeleton : MonoBehaviour
             }
         }
         if (backBudCount > 0)
-            Debug.Log($"[Bud] Back-buds activated={backBudCount} year={GameManager.year}");
+            Debug.Log($"[Bud] Back-buds activated={backBudCount} (forced slot-fill={forcedBudCount}) year={GameManager.year}");
 
         // Old-wood budding: dormant axillary buds on interior junction nodes can break
         // spontaneously each spring without requiring a trim event. Rate is low on most trees;
@@ -2625,6 +2665,11 @@ public class TreeSkeleton : MonoBehaviour
         {
             if (node.isTrimmed || node.isRoot) continue;
 
+            // Jin weathering: stripped deadwood bleaches from fresh tan to silver-grey
+            // over ~8 years of sun (colour picked up on the next mesh rebuild).
+            if (node.isJin && node.jinBleach < 1f)
+                node.jinBleach = Mathf.Min(1f, node.jinBleach + 0.12f);
+
             // Pass 1: mark newly dead
             if (!node.isDead && node.health <= 0f)
             {
@@ -2667,8 +2712,13 @@ public class TreeSkeleton : MonoBehaviour
                 }
             }
 
-            // Pass 3: tick dead season counter; schedule small dead branches for removal
-            if (node.isDead && !node.isDeadwood)
+            // Pass 3: tick dead season counter; schedule small dead branches for removal.
+            // NEVER drop the trunk base — RemoveSubtree(root) deletes the whole tree and
+            // leaves a zombie skeleton that keeps growing regenerated roots with no canopy
+            // (found 2026-07-02: "[Dieback] Dropped dead branch node=0 (801 nodes removed)",
+            // the black-spider quick-start corpses). Whole-tree death is EvaluateTreeDeath's
+            // job; a dead trunk base just stays as standing deadwood until then.
+            if (node.isDead && !node.isDeadwood && node != root)
             {
                 node.deadSeasons++;
                 if (node.deadSeasons >= deadSeasonsToDrop)
@@ -2911,6 +2961,26 @@ public class TreeSkeleton : MonoBehaviour
         lastSnapshotAbsDay  = -1;
 
         if (species != null) ApplySpecies();
+
+        // Fresh seed = fresh pot. Reset the pot/soil state the previous game left on the
+        // PotSoil component — the auto-styler may have advanced the pot to L and degraded
+        // the soil, and a stale L-sized root box around a seedling lets new roots range
+        // far outside the visual pot (2026-07-02 "starburst on new game" report; pot size
+        // never reset). Loading a save is unaffected: the load path restores + applies
+        // its own pot state after this.
+        var potSoilReset = GetComponent<PotSoil>();
+        if (potSoilReset != null)
+        {
+            potSoilReset.potSize = PotSoil.PotSize.XS;   // design start: smallest pot
+            potSoilReset.ApplyPotSize(GetRootAreaTransform());
+            potSoilReset.soilDegradation   = 0f;
+            potSoilReset.saturationLevel   = 0f;
+            potSoilReset.compaction        = 0f;
+            potSoilReset.seasonsSinceRepot = 0;
+            potSoilReset.ComputeDerivedProperties();
+            potSoilReset.RefreshDrainageHoles();
+            Debug.Log($"[Tree] InitTree — pot/soil reset to XS fresh | year={GameManager.year}");
+        }
 
         // Create the seed visual -- an elongated sphere at the soil surface.
         // It disappears once the sprout grows past seedHideLength.
@@ -4488,6 +4558,70 @@ public class TreeSkeleton : MonoBehaviour
         RecalculateRadii(root);
         meshBuilder.SetDirty();
         cachedTreeHeight = CalculateTreeHeight();  // keep cinematic camera zoom current
+    }
+
+    // ── Jin (deliberate deadwood) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Convert the branch starting at `node` into jin — deliberate stripped deadwood.
+    /// The node's same-depth continuation chain (one physical branch) is kept as a
+    /// bleached spike; laterals hanging off it come away with the bark (removed
+    /// directly, no wounds — no callus ever forms on stripped wood). The chain is
+    /// marked dead + deadwood + jin: it never heals, grows, or leafs, and weathers
+    /// from fresh tan to silver-grey over the years in DiebackPass.
+    /// </summary>
+    public void JinNode(TreeNode node)
+    {
+        if (node == null || node == root || node.isRoot || node.isTrimmed || node.isJin) return;
+
+        if (!ProgressionManager.AutomationActive)
+            ProgressionManager.Instance?.ReachMilestone("first_jin");   // player jins only
+        TrainingRecorder.Instance?.RecordAction("Jin", node.id);
+
+        // Walk the same-depth chain outward (one physical branch = a chain of same-depth
+        // segments — see the depth-per-chord convention); strip every lateral off it.
+        var chain      = new List<TreeNode>();
+        var strippedOff = new List<TreeNode>();
+        var cur = node;
+        while (cur != null)
+        {
+            chain.Add(cur);
+            TreeNode next = null;
+            foreach (var c in new List<TreeNode>(cur.children))
+            {
+                if (next == null && c.depth == cur.depth) { next = c; continue; }  // the continuation
+                cur.children.Remove(c);
+                RemoveSubtree(c, strippedOff);   // laterals come away with the bark — no wound
+            }
+            cur = next;
+        }
+
+        var lm = GetComponent<LeafManager>();
+        foreach (var n in chain)
+        {
+            n.isDead       = true;
+            n.isDeadwood   = true;
+            n.isJin        = true;
+            n.jinBleach    = 0f;      // fresh-stripped tan; weathers silver in DiebackPass
+            n.health       = 0f;
+            n.isGrowing    = false;
+            n.hasBud       = false;
+            n.hasFlowerBud = false;
+            n.hasWire      = false;
+            // Stripped wood carries no bark history: no wound, no callus, no cut-point cap
+            // (the cap would force a flat stump ring and fight the jin spike taper).
+            n.hasWound       = false;
+            n.hadWoundScar   = false;
+            n.isTrimCutPoint = false;
+            lm?.DefoliateNode(n);
+        }
+
+        if (strippedOff.Count > 0) OnSubtreeTrimmed?.Invoke(strippedOff);
+        CareLog.Add("Jin", "Stripped a branch to jin — bleached deadwood that tells the tree's history");
+        Debug.Log($"[Jin] node={node.id} chain={chain.Count} strippedLaterals={strippedOff.Count} | year={GameManager.year}");
+        RecalculateRadii(root);
+        meshBuilder.SetDirty();
+        cachedTreeHeight = CalculateTreeHeight();
     }
 
     // ── Trim undo data ────────────────────────────────────────────────────────

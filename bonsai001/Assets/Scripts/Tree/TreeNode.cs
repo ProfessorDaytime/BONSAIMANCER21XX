@@ -87,6 +87,10 @@ public class TreeNode
             if (isTrimCutPoint && hasWound)
                 return radius;
 
+            // Jin spike: stripped deadwood tapers to a jagged point, not a budding tip.
+            if (isJin && children.Count == 0)
+                return radius * 0.06f;
+
             float terminalTip = radius * 0.55f;
             if (children.Count == 0) return terminalTip;
 
@@ -170,6 +174,14 @@ public class TreeNode
     public bool isDeadwood;        // large dead branch kept as structural deadwood (jin candidate)
     public int  shadedSeasons;     // consecutive seasons with no leaf-bearing descendants
     public int  deadSeasons;       // seasons elapsed since death (drives drop-off for small branches)
+
+    // ── Jin (deliberate deadwood) ─────────────────────────────────────────────
+    /// <summary>Player/styler-created deadwood: a branch stripped of bark and kept as a
+    /// bleached spike. isJin implies isDead + isDeadwood; jin never heals, grows, or leafs.</summary>
+    public bool  isJin;
+    /// <summary>0 = freshly stripped (tan heartwood) → 1 = fully weathered silver-grey.
+    /// Advances each spring in DiebackPass, like sun + lime sulphur over the years.</summary>
+    public float jinBleach;
 
     // ── Fungal ────────────────────────────────────────────────────────────────
 

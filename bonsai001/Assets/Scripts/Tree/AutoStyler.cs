@@ -76,6 +76,15 @@ public class AutoStyler : MonoBehaviour
     public int defoliateMinIntervalYears = 2;
     [Tooltip("Advance pot size (XS→S→M→L) at the style's pot-phase years each spring. Never shrinks a player-chosen pot.")]
     public bool autoRepot = true;
+    [Tooltip("Hands-off soil refresh: a real repot (fresh soil, degradation/saturation reset, repot stress)\n" +
+             "whenever the soil has been in the pot too long — real bonsai get fresh soil every 2–5 years\n" +
+             "for life. Without this the mix degrades toward 1.0 and mismatch penalties slowly starve a\n" +
+             "mature tree. Requires autoRepot.")]
+    public bool autoSoilRefresh = true;
+    [Tooltip("Growing seasons between hands-off soil refreshes while the tree is young (before the style's M-pot phase year).")]
+    [Range(1, 8)]  public int repotIntervalYoungYears = 2;
+    [Tooltip("Growing seasons between hands-off soil refreshes once mature (after the style's M-pot phase year).")]
+    [Range(2, 12)] public int repotIntervalMatureYears = 4;
 
     TreeSkeleton skeleton;
     Material      glMat;
@@ -427,9 +436,15 @@ public class AutoStyler : MonoBehaviour
         Debug.Log($"[AutoStyle] Defoliated — {tips} tips ≥ threshold {defoliateThreshold} | year={GameManager.year}");
     }
 
-    /// <summary>Spring: advance the pot through XS→S→M→L at the style's phase years.
-    /// Restriction early thickens the trunk; room later supports the maturing root mass.
-    /// Bypasses the repot mini-game and never shrinks a pot the player upsized.</summary>
+    /// <summary>Spring: real hands-off repotting. Two triggers, one Repot call:
+    /// (a) pot-size advancement XS→S→M→L at the style's phase years (restriction early
+    /// thickens the trunk; room later supports the maturing root mass; never shrinks a
+    /// player-chosen pot), and (b) periodic soil refresh when the mix has been in the pot
+    /// longer than the interval — previously this method only resized geometry via
+    /// ApplyPotSize and NEVER called PotSoil.Repot, so soilDegradation/saturation/
+    /// seasonsSinceRepot were never reset under hands-off care and mismatch penalties
+    /// slowly starved mature trees (found 2026-07-02). Bypasses the repot mini-game;
+    /// fires in early spring so Repot's good-timing window applies.</summary>
     void AdvancePotPhase()
     {
         if (!autoRepot) return;
@@ -446,12 +461,40 @@ public class AutoStyler : MonoBehaviour
                    : treeYear >= phases[0] ? PotSoil.PotSize.S
                    :                         PotSoil.PotSize.XS;
 
-        if ((int)target <= (int)potSoil.potSize) return;
-        var prev = potSoil.potSize;
-        potSoil.potSize = target;
-        potSoil.ApplyPotSize(skeleton.GetRootAreaTransform());
-        CareLog.Add("Repot", $"Moved up to a {target} pot (tree year {treeYear}) — room for the maturing root mass");
-        Debug.Log($"[AutoStyle] Pot {prev}→{target} (tree year {treeYear}) | year={GameManager.year}");
+        bool sizeUp = (int)target > (int)potSoil.potSize;
+
+        // Soil refresh due? seasonsSinceRepot ticks once per growing season (≈ once per
+        // in-game year). Young trees get fresh soil more often than mature ones.
+        int intervalYears = treeYear >= phases[1] ? repotIntervalMatureYears : repotIntervalYoungYears;
+        bool soilDue = autoSoilRefresh && potSoil.seasonsSinceRepot >= intervalYears;
+
+        if (!sizeUp && !soilDue) return;
+
+        var prev    = potSoil.potSize;
+        var newSize = sizeUp ? target : potSoil.potSize;
+        // Keep the pot's current mix (player's choice) unless it's Custom, then the classic mix.
+        var preset  = potSoil.preset != PotSoil.SoilPreset.Custom
+                    ? potSoil.preset : PotSoil.SoilPreset.ClassicBonsai;
+
+        potSoil.Repot(skeleton, preset, newSize, sizeChanged: sizeUp);
+
+        // Root-prune — the other half of a real repot — but ONLY when the roots actually
+        // need it. First F8 attempt pruned nothing (roots hit the 900-node cap: "kraken
+        // pot"); second attempt pruned on EVERY refresh, and the 2-year full discard
+        // killed young Quick-Start trees (uptake never recovered → canopy died → shading
+        // cascaded into the trunk, 2026-07-02). Pot-bound pressure is the bonsai-correct
+        // trigger: prune when crowded, leave establishing root systems alone.
+        bool rootPruned = false;
+        if (skeleton.RootPressureFactor() > 0.35f)
+        {
+            GetComponent<RootRakeManager>()?.DiscardAndRegenerateRoots();
+            rootPruned = true;
+        }
+
+        CareLog.Add("Repot", sizeUp
+            ? $"Repotted into a {newSize} pot{(rootPruned ? " — root-pruned," : " —")} fresh {preset} soil (tree year {treeYear})"
+            : $"Repotted{(rootPruned ? " — root-pruned and" : " —")} refreshed the {preset} soil (tree year {treeYear})");
+        Debug.Log($"[AutoStyle] Repot pot {prev}→{newSize} (sizeUp={sizeUp} soilDue={soilDue} rootPruned={rootPruned}, tree year {treeYear}) | year={GameManager.year}");
     }
 
     // ── Wire Cleanup ──────────────────────────────────────────────────────────

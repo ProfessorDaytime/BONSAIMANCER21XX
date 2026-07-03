@@ -25,6 +25,11 @@ public class Leaf : MonoBehaviour
     // Defaults to the same green used in FallGradient[0] so existing trees are unchanged.
     [HideInInspector] public Color springColor = new Color(0.15f, 0.55f, 0.10f);
 
+    // Per-instance colour variety (set by LeafManager on spawn; white = no change).
+    // Applied through this leaf's MaterialPropertyBlock, so the shared material — and
+    // therefore batching — is untouched. Composes with every seasonal colour state.
+    [HideInInspector] public Color tint = Color.white;
+
     // ── Fall colour (set by LeafManager when autumn begins) ───────────────────
 
     // How fast this leaf runs through the colour gradient relative to the base rate.
@@ -81,6 +86,12 @@ public class Leaf : MonoBehaviour
     Renderer              leafRenderer;
     MaterialPropertyBlock propBlock;
 
+    // ── Wind ──────────────────────────────────────────────────────────────────
+    // Per-leaf phase staggers the canopy shimmer; base rotation captured in Start so
+    // the wobble never accumulates. Sway rides the existing per-frame node tracking.
+    float      windPhase;
+    Quaternion baseLocalRotation;
+
     // ── Unity ─────────────────────────────────────────────────────────────────
 
     void Start()
@@ -88,8 +99,14 @@ public class Leaf : MonoBehaviour
         leafRenderer = GetComponentInChildren<Renderer>();
         propBlock    = new MaterialPropertyBlock();
 
-        // Start small immediately — no full-size flash on the spawn frame
-        transform.localScale = targetScale * GROW_START_FRACTION;
+        windPhase         = Random.value;
+        baseLocalRotation = transform.localRotation;
+
+        // Start small immediately — no full-size flash on the spawn frame.
+        // (Unless StartFalling already ran before Start — shed needles spawn falling
+        // at full scale; don't shrink them back down.)
+        if (!isFalling)
+            transform.localScale = targetScale * GROW_START_FRACTION;
 
         // If the leaf prefab has a Rigidbody, make it kinematic so the physics
         // engine doesn't override our manual transform.position changes.
@@ -105,9 +122,28 @@ public class Leaf : MonoBehaviour
 
     void Update()
     {
-        // Track owner node so wire-bending keeps leaves attached to their branch
+        // Track owner node so wire-bending keeps leaves attached to their branch.
+        // Ambient wind rides the same per-frame update: a small world-space sway offset
+        // plus a rotation wobble around the captured base orientation.
         if (!isFalling && ownerNode != null)
-            transform.localPosition = ownerNode.tipPosition + tipOffset;
+        {
+            Vector3 basePos = ownerNode.tipPosition + tipOffset;
+            var wind = WindManager.Instance;
+            if (wind != null && wind.strength > 0f)
+            {
+                Vector3 sway = wind.SampleSway(transform.position, windPhase);
+                if (transform.parent != null)
+                    sway = transform.parent.InverseTransformVector(sway);
+                transform.localPosition = basePos + sway;
+                float w = Mathf.Sin(Time.time * (2.1f + windPhase * 1.7f) + windPhase * 11f)
+                          * 6f * wind.GustLevel;
+                transform.localRotation = baseLocalRotation * Quaternion.Euler(w, 0f, w * 0.7f);
+            }
+            else
+            {
+                transform.localPosition = basePos;
+            }
+        }
 
         // Grow-in over in-game days (skip once falling so the fall keeps the correct scale)
         if (!isFalling && growProgress < 1f)
@@ -166,6 +202,8 @@ public class Leaf : MonoBehaviour
                                       Mathf.SmoothStep(0f, 1f, growProgress));
             color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
         }
+
+        color *= tint;   // per-instance variety (white = no-op)
 
         leafRenderer.GetPropertyBlock(propBlock);
         propBlock.SetColor("_Color", color);      // Standard / Unlit shaders
@@ -264,6 +302,10 @@ public class Leaf : MonoBehaviour
             Random.Range(-0.2f, 0f),
             Random.Range(-0.3f, 0.3f)
         );
+        // Falling leaves blow downwind — sample the ambient wind once at release.
+        var wind = WindManager.Instance;
+        if (wind != null && wind.strength > 0f)
+            driftVelocity += wind.SampleSway(transform.position, windPhase) * 12f;
         rotSpeed = Random.Range(-60f, 60f);
     }
 }

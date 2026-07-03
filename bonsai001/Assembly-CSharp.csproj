@@ -73,6 +73,7 @@
      <Compile Include="Assets\Scripts\Tools\ToolManager.cs" />
      <Compile Include="Assets\Scripts\BezierSpline.cs" />
      <Compile Include="Assets\Scripts\RockPlacer.cs" />
+     <Compile Include="Assets\Scripts\WindManager.cs" />
      <Compile Include="Assets\Scripts\Tree\LeafManager.cs" />
      <Compile Include="Assets\Scripts\CRTRendererFeature.cs" />
      <Compile Include="Assets\Scripts\Progression\ProgressionProfile.cs" />

@@ -33,6 +33,7 @@ public class GameManager : MonoBehaviour
     public static bool canDefoliate     = false;
     public static bool canGraft         = false;
     public static bool canPromote       = false;
+    public static bool canJin           = false;
     public static float selectionRadius = 0.5f;
 
     [Tooltip("Log game-state transitions, time events, and speed changes. Off by default.")]

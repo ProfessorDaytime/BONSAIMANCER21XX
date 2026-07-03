@@ -75,11 +75,27 @@ public class LeafManager : MonoBehaviour
     Material leafMat;
 
     // ── Needle foliage (conifers) ─────────────────────────────────────────────
-    // One tuft mesh + material is built per tree and shared by every branch tip, so
-    // a fully-needled conifer is one object per tip (not per needle). Built lazily the
-    // first time a needle species spawns foliage.
-    Mesh     needleTuftMesh;
+    // A small pool of tuft meshes + one material is built per tree and shared by every
+    // branch tip, so a fully-needled conifer is one object per tip (not per needle).
+    // Multiple variants (indexed by node id) kill the repetition of every tip wearing
+    // the identical tuft; they all share the one material so the renderer still batches.
+    // Built lazily the first time a needle species spawns foliage.
+    const int NeedleVariantCount = 4;
+    Mesh[]   needleTuftVariants;
     Material needleMat;
+
+    // Year-round evergreen shed: real conifers hold a needle 2–4 years and shed old
+    // interior needles continuously, not just in autumn. A low-rate ambient trickle of
+    // single falling needles (pooled cap) sells this without touching the tuft meshes.
+    [Header("Evergreen Needle Shed")]
+    [Tooltip("Average needles shed per 100 tufts per in-game day (evergreen conifers only; ~3× in autumn). 0 disables.")]
+    [SerializeField] float needleShedPer100TuftsPerDay = 1.5f;
+    [Tooltip("Max shed needles airborne at once — keeps the trickle cheap at any timescale.")]
+    [SerializeField] int maxAirborneShedNeedles = 12;
+
+    Mesh  shedNeedleMesh;
+    float shedAccumulator;
+    readonly List<GameObject> airborneShedNeedles = new List<GameObject>();
 
     bool IsNeedleSpecies => skeleton != null && skeleton.species != null
                             && skeleton.species.foliageType != FoliageType.BroadLeaf;
@@ -90,9 +106,13 @@ public class LeafManager : MonoBehaviour
     {
         if (skeleton == null || skeleton.species == null) return;
 
-        if (needleTuftMesh == null)
-            needleTuftMesh = NeedleMesh.Build(skeleton.species.foliageType,
-                                              Mathf.Clamp(skeleton.species.needlesPerTuft, 4, 40));
+        if (needleTuftVariants == null)
+        {
+            needleTuftVariants = new Mesh[NeedleVariantCount];
+            for (int i = 0; i < NeedleVariantCount; i++)
+                needleTuftVariants[i] = NeedleMesh.Build(skeleton.species.foliageType,
+                                                         Mathf.Clamp(skeleton.species.needlesPerTuft, 4, 40), i);
+        }
 
         if (needleMat == null)
         {
@@ -215,6 +235,10 @@ public class LeafManager : MonoBehaviour
             ProcessUnfurls();
         }
         UpdateOpeningBuds();
+
+        // Evergreens shed a trickle of old needles all year — not just in autumn.
+        if (IsNeedleSpecies && IsEvergreen)
+            UpdateNeedleShed();
 
         if (isLeafFall && !IsEvergreen)
         {
@@ -498,6 +522,11 @@ public class LeafManager : MonoBehaviour
             leaf.youngTint   = skeleton.species.leafBudBreakColor;
         }
 
+        // Per-leaf colour variety (milder than needle tufts) — property block only,
+        // shared material and batching untouched.
+        float lv = Random.Range(0.90f, 1.07f);
+        leaf.tint = new Color(lv * Random.Range(0.96f, 1.04f), lv, lv * Random.Range(0.95f, 1.03f));
+
         leaf.ApplyDeformation(
             twistDeg:     Random.Range(-28f, 28f),
             curlFraction: Random.Range(0.05f, 0.30f)
@@ -509,7 +538,7 @@ public class LeafManager : MonoBehaviour
     /// <summary>
     /// Spawns a single procedural needle tuft at a branch tip (conifers). The tuft mesh
     /// holds the whole bundle of needles, so this is one object per tip — not per needle —
-    /// and every tuft shares the tree's one needleTuftMesh + needleMat so the renderer
+    /// and every tuft uses one of the tree's few pooled variant meshes + needleMat so the renderer
     /// batches them. Reuses the Leaf component for scale-in, node-tracking, seasonal colour
     /// and (deciduous conifers only) the autumn fall.
     /// </summary>
@@ -528,7 +557,9 @@ public class LeafManager : MonoBehaviour
                                 * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
         go.transform.localScale = Vector3.zero;   // Leaf.Start scales it in
 
-        go.AddComponent<MeshFilter>().sharedMesh         = needleTuftMesh;
+        // Variant by node id — stable across rebuilds, varied across the canopy.
+        go.AddComponent<MeshFilter>().sharedMesh =
+            needleTuftVariants[Mathf.Abs(node.id) % needleTuftVariants.Length];
         var mr = go.AddComponent<MeshRenderer>();
         mr.sharedMaterial    = needleMat;
         mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -543,8 +574,70 @@ public class LeafManager : MonoBehaviour
             leaf.growDays    = skeleton.species.leafGrowDays;
             leaf.youngTint   = skeleton.species.leafBudBreakColor;
         }
+        // Per-tuft colour variety via the Leaf's MaterialPropertyBlock (per-renderer, so
+        // the one shared material — and batching — is untouched): subtle value jitter with
+        // a whisper of hue drift. Old interior growth reads darker, fresh tips brighter.
+        float v = Random.Range(0.82f, 1.10f);
+        leaf.tint = new Color(v * Random.Range(0.94f, 1.05f), v, v * Random.Range(0.92f, 1.06f));
         // No ApplyDeformation — that twist/curl is for flat leaf blades, not needle tufts.
         return go;
+    }
+
+    // ── Year-round evergreen needle shed ──────────────────────────────────────
+
+    /// <summary>Low-rate ambient shed: real evergreens hold each needle 2–4 years and
+    /// drop spent interior needles continuously. Expected rate scales with canopy size
+    /// (tuft count), triples in autumn, and is capped by maxAirborneShedNeedles so it
+    /// stays cheap at any timescale.</summary>
+    void UpdateNeedleShed()
+    {
+        if (needleShedPer100TuftsPerDay <= 0f || nodeLeaves.Count == 0) return;
+
+        airborneShedNeedles.RemoveAll(go => go == null);
+        if (airborneShedNeedles.Count >= maxAirborneShedNeedles) return;
+
+        float days       = Time.deltaTime * GameManager.TIMESCALE / 24f;
+        float seasonMult = (GameManager.month >= 9 && GameManager.month <= 11) ? 3f : 1f;
+        shedAccumulator += nodeLeaves.Count * 0.01f * needleShedPer100TuftsPerDay * seasonMult * days;
+
+        while (shedAccumulator >= 1f && airborneShedNeedles.Count < maxAirborneShedNeedles)
+        {
+            shedAccumulator -= 1f;
+            SpawnShedNeedle();
+        }
+        // Anything the cap refused this frame is dropped, not banked — a fast-forwarded
+        // winter shouldn't dump a season of needles the moment the cap frees up.
+        if (airborneShedNeedles.Count >= maxAirborneShedNeedles) shedAccumulator = 0f;
+    }
+
+    void SpawnShedNeedle()
+    {
+        if (listDirty) RebuildFlatList();
+        if (allLeaves.Count == 0) return;
+        var (_, tuftGo) = allLeaves[Random.Range(0, allLeaves.Count)];
+        if (tuftGo == null) return;
+
+        EnsureNeedleAssets();
+        if (shedNeedleMesh == null) shedNeedleMesh = NeedleMesh.BuildSingleNeedle();
+
+        var go = new GameObject("ShedNeedle");
+        go.transform.position   = tuftGo.transform.position;
+        go.transform.rotation   = Random.rotationUniform;
+        go.transform.localScale = Vector3.one * seasonLeafScale;
+        go.AddComponent<MeshFilter>().sharedMesh = shedNeedleMesh;
+        var mr = go.AddComponent<MeshRenderer>();
+        mr.sharedMaterial    = needleMat;
+        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        // Reuse Leaf's fall path (drift + tumble + self-destroy). StartFalling before
+        // Start() is fine — Start skips the grow-in shrink for already-falling leaves.
+        var leaf = go.AddComponent<Leaf>();
+        leaf.ownerNode   = null;
+        leaf.targetScale = Vector3.one * seasonLeafScale;
+        leaf.springColor = new Color(0.48f, 0.40f, 0.16f);   // spent-needle brown
+        leaf.tint        = Color.white;
+        leaf.StartFalling();
+        airborneShedNeedles.Add(go);
     }
 
     /// <summary>

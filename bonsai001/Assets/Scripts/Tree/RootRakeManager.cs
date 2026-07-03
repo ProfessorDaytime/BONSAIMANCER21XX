@@ -931,7 +931,12 @@ public class RootRakeManager : MonoBehaviour
         Debug.Log($"[RootRake] TrimDeepRoots — trimmed {toTrim.Count} nodes beyond depth {rakeMaxDepth}");
     }
 
-    void DiscardAndRegenerateRoots()
+    /// <summary>Root-prune half of a repot: discard the old root system and plant fresh
+    /// initial strands. Public so the AutoStyler's periodic hands-off repot can mirror
+    /// the player flow (PotSoil.Repot → this) — soil refresh without root pruning let
+    /// the pot-bound inner-fill pump roots to the hard cap (900 nodes) with radii
+    /// thickening every season.</summary>
+    public void DiscardAndRegenerateRoots()
     {
         // Detach all root children from the trunk root node
         if (skeleton.root != null)
