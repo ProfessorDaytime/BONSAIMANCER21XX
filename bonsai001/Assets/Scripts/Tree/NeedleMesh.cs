@@ -17,8 +17,10 @@ public static class NeedleMesh
 {
     /// <summary>Builds a unit-scale tuft (the LeafManager scales it per species/season).
     /// variantSeed picks a deterministic variant — LeafManager builds a small pool and
-    /// indexes it by node id, so tips don't all repeat the one identical tuft.</summary>
-    public static Mesh Build(FoliageType type, int needleCount, int variantSeed = 0)
+    /// indexes it by node id, so tips don't all repeat the one identical tuft.
+    /// widthMult fattens every needle — the far-LOD pool uses fewer, much wider needles
+    /// so distant tufts keep their visual mass without sub-pixel shimmer.</summary>
+    public static Mesh Build(FoliageType type, int needleCount, int variantSeed = 0, float widthMult = 1f)
     {
         var verts = new List<Vector3>(needleCount * 8);
         var tris  = new List<int>(needleCount * 12);
@@ -31,16 +33,17 @@ public static class NeedleMesh
         // needle is deep sub-pixel and no anti-aliasing rescues sub-pixel geometry:
         // it shimmers ("fizz") while orbiting. Slightly wider quads cover whole pixels
         // and read cleaner without visibly changing the tuft silhouette (2026-07-03).
+        float w = widthMult;
         switch (type)
         {
-            case FoliageType.PineFascicle:  BuildPine  (verts, tris, needleCount, R); break;
-            case FoliageType.SpruceRadial:  BuildRadial(verts, tris, needleCount, 0.55f, 0.045f, R); break;
-            case FoliageType.FeatheryFrond: BuildFrond (verts, tris, needleCount, R); break;
-            case FoliageType.Scale:         BuildRadial(verts, tris, needleCount, 0.28f, 0.060f, R); break;
-            default:                        BuildRadial(verts, tris, needleCount, 0.55f, 0.045f, R); break;
+            case FoliageType.PineFascicle:  BuildPine  (verts, tris, needleCount, R, w); break;
+            case FoliageType.SpruceRadial:  BuildRadial(verts, tris, needleCount, 0.55f, 0.045f * w, R); break;
+            case FoliageType.FeatheryFrond: BuildFrond (verts, tris, needleCount, R, w); break;
+            case FoliageType.Scale:         BuildRadial(verts, tris, needleCount, 0.28f, 0.060f * w, R); break;
+            default:                        BuildRadial(verts, tris, needleCount, 0.55f, 0.045f * w, R); break;
         }
 
-        var mesh = new Mesh { name = "NeedleTuft_" + type + "_v" + variantSeed };
+        var mesh = new Mesh { name = "NeedleTuft_" + type + "_v" + variantSeed + (widthMult > 1.01f ? "_far" : "") };
         mesh.SetVertices(verts);
         mesh.SetTriangles(tris, 0);
         mesh.RecalculateNormals();
@@ -93,8 +96,38 @@ public static class NeedleMesh
         t.Add(k); t.Add(k + 3); t.Add(k + 2);
     }
 
+    /// <summary>A pine "candle" — the pale upright spring shoot that elongates before
+    /// its needles pop. A slim 6-sided cone along +Z, pivot at the base; the Leaf
+    /// component's grow-in supplies the elongation and the pale-to-green colour.</summary>
+    public static Mesh BuildCandle()
+    {
+        var verts = new List<Vector3>();
+        var tris  = new List<int>();
+        const int sides = 6;
+        const float baseR = 0.09f, len = 1f;
+        verts.Add(new Vector3(0f, 0f, len));                     // 0 = tip
+        for (int i = 0; i < sides; i++)
+        {
+            float a = i / (float)sides * Mathf.PI * 2f;
+            verts.Add(new Vector3(Mathf.Cos(a) * baseR, Mathf.Sin(a) * baseR, 0f));
+        }
+        for (int i = 0; i < sides; i++)
+        {
+            // Outward winding (verified convention: cross(v1-v0, v2-v0) points out).
+            tris.Add(0);
+            tris.Add(1 + i);
+            tris.Add(1 + (i + 1) % sides);
+        }
+        var mesh = new Mesh { name = "PineCandle" };
+        mesh.SetVertices(verts);
+        mesh.SetTriangles(tris, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
     // ── Pine: long needles in fascicles (bundles of 2–5) fanning forward ────────
-    static void BuildPine(List<Vector3> v, List<int> t, int count, System.Func<float, float, float> R)
+    static void BuildPine(List<Vector3> v, List<int> t, int count, System.Func<float, float, float> R, float widthMult = 1f)
     {
         int fascicles = Mathf.Max(3, count / 3);
         int perBundle = Mathf.Max(2, Mathf.RoundToInt((float)count / fascicles));
@@ -111,7 +144,7 @@ public static class NeedleMesh
             {
                 Vector3 jit = new Vector3(R(-0.10f, 0.10f), R(-0.10f, 0.10f), R(-0.04f, 0.04f));
                 Vector3 dir = (fdir + jit).normalized;
-                AddNeedle(v, t, baseC, dir, R(0.82f, 1.05f), 0.028f, 0.005f);
+                AddNeedle(v, t, baseC, dir, R(0.82f, 1.05f), 0.028f * widthMult, 0.005f * widthMult);
             }
         }
     }
@@ -132,7 +165,7 @@ public static class NeedleMesh
     }
 
     // ── Feathery frond: flat fern-like spray in the local XZ plane ──────────────
-    static void BuildFrond(List<Vector3> v, List<int> t, int count, System.Func<float, float, float> R)
+    static void BuildFrond(List<Vector3> v, List<int> t, int count, System.Func<float, float, float> R, float widthMult = 1f)
     {
         int pairs = Mathf.Max(3, count / 2);
         const float rachis = 1f;
@@ -144,12 +177,12 @@ public static class NeedleMesh
             for (int s = -1; s <= 1; s += 2)
             {
                 Vector3 dir = new Vector3(s * 0.85f, R(-0.06f, 0.06f), 0.4f).normalized;
-                AddNeedle(v, t, baseC, dir, 0.5f * taper * R(0.85f, 1.02f), 0.032f, 0.006f);
+                AddNeedle(v, t, baseC, dir, 0.5f * taper * R(0.85f, 1.02f), 0.032f * widthMult, 0.006f * widthMult);
             }
         }
         // A couple of needles continuing straight off the tip.
         for (int n = 0; n < 2; n++)
             AddNeedle(v, t, new Vector3(0f, 0f, rachis), new Vector3(R(-0.1f, 0.1f), 0f, 1f).normalized,
-                      0.32f, 0.02f, 0.004f);
+                      0.32f, 0.02f * widthMult, 0.004f * widthMult);
     }
 }

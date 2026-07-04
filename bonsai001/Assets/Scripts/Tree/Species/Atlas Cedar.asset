@@ -23,12 +23,12 @@ MonoBehaviour:
   depthsPerYear: 2
   baseElongation: 0.05
   elongationDepthDecay: 0.7
-  branchSegmentLength: 1.00
+  branchSegmentLength: 1.4
   segmentLengthDecay: 0.8
   rootSegmentLength: 0.70
-  baseBranchChance: 0.58
+  baseBranchChance: 0.28
   branchChanceDepthDecay: 0.9
-  springLateralChance: 0.62
+  springLateralChance: 0.12
   oldWoodBudChance: 0.015
   backBudBaseChance: 0.12
   budType: 0

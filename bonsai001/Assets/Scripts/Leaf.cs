@@ -30,6 +30,12 @@ public class Leaf : MonoBehaviour
     // therefore batching — is untouched. Composes with every seasonal colour state.
     [HideInInspector] public Color tint = Color.white;
 
+    // Peak autumn colour (set from species.leafAutumnColor by LeafManager). The fall
+    // sequence runs springColor → THIS → dried-dark. Replaces the old hardcoded
+    // green→brown gradient that turned dawn-redwood tufts near-black instead of copper
+    // and gave every species the same autumn (2026-07-03 species pass).
+    [HideInInspector] public Color autumnColor = new Color(0.85f, 0.55f, 0.12f);
+
     // ── Fall colour (set by LeafManager when autumn begins) ───────────────────
 
     // How fast this leaf runs through the colour gradient relative to the base rate.
@@ -47,16 +53,6 @@ public class Leaf : MonoBehaviour
 
     float fallColorProgress = 0f;
     bool  isInFallSeason    = false;
-
-    // Gradient: green → yellow → orange → red → brown
-    static readonly Color[] FallGradient =
-    {
-        new Color(0.15f, 0.55f, 0.10f),  // green
-        new Color(0.85f, 0.82f, 0.08f),  // yellow
-        new Color(0.92f, 0.38f, 0.04f),  // orange
-        new Color(0.72f, 0.08f, 0.04f),  // red
-        new Color(0.32f, 0.16f, 0.04f),  // brown
-    };
 
     // Number of in-game days for a speed-1 leaf to go fully green→brown.
     const float FALL_COLOR_DAYS = 25f;
@@ -196,9 +192,13 @@ public class Leaf : MonoBehaviour
         Color color;
         if (isInFallSeason)
         {
-            float t = fallColorProgress * (FallGradient.Length - 1);
-            int   i = Mathf.Clamp((int)t, 0, FallGradient.Length - 2);
-            color = Color.Lerp(FallGradient[i], FallGradient[i + 1], t - i);
+            // Two stages: turn to the species' autumn colour over the first 60% of the
+            // fall, then dry/darken toward drop. Per-species — maples go crimson, birch
+            // gold, dawn redwood copper — instead of one shared green→brown ramp.
+            float t = fallColorProgress;
+            color = t < 0.6f
+                ? Color.Lerp(springColor, autumnColor, t / 0.6f)
+                : Color.Lerp(autumnColor, autumnColor * 0.45f, (t - 0.6f) / 0.4f);
         }
         else
         {

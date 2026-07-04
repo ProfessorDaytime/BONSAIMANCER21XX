@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a36a4a7057e5f454ab0bf032da757a3b, type: 3}
   m_Name: CRTRendererFeature
   m_EditorClassIdentifier: Assembly-CSharp::CRTRendererFeature
-  m_Active: 1
+  m_Active: 0
   settings:
     shader: {fileID: 4800000, guid: 0ec63a6913db68a42a7f78650b0df4fe, type: 3}
     scanlineStrength: 0.203

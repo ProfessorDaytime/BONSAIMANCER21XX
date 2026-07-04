@@ -44,6 +44,8 @@
      <Compile Include="Assets\Scripts\FullscreenPrompt.cs" />
      <Compile Include="Assets\Scripts\Progression\BackgroundManager.cs" />
      <Compile Include="Assets\Scripts\Tree\NeedleMesh.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Biology.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Growth.cs" />
      <Compile Include="Assets\Scripts\Tree\DrainageHole.cs" />
      <Compile Include="Assets\Scripts\ChangeColor.cs" />
      <Compile Include="Assets\Scripts\Tree\NodeHealth.cs" />
@@ -60,6 +62,7 @@
      <Compile Include="Assets\Scripts\Progression\MusicManager.cs" />
      <Compile Include="Assets\Scripts\scr_Cyl_001.cs" />
      <Compile Include="Assets\Scripts\Tree\PotSoil.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Init.cs" />
      <Compile Include="Assets\Scripts\PlayMenuSounds.cs" />
      <Compile Include="Assets\Scripts\Items\ItemCatalog.cs" />
      <Compile Include="Assets\Scripts\SaveManager.cs" />
@@ -72,6 +75,7 @@
      <Compile Include="Assets\Scripts\Progression\UiThemePainter.cs" />
      <Compile Include="Assets\Scripts\Tools\ToolManager.cs" />
      <Compile Include="Assets\Scripts\BezierSpline.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Care.cs" />
      <Compile Include="Assets\Scripts\RockPlacer.cs" />
      <Compile Include="Assets\Scripts\WindManager.cs" />
      <Compile Include="Assets\Scripts\Tree\LeafManager.cs" />
@@ -79,11 +83,13 @@
      <Compile Include="Assets\Scripts\Progression\ProgressionProfile.cs" />
      <Compile Include="Assets\Scripts\AutoRunManager.cs" />
      <Compile Include="Assets\Scripts\CubeMeshData.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Advisor.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeSkeleton.cs" />
      <Compile Include="Assets\Scripts\ScaleDebugger.cs" />
      <Compile Include="Assets\Scripts\TreeGenPT002.cs" />
      <Compile Include="Assets\Scripts\Progression\JournalPanel.cs" />
      <Compile Include="Assets\Scripts\Tree\BudType.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Health.cs" />
      <Compile Include="Assets\Scripts\Tree\WeedManager.cs" />
      <Compile Include="Assets\Scripts\Items\ItemCatalogPanel.cs" />
      <Compile Include="Assets\Scripts\Tree\WeedPuller.cs" />
@@ -156,6 +162,9 @@
     <Reference Include="UnityEngine.AIModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.AIModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.AMDModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.AMDModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.ARModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.ARModule.dll</HintPath>
     </Reference>
@@ -213,6 +222,9 @@
     <Reference Include="UnityEngine.GridModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.GridModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.HierarchyModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.HierarchyModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.HierarchyCoreModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.HierarchyCoreModule.dll</HintPath>
     </Reference>
@@ -251,6 +263,9 @@
     </Reference>
     <Reference Include="UnityEngine.MultiplayerModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.MultiplayerModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.NVIDIAModule">
+        <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.NVIDIAModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
         <HintPath>C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Data\Managed\UnityEngine\UnityEngine.ParticleSystemModule.dll</HintPath>

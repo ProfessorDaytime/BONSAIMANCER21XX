@@ -19,12 +19,12 @@ MonoBehaviour:
   depthsPerYear: 5
   baseElongation: 0.07
   elongationDepthDecay: 0.73
-  branchSegmentLength: 1.10
+  branchSegmentLength: 1.6
   segmentLengthDecay: 0.83
   rootSegmentLength: 0.8
-  baseBranchChance: 0.78
+  baseBranchChance: 0.3
   branchChanceDepthDecay: 0.91
-  springLateralChance: 0.88
+  springLateralChance: 0.15
   oldWoodBudChance: 0.09
   backBudBaseChance: 0.20
   budType: 0
@@ -56,6 +56,7 @@ MonoBehaviour:
   matureBarkColor: {r: 0.40, g: 0.35, b: 0.28, a: 1}
   rootNewGrowthColor: {r: 0.75, g: 0.65, b: 0.50, a: 1}
   leafSpringColor: {r: 0.22, g: 0.60, b: 0.14, a: 1}
+  leafAutumnColor: {r: 0.82, g: 0.75, b: 0.28, a: 1}
   leafGrowDays: 14
   leafBudBreakColor: {r: 0.72, g: 0.86, b: 0.4, a: 1}
   bloomType: 2

@@ -243,6 +243,11 @@ public class TreeSpecies : ScriptableObject
              "yellow-green of fresh growth that darkens as the leaf matures.")]
     public Color leafBudBreakColor = new Color(0.72f, 0.88f, 0.38f);
 
+    [Tooltip("Peak autumn colour for this species (deciduous only — evergreens never turn).\n" +
+             "Maple: crimson.  Birch/willow: gold.  Dawn redwood/swamp cypress: copper-rust.\n" +
+             "Leaves run spring-colour → THIS → dried (darkened) before falling.")]
+    public Color leafAutumnColor = new Color(0.85f, 0.55f, 0.12f);
+
     // ── Foliage Type (broadleaf vs needle) ──────────────────────────────────────
     [Header("Foliage Type")]
     [Tooltip("BroadLeaf uses the leaf prefab clusters. The needle types build a procedural " +

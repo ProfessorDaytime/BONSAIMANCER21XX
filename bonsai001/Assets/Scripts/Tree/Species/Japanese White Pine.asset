@@ -18,17 +18,17 @@ MonoBehaviour:
   evergreen: 1
   needlesPerTuft: 16
   needleLength: 0.42
-  baseGrowSpeed: 0.12
+  baseGrowSpeed: 0.15
   depthSpeedDecay: 0.85
   depthsPerYear: 2
   baseElongation: 0.04
   elongationDepthDecay: 0.65
-  branchSegmentLength: 0.90
+  branchSegmentLength: 1.3
   segmentLengthDecay: 0.75
   rootSegmentLength: 0.6
-  baseBranchChance: 0.50
+  baseBranchChance: 0.26
   branchChanceDepthDecay: 0.88
-  springLateralChance: 0.55
+  springLateralChance: 0.1
   oldWoodBudChance: 0.004
   backBudBaseChance: 0.08
   budType: 0

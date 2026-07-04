@@ -18,17 +18,17 @@ MonoBehaviour:
   evergreen: 1
   needlesPerTuft: 18
   needleLength: 0.26
-  baseGrowSpeed: 0.14
+  baseGrowSpeed: 0.18
   depthSpeedDecay: 0.85
   depthsPerYear: 2
   baseElongation: 0.05
   elongationDepthDecay: 0.7
-  branchSegmentLength: 1.00
+  branchSegmentLength: 1.3
   segmentLengthDecay: 0.8
   rootSegmentLength: 0.70
-  baseBranchChance: 0.6
+  baseBranchChance: 0.28
   branchChanceDepthDecay: 0.9
-  springLateralChance: 0.65
+  springLateralChance: 0.12
   oldWoodBudChance: 0.02
   backBudBaseChance: 0.15
   budType: 0
@@ -56,7 +56,7 @@ MonoBehaviour:
   growthStopDay: 166
   repotTolerance: 0.75
   barkType: 12
-  youngBarkColor: {r: 0.42, g: 0.48, b: 0.28, a: 1}
+  youngBarkColor: {r: 0.52, g: 0.42, b: 0.28, a: 1}
   matureBarkColor: {r: 0.45, g: 0.38, b: 0.28, a: 1}
   rootNewGrowthColor: {r: 0.72, g: 0.65, b: 0.50, a: 1}
   leafSpringColor: {r: 0.30, g: 0.52, b: 0.18, a: 1}

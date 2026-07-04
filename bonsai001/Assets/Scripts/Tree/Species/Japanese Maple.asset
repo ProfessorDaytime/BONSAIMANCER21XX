@@ -16,15 +16,15 @@ MonoBehaviour:
   scientificName: Acer palmatum
   baseGrowSpeed: 0.26
   depthSpeedDecay: 0.85
-  depthsPerYear: 4
+  depthsPerYear: 3
   baseElongation: 0.05
   elongationDepthDecay: 0.7
-  branchSegmentLength: 1.00
+  branchSegmentLength: 1.6
   segmentLengthDecay: 0.8
   rootSegmentLength: 0.70
-  baseBranchChance: 0.8
+  baseBranchChance: 0.3
   branchChanceDepthDecay: 0.9
-  springLateralChance: 0.9
+  springLateralChance: 0.12
   oldWoodBudChance: 0.08
   backBudBaseChance: 0.15
   budType: 1
@@ -56,6 +56,7 @@ MonoBehaviour:
   matureBarkColor: {r: 0.40, g: 0.35, b: 0.28, a: 1}
   rootNewGrowthColor: {r: 0.78, g: 0.70, b: 0.55, a: 1}
   leafSpringColor: {r: 0.18, g: 0.62, b: 0.12, a: 1}
+  leafAutumnColor: {r: 0.80, g: 0.12, b: 0.08, a: 1}
   leafGrowDays: 14
   leafBudBreakColor: {r: 0.82, g: 0.55, b: 0.4, a: 1}
   bloomType: 3

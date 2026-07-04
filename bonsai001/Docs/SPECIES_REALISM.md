@@ -38,3 +38,42 @@ Reference for the 17 `TreeSpecies` `.asset` files (`Assets/Scripts/Tree/Species/
 - **Wound response**: thin-barked bleeders (maple, birch, cherry, willow) drain health faster after cuts; pines/junipers shrug cuts off.
 - **Water**: willow ≫ birch/maple ≫ cherry/elm/ficus ≫ cedar/spruce/pine/juniper. Drought threshold inverts (junipers stay healthy down to 0.18 moisture; willow stresses below 0.55).
 - **Leaf flush speed**: fast for thin deciduous leaves (11–15 d), slow for conifer candles/needles (28–40 d).
+
+---
+
+## 2026-07-03 — Engine-Aware Retune (post Fable-5 engine pass)
+
+The 2026-07-02/03 engine work (branch cap enforced on ALL spawn paths, leader exemption,
+forced back-buds, fixed-timestep sim) changed what species parameters actually DO. This
+pass re-tunes data against the new engine + adds `leafAutumnColor` (new field: fall now
+runs spring→species-autumn→dried instead of one hardcoded green→brown ramp).
+
+**Principles applied:**
+- `springLateralChance > 0.8` never expressed "vigorous ramifier" — it just exhausted the
+  2000-node budget in a few years and floored vigor for everything (flat Elm pancakes,
+  8.6k-node Dawn Redwood before the cap fix). All heavy ramifiers pulled into **0.50–0.65**;
+  species character now comes from depths/segment lengths/colours.
+- `baseGrowSpeed < 0.14` = trunks that never complete segments in playable time (Juniper
+  froze at 0.5 height for 20 years). Floor raised to **0.14–0.18** for slow conifers —
+  still the slowest class, but alive.
+- `branchChanceDepthDecay ≈ 0.9` lets depth-10+ twigs keep dividing → the leafless
+  "winter broccoli" crown (Dawn Redwood report). Heavy species dropped to **0.82–0.85**.
+- Juniper `youngBarkColor` warmed olive→reddish-tan (real juniper young bark), so fresh
+  leader growth doesn't read as a green blob while it matures.
+
+**Autumn colours set:** maple crimson, birch gold, elm/willow/wisteria yellow-golds,
+cherry orange-red, dawn redwood/swamp cypress copper-rust, ficus stays green-yellow
+(barely turns). Evergreens ignore the field.
+
+**Changed:** Alberta Spruce, Atlas Cedar, Cherry, Dawn Redwood, Elm, Ezo Spruce, Ficus,
+J. Cedar, J. Maple, J. White Pine, Juniper, Silver Birch, Swamp Cypress, Weeping Willow,
+Wisteria. Unchanged: J. Black Pine, Scots Pine (already coherent).
+
+### 2026-07-03 (later) — Ficus-envelope convergence
+After seven engine-side anti-broccoli fixes, remaining density was traced to the data:
+Ficus (branchSegmentLength 2.0, baseBranchChance 0.25, springLateralChance 0.08) has
+produced beautiful trees in this engine from day one; every broccoli species branched
+2–6× more often along runs half as long. ALL species are now calibrated into that
+proven envelope (seg 1.3–1.8, branch 0.26–0.32, spring 0.10–0.18). Species character
+is carried by colours, foliage type, bloom/fruit, bark, autumn colour, and growth
+pace — NOT by branch frequency.

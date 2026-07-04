@@ -69,8 +69,12 @@ public class AutoStyler : MonoBehaviour
     [Header("Extended Care")]
     [Tooltip("Seal every auto-trim wound with cut paste immediately (same effect as the player's paste tool).")]
     public bool autoPaste = true;
-    [Tooltip("Full defoliation in late June when the canopy has at least this many leafy tips. 0 = never defoliate.")]
-    public int defoliateThreshold = 80;
+    [Tooltip("Full defoliation in late June when the canopy has at least this many leafy tips. 0 = never defoliate.\n" +
+             "DEFAULT 0 (off) since 2026-07-03: defoliation deliberately stimulates back-buds on every\n" +
+             "defoliated tip's ancestry — biennial auto-defoliation of 900+ tips was a mass ramification\n" +
+             "storm that rebuilt the terminal twig fists no matter how the growth engine was tamed.\n" +
+             "It's a leaf-refinement technique for the PLAYER's judgement, not routine auto-care.")]
+    public int defoliateThreshold = 0;
     [Tooltip("Minimum years between auto-defoliations. Real practice: full defoliation every year " +
              "exhausts a tree — healthy trees are done every other year at most.")]
     public int defoliateMinIntervalYears = 2;
@@ -135,6 +139,20 @@ public class AutoStyler : MonoBehaviour
     [Tooltip("In-game days after a wire turns gold before AutoStyler removes it.")]
     public float unwireDelayDays = 20f;
 
+    [Tooltip("Fraction of qualifying tips the June ramification pass pinches each season.\n" +
+             "Pinching everything every year manufactures a solid twig broccoli; real\n" +
+             "artists rotate around the canopy. Silhouette-containment pinches ignore this.")]
+    [Range(0.1f, 1f)] public float ramificationFraction = 0.35f;
+
+    [Tooltip("Interior twigs (downward- or inward-growing, depth ≥ 3) removed per spring —\n" +
+             "the thinning that creates negative space in the pads. 0 disables.")]
+    [Range(0, 100)] public int thinTwigsPerYear = 25;
+
+    [Tooltip("No pinching (silhouette OR ramification) until the tree is at least this tall —\n" +
+             "grow the trunk line first, style the canopy later. Pinching a short young tree\n" +
+             "traps it at umbrella height (silhouette radius scales with height).")]
+    public float minPinchHeight = 1.2f;
+
     // fastConverge overrides for testers — see PLAN.md "AutoStyler Pacing & Convergence"
     float EffectivePreviewDays   => fastConverge ? 3f : actionPreviewDays;
     float EffectiveWireSpeedMult => fastConverge ? 4f : autoStyleWireSpeedMult;
@@ -166,7 +184,32 @@ public class AutoStyler : MonoBehaviour
                     case SlotState.Maintaining: score += 1f;    break;
                 }
             }
-            return Mathf.RoundToInt(score * 100f / slots.Count);
+            float match = score / slots.Count;
+
+            // Honesty penalty: slot fill alone happily reported 100% on a tree the
+            // player called "ugly af" (2026-07-03) — 14 slots had SOME branch at the
+            // right height/bearing while junk scaffolds sprawled everywhere. Every
+            // scaffold beyond the style's slot count costs 4% (up to -40%): a clean
+            // tree keeps its score; a thicket cannot claim perfection.
+            int scaffolds = 0, branchNodes = 0;
+            if (skeleton != null && skeleton.allNodes != null)
+                foreach (var n in skeleton.allNodes)
+                {
+                    if (!n.isRoot && !n.isTrimmed) branchNodes++;
+                    if (IsScaffoldBase(n)) scaffolds++;
+                }
+            int excess = Mathf.Max(0, scaffolds - slots.Count);
+            match *= 1f - Mathf.Min(0.4f, excess * 0.04f);
+
+            // Crowding: the maple scored 100% with 14 clean slots wrapped in solid
+            // broccoli (2026-07-03) — the excess-scaffold term can't see INTERIOR twig
+            // density. A refined bonsai should not sit at the node cap; above 60% of
+            // maxBranchNodes the score bleeds up to -25%. The thinning pass lowers node
+            // count each year, so this recovers as the pads actually open.
+            float crowding = Mathf.Clamp01((branchNodes / (float)Mathf.Max(1, skeleton.MaxBranchNodesPublic) - 0.6f) / 0.4f);
+            match *= 1f - crowding * 0.25f;
+
+            return Mathf.RoundToInt(match * 100f);
         }
     }
 
@@ -389,7 +432,9 @@ public class AutoStyler : MonoBehaviour
                     float trimAz = GetBranchAzimuth(n);
                     var cutSite = n.parent;   // TrimNode wounds the parent — capture before the cut
                     ProgressionManager.AutomationActive = true;   // auto-styler cuts don't earn the player's badge
-                    try { skeleton.TrimNode(n); }
+                    // Reduction cut: no epicormic regrowth, no back-bud stimulation —
+                    // otherwise every styling cut grows back a bigger knot than it removed.
+                    try { skeleton.TrimNode(n, stimulateRegrowth: false); }
                     finally { ProgressionManager.AutomationActive = false; }
                     CareLog.Add("Trim", $"Removed branch at {trimAz:F0}° — no open slot in its height band", id);
                     if (autoPaste && cutSite != null && cutSite.hasWound && !cutSite.pasteApplied)
@@ -454,7 +499,48 @@ public class AutoStyler : MonoBehaviour
         Log($"[AutoStyle] Spring — RefreshSlots + ShapeTrunk | year={GameManager.year}");
         RefreshSlots();
         ShapeTrunk();
+        ThinInteriorTwigs();
         AdvancePotPhase();
+    }
+
+    // ── Interior Thinning ─────────────────────────────────────────────────────
+
+    /// <summary>The anti-broccoli pass (2026-07-03): pads read as solid blobs because
+    /// every interior twig persists forever — slot fill and ramification create wood,
+    /// but nothing ever created NEGATIVE SPACE. Real styling prunes twigs that grow
+    /// downward or back in toward the trunk every year. Capped per spring so pads open
+    /// up over seasons rather than being blitzed bare; also releases node budget, so
+    /// vigor (and leaf size) recovers on mature trees.</summary>
+    void ThinInteriorTwigs()
+    {
+        if (thinTwigsPerYear <= 0) return;
+        Vector3 trunkXZ = new Vector3(skeleton.transform.position.x, 0f, skeleton.transform.position.z);
+        int queued = 0;
+        foreach (var n in skeleton.allNodes)
+        {
+            if (queued >= thinTwigsPerYear) break;
+            if (n.isRoot || n.isDead || n.isTrimmed || n.isJin || n.depth < 3) continue;
+            if (IsScaffoldBase(n) || n.hasWire) continue;
+            if (pendingTrims.ContainsKey(n.id) || pendingPinches.ContainsKey(n.id)) continue;
+
+            Vector3 dir = skeleton.transform.TransformDirection(n.growDirection);
+            bool downward = dir.y < -0.35f;
+
+            Vector3 pos     = skeleton.transform.TransformPoint(n.worldPosition);
+            Vector3 outXZ   = new Vector3(pos.x, 0f, pos.z) - trunkXZ;
+            Vector3 dirXZ   = new Vector3(dir.x, 0f, dir.z);
+            bool inward     = outXZ.sqrMagnitude > 0.01f && dirXZ.sqrMagnitude > 0.01f
+                              && Vector3.Dot(dirXZ.normalized, outXZ.normalized) < -0.3f;
+
+            if (!downward && !inward) continue;
+            pendingTrims[n.id] = InGameDay() + EffectivePreviewDays;
+            queued++;
+        }
+        if (queued > 0)
+        {
+            CareLog.Add("Thin", $"Thinned {queued} interior twig{(queued == 1 ? "" : "s")} — opening the pads to light and air");
+            Log($"[AutoStyle] Thinning — {queued} downward/inward twigs | year={GameManager.year}");
+        }
     }
 
     void HandleMonthChanged(int month)
@@ -799,6 +885,13 @@ public class AutoStyler : MonoBehaviour
 
     void PlanPinches(bool overextendedOnly)
     {
+        // Grow the trunk line FIRST, style the canopy later. The silhouette radius
+        // scales with tree height, so pinching a young short tree traps it: tiny
+        // height → tiny allowed canopy → apex pinched as "overextended" → no height
+        // gained → still tiny. The result was umbrella trees fanning off a stub
+        // trunk (2026-07-03). No pinching of any kind until the tree has a trunk.
+        if (skeleton.CachedTreeHeight < minPinchHeight) return;
+
         float soilY = SoilWorldY(); float treeH = Mathf.Max(0.01f, skeleton.CachedTreeHeight); int queued = 0;
         Vector3 trunkXZ = new Vector3(skeleton.transform.position.x, 0f, skeleton.transform.position.z);
         foreach (var n in skeleton.allNodes)
@@ -826,6 +919,12 @@ public class AutoStyler : MonoBehaviour
                 float targetRef = style.ramificationTargetLevel * (1f - h * 0.4f);
                 if (n.refinementLevel >= targetRef) continue;
                 if (n.targetLength > 0f && n.length < n.targetLength * 0.85f) continue;
+                // Rotate, don't blitz: pinching EVERY qualifying tip EVERY June (3,056
+                // pinches in one 20-yr run, each also stimulating 2 ancestors) is what
+                // manufactured the solid twig-broccoli crowns regardless of species
+                // branching data (2026-07-03 maple/redwood reports). Real artists work
+                // a fraction of the canopy each season.
+                if (Random.value > ramificationFraction) continue;
             }
             pendingPinches[n.id] = InGameDay() + EffectivePreviewDays * 0.5f;
             pendingPinchSilhouette[n.id] = overextendedOnly;

@@ -97,6 +97,34 @@ public class LeafManager : MonoBehaviour
     float shedAccumulator;
     readonly List<GameObject> airborneShedNeedles = new List<GameObject>();
 
+    // ── Needle LOD ────────────────────────────────────────────────────────────
+    // The geometric endgame for foliage shimmer: past the LOD distance a tuft swaps
+    // to a far-pool mesh with ~40% of the needles at 2.4× width — same visual mass,
+    // a fraction of the sub-pixel edges. Meshes still come from small shared pools,
+    // so batching is untouched; a swap is just a sharedMesh reference change.
+    [Header("Needle LOD")]
+    [Tooltip("Camera distance (world units) beyond which tufts use the far pool. 0 disables.")]
+    [SerializeField] float needleLodDistance = 9f;
+    [Tooltip("Hysteresis around the LOD distance so tufts don't ping-pong at the boundary.")]
+    [SerializeField] float needleLodHysteresis = 1.0f;
+
+    Mesh[] needleTuftVariantsFar;
+    float  nextLodCheckTime;
+    Camera lodCam;
+
+    // ── Pine candles ──────────────────────────────────────────────────────────
+    // Spring beat for PineFascicle species: tips first push a pale upright "candle"
+    // that elongates for candleDays, then pops into the needle tuft.
+    [Header("Pine Candles")]
+    [Tooltip("In-game days the spring candle elongates before its needles pop (PineFascicle species only). 0 disables.")]
+    [SerializeField] float candleDays = 16f;
+    [Tooltip("Colour of the young candle shoot.")]
+    [SerializeField] Color candleColor = new Color(0.82f, 0.84f, 0.55f);
+
+    Mesh candleMesh;
+    class PendingCandle { public TreeNode node; public GameObject go; public float bornDay; }
+    readonly List<PendingCandle> pendingCandles = new List<PendingCandle>();
+
     bool IsNeedleSpecies => skeleton != null && skeleton.species != null
                             && skeleton.species.foliageType != FoliageType.BroadLeaf;
 
@@ -113,6 +141,18 @@ public class LeafManager : MonoBehaviour
                 needleTuftVariants[i] = NeedleMesh.Build(skeleton.species.foliageType,
                                                          Mathf.Clamp(skeleton.species.needlesPerTuft, 4, 40), i);
         }
+
+        if (needleTuftVariantsFar == null)
+        {
+            // Far pool: fewer, much wider needles — same silhouette mass at distance,
+            // a fraction of the shimmering sub-pixel edges.
+            int farCount = Mathf.Max(4, Mathf.RoundToInt(Mathf.Clamp(skeleton.species.needlesPerTuft, 4, 40) * 0.4f));
+            needleTuftVariantsFar = new Mesh[NeedleVariantCount];
+            for (int i = 0; i < NeedleVariantCount; i++)
+                needleTuftVariantsFar[i] = NeedleMesh.Build(skeleton.species.foliageType, farCount, i, 2.4f);
+        }
+
+        if (candleMesh == null) candleMesh = NeedleMesh.BuildCandle();
 
         if (needleMat == null)
         {
@@ -247,6 +287,17 @@ public class LeafManager : MonoBehaviour
         if (IsNeedleSpecies && IsEvergreen)
             UpdateNeedleShed();
 
+        // Pine candles pop into needles when done elongating.
+        if (pendingCandles.Count > 0)
+            ProcessCandles();
+
+        // Needle LOD: a few checks per second, not per frame.
+        if (IsNeedleSpecies && needleLodDistance > 0f && Time.unscaledTime >= nextLodCheckTime)
+        {
+            nextLodCheckTime = Time.unscaledTime + 0.25f;
+            UpdateNeedleLod();
+        }
+
         if (isLeafFall && !IsEvergreen)
         {
             fallDebugTimer += Time.deltaTime;
@@ -291,6 +342,12 @@ public class LeafManager : MonoBehaviour
             * Mathf.Lerp(1f, 0.40f, rootPressure   * rootPressureLeafShrink)
             * Mathf.Lerp(1f, 0.55f, refinement      * refinementLeafShrink)
             * Mathf.Lerp(1f, 0.60f, defoliationFactor);
+
+        // Floor: the three shrinks MULTIPLY, and a mature auto-styled tree maxes all of
+        // them (pot-bound + every pinch raises refinement + biennial defoliation) —
+        // leaves collapsed to ~13-22% of base and read as "leaves stopped growing"
+        // (2026-07-03 redwood report). Miniaturization is the goal, near-invisibility isn't.
+        scale = Mathf.Max(scale, foliageBase * 0.38f);
 
         seasonLeafScale = scale;
         Debug.Log($"[Leaves] seasonLeafScale={scale:F3} (base={foliageBase:F3} rootP={rootPressure:F2} refine={refinement:F2} defo={defoliationFactor:F2})");
@@ -445,9 +502,27 @@ public class LeafManager : MonoBehaviour
         // Needle species: one shared-mesh tuft per tip (no scatter, no staged unfurl).
         if (IsNeedleSpecies)
         {
-            nodeLeaves[node.id] = new List<GameObject>(1) { SpawnNeedleTuft(node) };
+            // Pines push a pale upright CANDLE first; the tuft pops when it finishes
+            // elongating (ProcessCandles). Other conifer types go straight to needles.
+            bool wantCandle = candleDays > 0f && skeleton.species != null
+                              && skeleton.species.foliageType == FoliageType.PineFascicle;
+            if (wantCandle)
+            {
+                var candle = SpawnCandle(node);
+                nodeLeaves[node.id] = new List<GameObject>(1) { candle };
+                pendingCandles.Add(new PendingCandle { node = node, go = candle, bornDay = DayNow() });
+                // Bud stays and swells at the candle base; FinishBudOpen fires when
+                // the candle pops into needles (ProcessCandles).
+            }
+            else
+            {
+                nodeLeaves[node.id] = new List<GameObject>(1) { SpawnNeedleTuft(node) };
+                // Don't destroy the bud instantly — let it swell beside the emerging
+                // tuft and retire via the linger timer, so conifers get a visible
+                // spring bud-break beat like broadleaves ("visualize buds in spring",
+                // 2026-07-03). budLingerMaxDays cleans it up.
+            }
             listDirty = true;
-            FinishBudOpen(node.id);
             return;
         }
 
@@ -502,7 +577,14 @@ public class LeafManager : MonoBehaviour
         float   elevation = Random.Range(55f, 88f);
         Vector3 outPerp   = Quaternion.AngleAxis(azimuth, branchWorldDir) * perp;
         Vector3 outDir    = Quaternion.AngleAxis(-elevation, Vector3.Cross(branchWorldDir, outPerp).normalized) * branchWorldDir;
-        float   droop     = Random.Range(0.15f, 0.55f);
+        // Pads are planar: leaves fan sideways with blades to the sun — the old full-
+        // sphere spread made every tip a spiky bottle-brush ball, and packed tips merged
+        // into the "broccoli floret" look from year 2 (2026-07-03). Flatten the fan
+        // toward horizontal-plus-a-little-rise, and droop far less.
+        outDir = Vector3.Slerp(outDir,
+            (Vector3.ProjectOnPlane(outDir, Vector3.up).normalized + Vector3.up * 0.18f).normalized,
+            0.65f).normalized;
+        float   droop     = Random.Range(0.05f, 0.25f);
         outDir            = Vector3.Lerp(outDir, Vector3.down, droop).normalized;
         Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up)
                             * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
@@ -527,6 +609,7 @@ public class LeafManager : MonoBehaviour
             leaf.springColor = skeleton.species.leafSpringColor;
             leaf.growDays    = skeleton.species.leafGrowDays;
             leaf.youngTint   = skeleton.species.leafBudBreakColor;
+            leaf.autumnColor = skeleton.species.leafAutumnColor;
         }
 
         // Per-leaf colour variety (milder than needle tufts) — property block only,
@@ -580,6 +663,7 @@ public class LeafManager : MonoBehaviour
             leaf.springColor = skeleton.species.leafSpringColor;
             leaf.growDays    = skeleton.species.leafGrowDays;
             leaf.youngTint   = skeleton.species.leafBudBreakColor;
+            leaf.autumnColor = skeleton.species.leafAutumnColor;
         }
         // Per-tuft colour variety via the Leaf's MaterialPropertyBlock (per-renderer, so
         // the one shared material — and batching — is untouched): subtle value jitter with
@@ -588,6 +672,97 @@ public class LeafManager : MonoBehaviour
         leaf.tint = new Color(v * Random.Range(0.94f, 1.05f), v, v * Random.Range(0.92f, 1.06f));
         // No ApplyDeformation — that twist/curl is for flat leaf blades, not needle tufts.
         return go;
+    }
+
+    // ── Pine candles ──────────────────────────────────────────────────────────
+
+    /// <summary>The pale upright spring shoot on a pine tip. Reuses the Leaf component:
+    /// its grow-in supplies the elongation, its colour path the pale→green shift, and
+    /// its node tracking / trim handling come free.</summary>
+    GameObject SpawnCandle(TreeNode node)
+    {
+        EnsureNeedleAssets();
+
+        Vector3 branchWorldDir = skeleton.transform.TransformDirection(node.growDirection).normalized;
+        if (branchWorldDir.sqrMagnitude < 0.001f) branchWorldDir = Vector3.up;
+
+        var go = new GameObject("PineCandle");
+        go.transform.SetParent(skeleton.transform, worldPositionStays: false);
+        go.transform.localPosition = node.tipPosition;
+        // Candles stand more upright than their branch — that's their signature look.
+        Vector3 candleDir = Vector3.Slerp(branchWorldDir, Vector3.up, 0.5f).normalized;
+        go.transform.rotation   = Quaternion.LookRotation(candleDir, Vector3.up);
+        go.transform.localScale = Vector3.zero;
+
+        go.AddComponent<MeshFilter>().sharedMesh = candleMesh;
+        var mr = go.AddComponent<MeshRenderer>();
+        mr.sharedMaterial    = needleMat;
+        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        var leaf = go.AddComponent<Leaf>();
+        leaf.ownerNode   = node;
+        leaf.tipOffset   = Vector3.zero;
+        leaf.targetScale = Vector3.one * (seasonLeafScale * 1.35f);
+        leaf.springColor = candleColor;
+        leaf.youngTint   = candleColor;
+        leaf.growDays    = Mathf.Max(1f, candleDays * 0.85f);  // finish elongating just before the pop
+        return go;
+    }
+
+    /// <summary>Pops finished candles into needle tufts. Trimmed/dead nodes just drop
+    /// their entry — OnSubtreeTrimmed already sent the candle falling.</summary>
+    void ProcessCandles()
+    {
+        float now = DayNow();
+        for (int i = pendingCandles.Count - 1; i >= 0; i--)
+        {
+            var pc = pendingCandles[i];
+            if (pc.go == null || pc.node.isTrimmed || pc.node.isDead)
+            { pendingCandles.RemoveAt(i); continue; }
+            if (now - pc.bornDay < candleDays) continue;
+
+            nodeLeaves.Remove(pc.node.id);
+            Destroy(pc.go);
+            nodeLeaves[pc.node.id] = new List<GameObject>(1) { SpawnNeedleTuft(pc.node) };
+            listDirty = true;
+            FinishBudOpen(pc.node.id);   // needles emerged — the bud's work is done
+            pendingCandles.RemoveAt(i);
+        }
+    }
+
+    // ── Needle LOD ────────────────────────────────────────────────────────────
+
+    /// <summary>Swaps tufts between the near and far mesh pools by camera distance
+    /// (with hysteresis). Runs a few times a second, not per frame; a swap is only a
+    /// sharedMesh reference change, so batching and materials are untouched. Candles
+    /// and shed needles use other meshes and are skipped by the identity check.</summary>
+    void UpdateNeedleLod()
+    {
+        if (needleTuftVariants == null || needleTuftVariantsFar == null) return;
+        if (lodCam == null) { lodCam = Camera.main; if (lodCam == null) return; }
+
+        Vector3 camPos = lodCam.transform.position;
+        float hi = needleLodDistance + needleLodHysteresis;
+        float lo = Mathf.Max(0.5f, needleLodDistance - needleLodHysteresis);
+        float hiSq = hi * hi, loSq = lo * lo;
+
+        if (listDirty) RebuildFlatList();
+        foreach (var (nodeId, go) in allLeaves)
+        {
+            if (go == null) continue;
+            var mf = go.GetComponent<MeshFilter>();
+            if (mf == null) continue;
+
+            int  idx    = Mathf.Abs(nodeId) % needleTuftVariants.Length;
+            var  cur    = mf.sharedMesh;
+            bool isNear = cur == needleTuftVariants[idx];
+            bool isFar  = cur == needleTuftVariantsFar[idx];
+            if (!isNear && !isFar) continue;   // candle / shed needle / broadleaf
+
+            float dSq = (go.transform.position - camPos).sqrMagnitude;
+            if      (isNear && dSq > hiSq) mf.sharedMesh = needleTuftVariantsFar[idx];
+            else if (isFar  && dSq < loSq) mf.sharedMesh = needleTuftVariants[idx];
+        }
     }
 
     // ── Year-round evergreen needle shed ──────────────────────────────────────
@@ -840,12 +1015,19 @@ public class LeafManager : MonoBehaviour
         shedAccumulator   = 0f;
         defoliationFactor = 0f;
 
+        pendingCandles.Clear();   // candle GameObjects were destroyed via nodeLeaves above
+
         if (needleTuftVariants != null)
             foreach (var m in needleTuftVariants)
                 if (m != null) Destroy(m);
         needleTuftVariants = null;
+        if (needleTuftVariantsFar != null)
+            foreach (var m in needleTuftVariantsFar)
+                if (m != null) Destroy(m);
+        needleTuftVariantsFar = null;
         if (needleMat      != null) { Destroy(needleMat);      needleMat      = null; }
         if (shedNeedleMesh != null) { Destroy(shedNeedleMesh); shedNeedleMesh = null; }
+        if (candleMesh     != null) { Destroy(candleMesh);     candleMesh     = null; }
     }
 
     void CleanupOrphanedLeaves()

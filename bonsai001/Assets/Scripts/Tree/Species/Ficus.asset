@@ -56,6 +56,7 @@ MonoBehaviour:
   matureBarkColor: {r: 0.48, g: 0.45, b: 0.38, a: 1}
   rootNewGrowthColor: {r: 0.82, g: 0.75, b: 0.60, a: 1}
   leafSpringColor: {r: 0.12, g: 0.52, b: 0.08, a: 1}
+  leafAutumnColor: {r: 0.60, g: 0.62, b: 0.25, a: 1}
   leafGrowDays: 18
   leafBudBreakColor: {r: 0.65, g: 0.82, b: 0.45, a: 1}
   fruitType: 2

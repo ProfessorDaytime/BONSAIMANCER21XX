@@ -989,6 +989,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 8681584e0947cd04b8f769610d55d063, type: 2}
   - {fileID: 11400000, guid: 4ce3cd75e9336d64993714afc3025b7d, type: 2}
   - {fileID: 11400000, guid: b7bcf17ebbff5fa4998ee69a28642756, type: 2}
+  - {fileID: 11400000, guid: 383f9035fc148f348bed20e2893a85c0, type: 2}
   itemCatalog: {fileID: 11400000, guid: 61618cd347e581b41aa81adb600b860d, type: 2}
   tablePlatform: {fileID: 0}
 --- !u!4 &293476775 stripped
@@ -3745,11 +3746,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 012ff573928697a488105404cbcc21a2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  musicSounds:
-  - name: SpringSong
-    clip: {fileID: 8300000, guid: 09fd3c7d22430c145b8adeef78d8765b, type: 3}
-  - name: WinterSong
-    clip: {fileID: 8300000, guid: 8be97c5274994ab4f80847b05ae28504, type: 3}
+  musicSounds: []
   sfxSounds:
   - name: Trim
     clip: {fileID: 8300000, guid: 272e1293ce9b57b4ba417ec1ac77ce4a, type: 3}
@@ -5704,7 +5701,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: bd9b649ad1c86294eb28e3e1246b9cd3, type: 3}
       propertyPath: m_TagString
@@ -6396,6 +6393,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be6fcd7f97665bb42a8361888ac4570a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  graftMaxDistance: 3
+  graftSeasonsToFuse: 2
+  fusionSeasonsToFuse: 4
+  fusionTipProximityMult: 2.5
   branchWeightEnabled: 1
   woodDensity: 12
   woodHardness: 1
@@ -6449,6 +6450,7 @@ MonoBehaviour:
   elongationDepthDecay: 0.7
   springLateralChance: 0.8
   maxBranchNodes: 2000
+  pipeModelExponent: 2.5
   inertiaWeight: 0.65
   phototropismWeight: 0.213
   randomWeight: 0.15
@@ -6487,6 +6489,8 @@ MonoBehaviour:
   droughtDaysAccumulated: 0
   autoWaterEnabled: 1
   autoWaterJustFired: 0
+  simStepDays: 0.25
+  maxSimStepsPerFrame: 48
   weedSpawnRadius: 0.8
   nutrientDrainPerSeason: 0.4
   fertilizeAmount: 0.5
@@ -6574,10 +6578,6 @@ MonoBehaviour:
   undoWindowSeconds: 5
   plantingNormal: {x: 0, y: 1, z: 0}
   plantingSurfacePoint: {x: 0, y: 0, z: 0}
-  graftMaxDistance: 3
-  graftSeasonsToFuse: 2
-  fusionSeasonsToFuse: 4
-  fusionTipProximityMult: 2.5
 --- !u!114 &1486295571
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6620,6 +6620,10 @@ MonoBehaviour:
   defoliationFactor: 0
   needleShedPer100TuftsPerDay: 1.5
   maxAirborneShedNeedles: 12
+  needleLodDistance: 9
+  needleLodHysteresis: 1
+  candleDays: 16
+  candleColor: {r: 0.82, g: 0.84, b: 0.55, a: 1}
   leafUnfurlIntervalDays: 1.5
   budLingerMaxDays: 8
 --- !u!114 &1486295573
@@ -6800,13 +6804,15 @@ MonoBehaviour:
   wireAnimRotateSecs: 2
   wireAnimSettleSecs: 0.5
   autoPaste: 1
-  defoliateThreshold: 80
+  defoliateThreshold: 0
   defoliateMinIntervalYears: 2
   autoRepot: 1
   autoSoilRefresh: 1
   repotIntervalYoungYears: 2
   repotIntervalMatureYears: 4
   unwireDelayDays: 20
+  ramificationFraction: 0.35
+  thinTwigsPerYear: 25
 --- !u!114 &1486295600
 MonoBehaviour:
   m_ObjectHideFlags: 0
