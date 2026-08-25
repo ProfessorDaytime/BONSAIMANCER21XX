@@ -423,7 +423,8 @@ public partial class TreeSkeleton : MonoBehaviour
         {
             int rootCount = 0;
             foreach (var n in allNodes) if (n.isRoot) rootCount++;
-            if (rootCount >= maxTotalRootNodes) return;
+            int rootBudget = EffectiveMaxRootNodes;   // scales with the pot's soil volume
+            if (rootCount >= rootBudget) return;
 
             float distRatio   = RootDistRatio(node);
             bool  isIshitsuki = isIshitsukiMode;
@@ -452,7 +453,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
             float lateralScale  = isIshitsuki ? 0f : Mathf.Clamp01(1f - distRatio);
             float lateralChance = rootLateralChance * Mathf.Pow(rootLateralDepthDecay, node.depth) * lateralScale;
-            if (rootCount < maxTotalRootNodes && Random.value < lateralChance)
+            if (rootCount < rootBudget && Random.value < lateralChance)
             {
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), nodeRadius, segLength * 0.85f, node);
                 lat.isRoot         = true;
@@ -472,7 +473,7 @@ public partial class TreeSkeleton : MonoBehaviour
         {
             int branchCount = 0;
             foreach (var n in allNodes) if (!n.isRoot) branchCount++;
-            if (branchCount >= maxBranchNodes) return;
+            if (branchCount >= EffectiveMaxBranchNodes) return;
         }
 
         // Cut-site regrowth: shoots emerge from the side of the wound, never straight

@@ -95,7 +95,16 @@ public class QuickStartPanel
         }
         else
         {
-            foreach (var s in styles) if (s != null) styleList.Add(MakeStyleCard(s));
+            foreach (var s in styles)
+            {
+                if (s == null) continue;
+                var card = MakeStyleCard(s);
+                styleList.Add(card);
+                // Pre-select the first style so the dialog opens ready to go: the age preset was
+                // already defaulted, so requiring a click on the only-or-first style was the one
+                // step between opening and "Grow it" (2026-08-24).
+                if (selectedStyle == null) SelectStyle(s, card);
+            }
         }
 
         panel.Add(SectionLabel("AGE"));

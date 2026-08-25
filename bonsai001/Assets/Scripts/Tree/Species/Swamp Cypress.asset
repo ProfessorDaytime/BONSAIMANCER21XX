@@ -23,9 +23,9 @@ MonoBehaviour:
   depthsPerYear: 4
   baseElongation: 0.06
   elongationDepthDecay: 0.72
-  branchSegmentLength: 1.5
+  branchSegmentLength: 2.2
   segmentLengthDecay: 0.82
-  rootSegmentLength: 0.8
+  rootSegmentLength: 0.23
   baseBranchChance: 0.28
   branchChanceDepthDecay: 0.84
   springLateralChance: 0.14

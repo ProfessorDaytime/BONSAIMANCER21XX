@@ -248,6 +248,11 @@ public class TreeSpecies : ScriptableObject
              "Leaves run spring-colour → THIS → dried (darkened) before falling.")]
     public Color leafAutumnColor = new Color(0.85f, 0.55f, 0.12f);
 
+    [Tooltip("Blade silhouette for the procedural cluster foliage (BroadLeaf species only).\n" +
+             "Ovate: ficus/elm/cherry.  Lobed: maple.  Deltoid: birch.\n" +
+             "Lanceolate: willow.  Pinnate: wisteria.")]
+    public LeafShape leafShape = LeafShape.Ovate;
+
     // ── Foliage Type (broadleaf vs needle) ──────────────────────────────────────
     [Header("Foliage Type")]
     [Tooltip("BroadLeaf uses the leaf prefab clusters. The needle types build a procedural " +

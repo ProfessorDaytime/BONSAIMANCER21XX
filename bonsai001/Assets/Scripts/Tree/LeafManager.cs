@@ -109,6 +109,16 @@ public class LeafManager : MonoBehaviour
     [SerializeField] float needleLodHysteresis = 1.0f;
 
     Mesh[] needleTuftVariantsFar;
+
+    // ── Broadleaf cluster foliage (2026-07-05) ────────────────────────────────
+    // Needle-tuft architecture for broadleaves: ONE pooled species-shaped cluster
+    // mesh per tip instead of 5 leaf GameObjects each carrying a UNIQUE deformed
+    // mesh copy (~2,500 unbatchable objects on a mature maple). Off = legacy prefab.
+    [Header("Broadleaf Clusters")]
+    [Tooltip("Spawn one pooled cluster mesh per tip for BroadLeaf species instead of per-leaf prefab copies. Huge batching/memory win; falls as a cluster (like deciduous conifer tufts).")]
+    [SerializeField] bool useClusterLeaves = true;
+
+    Mesh[] leafClusterVariants;
     float  nextLodCheckTime;
     Camera lodCam;
 
@@ -153,6 +163,15 @@ public class LeafManager : MonoBehaviour
         }
 
         if (candleMesh == null) candleMesh = NeedleMesh.BuildCandle();
+
+        if (useClusterLeaves && skeleton.species.foliageType == FoliageType.BroadLeaf
+            && leafClusterVariants == null)
+        {
+            int blades = Mathf.Clamp(leavesPerNode + leavesPerNodeRange, 3, 9);
+            leafClusterVariants = new Mesh[NeedleVariantCount];
+            for (int i = 0; i < NeedleVariantCount; i++)
+                leafClusterVariants[i] = LeafClusterMesh.Build(skeleton.species.leafShape, blades, i);
+        }
 
         if (needleMat == null)
         {

@@ -98,12 +98,20 @@ public class PlayModeManager : MonoBehaviour
 
     void Update()
     {
+        // Presence = ANY mouse activity. This used to count only presses/scroll/keys,
+        // so mouse MOVEMENT and HELD buttons didn't register — hold an orbit drag (or
+        // just inspect the tree) past idleOrbitDelaySecs and the idle orbit hijacked
+        // the camera mid-drag, ignoring the mouse until the next click. That was the
+        // persistent "weird and hard to orbit" (2026-07-04). The idle orbit is a
+        // screensaver: it must only engage when the hand is truly off the mouse.
         bool anyInput =
             (Mouse.current != null &&
-             (Mouse.current.leftButton.wasPressedThisFrame  ||
-              Mouse.current.rightButton.wasPressedThisFrame ||
+             (Mouse.current.leftButton.isPressed   ||
+              Mouse.current.rightButton.isPressed  ||
+              Mouse.current.middleButton.isPressed ||
+              Mouse.current.delta.ReadValue().sqrMagnitude > 0.5f ||
               Mouse.current.scroll.ReadValue().sqrMagnitude > 0.01f)) ||
-            (Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame);
+            (Keyboard.current != null && Keyboard.current.anyKey.isPressed);
 
         if (anyInput)
         {

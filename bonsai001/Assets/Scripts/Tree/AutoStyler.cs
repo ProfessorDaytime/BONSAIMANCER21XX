@@ -153,6 +153,24 @@ public class AutoStyler : MonoBehaviour
              "traps it at umbrella height (silhouette radius scales with height).")]
     public float minPinchHeight = 1.2f;
 
+    // ── Health over style (2026-07-04 directive) ──────────────────────────────
+    // "Always keep branches for health over style. Once there are enough branches
+    // matching the style to keep the tree alive, you can cut others." Structural
+    // cuts killed slow conifers (juniper + 4 white pines) by removing whole
+    // scaffolds a slow species can never replace.
+    [Tooltip("Max fraction of the tree's live branch nodes the styler may remove per season\n" +
+             "(all cuts combined: excess trims + thinning). Health over style.")]
+    [Range(0.02f, 0.5f)] public float maxCutFractionPerSeason = 0.10f;
+
+    [Tooltip("No structural (excess-branch) cuts unless average tree health is at least this.")]
+    [Range(0f, 1f)] public float minHealthForStructuralCuts = 0.6f;
+
+    [Tooltip("No structural cuts until at least this fraction of style slots are filled —\n" +
+             "the style must be able to keep the tree alive before anything is sacrificed to it.")]
+    [Range(0f, 1f)] public float minSlotFillForStructuralCuts = 0.5f;
+
+    int cutBudgetRemaining;   // node budget for this season's cuts, set each spring
+
     // fastConverge overrides for testers — see PLAN.md "AutoStyler Pacing & Convergence"
     float EffectivePreviewDays   => fastConverge ? 3f : actionPreviewDays;
     float EffectiveWireSpeedMult => fastConverge ? 4f : autoStyleWireSpeedMult;
@@ -428,6 +446,25 @@ public class AutoStyler : MonoBehaviour
                 if (n == null || n.isTrimmed || n.isDead) { pendingTrims.Remove(id); continue; }
                 if (now >= pendingTrims[id])
                 {
+                    // Health over style: every cut pays its subtree size from the season
+                    // budget. Over budget = the cut simply doesn't happen this year.
+                    int cost = CountSubtree(n);
+                    if (cost > cutBudgetRemaining)
+                    {
+                        pendingTrims.Remove(id);
+                        Log($"[AutoStyle] Trim SKIPPED node={id} (cost={cost} > budget={cutBudgetRemaining}) — health over style");
+                        continue;
+                    }
+                    // NEVER doom a branch (leafless remainder = delayed stump) and NEVER
+                    // cut anything on a tree near the stump floor.
+                    if (StumpGuardActive() || CutWouldOrphanBranch(n))
+                    {
+                        pendingTrims.Remove(id);
+                        Log($"[AutoStyle] Trim VETOED node={id} (stumpGuard/orphan) — the tree keeps its branches");
+                        continue;
+                    }
+                    cutBudgetRemaining -= cost;
+
                     Log($"[AutoStyle] Trim fired node={id}");
                     float trimAz = GetBranchAzimuth(n);
                     var cutSite = n.parent;   // TrimNode wounds the parent — capture before the cut
@@ -496,11 +533,58 @@ public class AutoStyler : MonoBehaviour
     void HandleNewGrowingSeason()
     {
         if (!IsReady()) return;
-        Log($"[AutoStyle] Spring — RefreshSlots + ShapeTrunk | year={GameManager.year}");
+
+        // Season cut budget: ALL styler cuts this season (excess + thinning) may
+        // remove at most maxCutFractionPerSeason of the live canopy. Health over style.
+        int liveBranches = 0;
+        foreach (var n in skeleton.allNodes)
+            if (!n.isRoot && !n.isTrimmed && !n.isDead) liveBranches++;
+        cutBudgetRemaining = Mathf.RoundToInt(liveBranches * maxCutFractionPerSeason);
+
+        Log($"[AutoStyle] Spring — RefreshSlots + ShapeTrunk | cutBudget={cutBudgetRemaining} | year={GameManager.year}");
         RefreshSlots();
         ShapeTrunk();
         ThinInteriorTwigs();
         AdvancePotPhase();
+    }
+
+    /// <summary>Live branch nodes in the subtree rooted at n (its own cost when cut).</summary>
+    int CountSubtree(TreeNode n)
+    {
+        int c = (!n.isRoot && !n.isTrimmed) ? 1 : 0;
+        foreach (var ch in n.children) c += CountSubtree(ch);
+        return c;
+    }
+
+    /// <summary>NEVER cut a node whose removal leaves its parent branch without a single
+    /// live terminal. A branch with no foliage-bearing tips can't photosynthesize,
+    /// shade-starves silently over the next seasons, and dieback drops the WHOLE branch —
+    /// the invisible stump-maker that killed the white pines even under the cut budget
+    /// (2026-07-05: 73/66/42-node dieback drops after "budgeted" trims).</summary>
+    bool CutWouldOrphanBranch(TreeNode n)
+    {
+        var p = n.parent;
+        if (p == null || p.isRoot || p == skeleton.root) return false;
+        return !HasLiveTerminalExcluding(p, n);
+    }
+
+    bool HasLiveTerminalExcluding(TreeNode node, TreeNode excluded)
+    {
+        if (node == excluded || node.isTrimmed || node.isDead) return false;
+        if (node.isTerminal) return true;
+        foreach (var c in node.children)
+            if (HasLiveTerminalExcluding(c, excluded)) return true;
+        return false;
+    }
+
+    /// <summary>Absolute stump guard: below this many live foliage-bearing terminals the
+    /// styler performs NO cuts of any kind, style be damned.</summary>
+    bool StumpGuardActive()
+    {
+        int tips = 0;
+        foreach (var n in skeleton.allNodes)
+            if (n.isTerminal && !n.isRoot && !n.isTrimmed && !n.isDead && ++tips >= 25) return false;
+        return true;
     }
 
     // ── Interior Thinning ─────────────────────────────────────────────────────
@@ -514,6 +598,13 @@ public class AutoStyler : MonoBehaviour
     void ThinInteriorTwigs()
     {
         if (thinTwigsPerYear <= 0) return;
+        // Sparse trees keep everything — thinning exists to open dense pads, and with
+        // the Ficus-envelope growth rates a young/sheared tree can't spare a twig
+        // (part of the 2026-07-04 conifer-death cascade).
+        int liveBranches = 0;
+        foreach (var n in skeleton.allNodes)
+            if (!n.isRoot && !n.isTrimmed && !n.isDead) liveBranches++;
+        if (liveBranches < 350) return;
         Vector3 trunkXZ = new Vector3(skeleton.transform.position.x, 0f, skeleton.transform.position.z);
         int queued = 0;
         foreach (var n in skeleton.allNodes)
@@ -754,7 +845,19 @@ public class AutoStyler : MonoBehaviour
         foreach (var x in skeleton.allNodes)
             if (IsScaffoldBase(x)) scaffoldCount++;
 
-        if (scaffoldCount > slots.Count)
+        // Health over style: no structural cuts unless the style already holds enough
+        // living, assigned branches to sustain the tree (slot fill) AND the tree is
+        // healthy enough to afford wood loss. Slow conifers were being cut to death
+        // around year 10 (2026-07-04 directive).
+        int   occupiedForCuts = slots.Count(s => s.assignedNodeId >= 0);
+        float avgH = 0f; int liveN = 0;
+        foreach (var x in skeleton.allNodes)
+            if (!x.isRoot && !x.isTrimmed && !x.isDead) { avgH += x.health; liveN++; }
+        avgH = liveN > 0 ? avgH / liveN : 0f;
+        bool canCutForStyle = occupiedForCuts >= Mathf.CeilToInt(slots.Count * minSlotFillForStructuralCuts)
+                              && avgH >= minHealthForStructuralCuts;
+
+        if (scaffoldCount > slots.Count && canCutForStyle)
         {
             // Per-tier slot capacity: count how many slots each tier has and how many are filled.
             var tierCapacity  = new int[style.branchTiers.Length];
@@ -774,8 +877,14 @@ public class AutoStyler : MonoBehaviour
                     if (nodeY >= t.minHeightNorm - 0.05f && nodeY <= t.maxHeightNorm + 0.05f)
                     { tierIdx = ti; break; }
                 }
-                // Only trim if its tier is full (no open slots left for it)
-                if (tierIdx >= 0 && tierOccupied[tierIdx] < tierCapacity[tierIdx]) continue;
+                // Only trim genuine overflow inside a FULL band. Branches OUTSIDE every
+                // band (tierIdx -1) are future material, not excess — trimming them
+                // sheared the post-stretch taller trees bare (cutDepth=503 in one
+                // season → heavy-prune penalty → critical-health deaths of the juniper
+                // + four white pines, 2026-07-04). With reduction cuts nothing regrows,
+                // so every wrong cut is permanent.
+                if (tierIdx < 0) continue;
+                if (tierOccupied[tierIdx] < tierCapacity[tierIdx]) continue;
                 if (pendingTrims.ContainsKey(n.id)) continue;
                 pendingTrims[n.id] = InGameDay() + EffectivePreviewDays;
                 Log($"[AutoStyle] Excess branch queued node={n.id} tier={tierIdx}");

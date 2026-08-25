@@ -24,14 +24,19 @@ public class WireRenderer : MonoBehaviour
 
     // ── References ────────────────────────────────────────────────────────────
 
-    TreeSkeleton skeleton;
+    TreeSkeleton    skeleton;
+    TreeMeshBuilder meshBuilder;   // for NodeSwayFlex — the wire must bend with the bark
 
     // nodeId → LineRenderer for that wired branch
     readonly Dictionary<int, LineRenderer> wireLines = new Dictionary<int, LineRenderer>();
 
     // ── Unity ─────────────────────────────────────────────────────────────────
 
-    void Awake() => skeleton = GetComponent<TreeSkeleton>();
+    void Awake()
+    {
+        skeleton    = GetComponent<TreeSkeleton>();
+        meshBuilder = GetComponent<TreeMeshBuilder>();
+    }
 
     void OnEnable()
     {
@@ -157,18 +162,41 @@ public class WireRenderer : MonoBehaviour
         frameRight = frameRight.normalized;
         Vector3 frameFwd = Vector3.Cross(frameRight, axisUp).normalized;
 
-        int   totalPoints = helixTurns * pointsPerTurn + 1;
-        float avgRadius   = Mathf.Lerp(node.radius, node.tipRadius, 0.5f);
-        float helixR      = avgRadius + wireRadius;
+        // Wrap count scales with segment length (one wrap ≈ 0.22 units) — a fixed 4
+        // turns over the post-stretch 2.4-unit chords degenerated into a near-straight
+        // line beside the branch. And the helix radius TAPERS with the wood: the old
+        // constant average radius buried the coil at the thick end and floated it off
+        // the thin end — the "double outline" strokes (2026-07-05).
+        int turns = Mathf.Clamp(Mathf.RoundToInt(node.length / 0.22f), 3, 24);
+        int totalPoints = turns * pointsPerTurn + 1;
+        if (lr.positionCount != totalPoints) lr.positionCount = totalPoints;
+
+        // Ride the bark's vertex-shader sway: the wire wraps a branch that now bends, so the
+        // whole helix takes the node's sway displacement (one sample — the segment is short) or
+        // the copper visibly floats beside the bark in wind. AutoStyler wires YOUNG shoots, and
+        // young wood is exactly where flex is highest. WindSway is the CPU mirror of the shader.
+        Vector3 swayLocal = Vector3.zero;
+        if (meshBuilder != null && WindManager.CanonStrength > 0f)
+        {
+            float flex = meshBuilder.NodeSwayFlex(node);
+            if (flex > 0f)
+            {
+                Vector3 restW = transform.TransformPoint(node.tipPosition);
+                swayLocal = transform.InverseTransformVector(WindSway.Sway(restW, flex));
+            }
+        }
 
         var positions = new Vector3[totalPoints];
         for (int i = 0; i < totalPoints; i++)
         {
             float   t      = (float)i / (totalPoints - 1);
             float   along  = t * node.length;
-            float   angle  = t * helixTurns * Mathf.PI * 2f;
+            float   angle  = t * turns * Mathf.PI * 2f;
+            float   helixR = Mathf.Lerp(node.radius, node.tipRadius, t) + wireRadius;
             Vector3 offset = (Mathf.Cos(angle) * frameRight + Mathf.Sin(angle) * frameFwd) * helixR;
-            positions[i]   = node.worldPosition + axisUp * along + offset;
+            // Sway eases in from the base ring to the tip so the wire's root stays welded to
+            // the stiffer parent wood, matching how the bark's own flex grows along the segment.
+            positions[i]   = node.worldPosition + axisUp * along + offset + swayLocal * t;
         }
 
         lr.SetPositions(positions);

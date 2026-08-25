@@ -261,6 +261,24 @@ public class CameraOrbit : MonoBehaviour
                 {
                     bool isTree = target != null &&
                                   (hit.transform == target || hit.transform.IsChildOf(target));
+
+                    // Blocking exists so tool clicks on the tree don't also spin the
+                    // camera — so only block when an LMB tool could actually consume
+                    // the click. With no tool active the tree is just scenery: orbit
+                    // freely (2026-07-04 "hard to rotate" — the post-stretch canopy +
+                    // bark-flake pickup colliders had made most of the screen no-drag).
+                    bool lmbToolActive = GameManager.canTrim   || GameManager.canWire     ||
+                                         GameManager.canRemoveWire || GameManager.canPaste ||
+                                         GameManager.canAirLayer   || GameManager.canPinch ||
+                                         GameManager.canDefoliate  || GameManager.canGraft ||
+                                         GameManager.canPromote    || GameManager.canJin   ||
+                                         GameManager.canRootWork;
+                    if (!lmbToolActive) isTree = false;
+
+                    // Bark flakes are tree children with colliders, but they're RMB-only
+                    // pickups — never block LMB orbit on them.
+                    if (isTree && hit.collider.GetComponent<BarkFlake>() != null) isTree = false;
+
                     if (isTree)
                     {
                         if (verboseLog) Debug.Log($"[Camera] Click blocked — hit tree '{hit.collider.name}'");
@@ -380,13 +398,12 @@ public class CameraOrbit : MonoBehaviour
         }
         else if (orbitStateSaved)
         {
-            // Snap back to saved position when orbit stops
-            yaw    = savedOrbitYaw;
-            pitch  = savedOrbitPitch;
-            radius = savedOrbitRadius;
-            panY   = savedOrbitPanY;
+            // Idle orbit ended because the player gave input. Do NOT snap back to the
+            // pre-orbit view — the teleport-then-drag read as "camera rotation is
+            // broken / fighting me" (2026-07-04), especially in Hands-Off mode where
+            // the idle orbit re-engages constantly. Resume control from wherever the
+            // orbit is currently looking.
             orbitStateSaved = false;
-            ApplyOrbit();
         }
 
         if (!isDragging) return;

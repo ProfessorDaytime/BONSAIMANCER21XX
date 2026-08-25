@@ -32,8 +32,73 @@ public class WindManager : MonoBehaviour
     [Tooltip("World-space amplitude, in units, of a full-strength gust at a foliage tip.")]
     public float maxSwayAmplitude = 0.045f;
 
+    [Header("Branch Sway (vertex shader)")]
+    [Tooltip("Peak whole-branch deflection in world units at flex=1, strength=1, full gust. " +
+             "The bark mesh bends this far at its thinnest extremities in a storm.")]
+    public float branchSwayMax = 0.22f;
+
+    [Tooltip("Height (world units) over which sway ramps in from the pinned trunk base.")]
+    public float swayHeightRef = 1.2f;
+
+    [Tooltip("Horizontal distance from the trunk axis where 'this is a branch, not trunk' begins. " +
+             "Inside it, mature wood is rigid; beyond it, even old wood may sway.")]
+    public float swayReachInner = 0.35f;
+
+    [Tooltip("Distance beyond Reach Inner over which branch-ness saturates to 1.")]
+    public float swayReachSpan = 1.2f;
+
+    // ── Canonical published wind state ────────────────────────────────────────
+    // ONE authoritative set of values, pushed to shader globals AND exposed as statics, so the
+    // GPU bark sway (BarkVertexColor.shader) and every CPU rider (leaves, needle tufts, wires —
+    // via WindSway.cs) sample the IDENTICAL field. If they read wind independently they drift,
+    // and foliage visibly detaches from the twigs it hangs on.
+    public static Vector3 CanonDir       { get; private set; } = Vector3.right;
+    public static float   CanonGustEnv   { get; private set; }   // 0..1 envelope, pre-strength
+    public static float   CanonStrength  { get; private set; }
+    public static float   CanonTime      { get; private set; }
+    public static float   CanonAmpMax    { get; private set; }
+    public static float   CanonHeightRef { get; private set; } = 1.2f;
+    public static float   CanonReachIn   { get; private set; } = 0.35f;
+    public static float   CanonReachSpan { get; private set; } = 1.2f;
+
+    static readonly int IdWindA     = Shader.PropertyToID("_TreeWindA");
+    static readonly int IdWindB     = Shader.PropertyToID("_TreeWindB");
+    static readonly int IdReachSpan = Shader.PropertyToID("_TreeWindReachSpan");
+
     void Awake()    => Instance = this;
     void OnDestroy() { if (Instance == this) Instance = null; }
+
+    void OnDisable()
+    {
+        // Freeze cleanly at zero — shader globals outlive the component, and stale values
+        // would leave the tree bent mid-gust forever.
+        CanonStrength = 0f;
+        Shader.SetGlobalVector(IdWindA, Vector4.zero);
+    }
+
+    void Update()
+    {
+        float t = Time.time;
+
+        // Wandering prevailing direction — SAME constants as SampleSway's wander so the
+        // canopy flutter and the branch sway agree about where the wind is coming from.
+        float wanderDeg = (Mathf.PerlinNoise(t * 0.02f, 3.7f) - 0.5f) * 50f;
+        Vector3 dir = baseDirection.sqrMagnitude > 0.001f ? baseDirection.normalized : Vector3.right;
+        dir = Quaternion.AngleAxis(wanderDeg, Vector3.up) * dir;
+
+        CanonDir       = dir;
+        CanonGustEnv   = Mathf.PerlinNoise(t * gustFrequency, 0.5f);
+        CanonStrength  = strength;
+        CanonTime      = t;
+        CanonAmpMax    = branchSwayMax;
+        CanonHeightRef = swayHeightRef;
+        CanonReachIn   = swayReachInner;
+        CanonReachSpan = swayReachSpan;
+
+        Shader.SetGlobalVector(IdWindA, new Vector4(dir.x, dir.z, CanonGustEnv, strength));
+        Shader.SetGlobalVector(IdWindB, new Vector4(t, branchSwayMax, swayHeightRef, swayReachInner));
+        Shader.SetGlobalFloat (IdReachSpan, swayReachSpan);
+    }
 
     /// <summary>Current gust envelope 0..1 — shared so callers can scale secondary
     /// effects (falling-leaf drift, shed rates) with the same weather.</summary>

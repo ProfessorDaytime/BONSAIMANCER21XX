@@ -12,6 +12,52 @@ public static class ItemCatalogCreator
 {
     const string Dir = "Assets/Items";
 
+    /// <summary>Fills every PotSoil in the open scene with the authored per-size pot meshes,
+    /// matched by PotSize name, so the six slots don't need hand-assigning.</summary>
+    [MenuItem("Bonsai/Assign Pot Meshes To Scene")]
+    public static void AssignPotMeshes()
+    {
+        string[] meshNames = { "XS Plastic Pot", "S Plastic Pot", "M Plastic Pot",
+                               "L Plastic Pot", "XL Plastic Pot", "Slab 01 Plastic Pot" };
+
+        var models = new GameObject[meshNames.Length];
+        for (int i = 0; i < meshNames.Length; i++)
+        {
+            models[i] = AssetDatabase.LoadAssetAtPath<GameObject>($"{MeshDir}/{meshNames[i]}.fbx");
+            if (models[i] == null)
+                Debug.LogWarning($"[Items] Pot mesh not found: {MeshDir}/{meshNames[i]}.fbx");
+        }
+
+        var soils = Object.FindObjectsByType<PotSoil>(FindObjectsSortMode.None);
+        foreach (var soil in soils)
+        {
+            Undo.RecordObject(soil, "Assign Pot Meshes");
+            soil.sizePotPrefabs = models;
+            soil.usePlaceholderPotMesh = false;
+            EditorUtility.SetDirty(soil);
+        }
+        Debug.Log($"[Items] Assigned {meshNames.Length} pot meshes to {soils.Length} PotSoil " +
+                  "component(s) and turned off the procedural placeholder.");
+    }
+
+    /// <summary>Prints the drainage-hole layout for every pot size in WORLD units, ready to model
+    /// in Blender. Modelling to these numbers means escaped roots emerge from real holes with no
+    /// per-pot marker objects needed.</summary>
+    [MenuItem("Bonsai/Print Drainage Hole Layout")]
+    public static void PrintHoleLayout()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[Items] Drainage-hole layout (world units — model these in Blender).");
+        sb.AppendLine("Pattern per pot: 1 centre hole + 4 on a ring at 90°, offset 45°.");
+        sb.AppendLine($"{"Size",-6}{"floorR",10}{"centreHole ⌀",15}{"ringDist",10}{"ringHole ⌀",13}");
+        foreach (PotSoil.PotSize s in System.Enum.GetValues(typeof(PotSoil.PotSize)))
+        {
+            var (floorR, centreR, ringDist, ringR) = PotSoil.HoleWorldLayout(s);
+            sb.AppendLine($"{s,-6}{floorR,10:F4}{centreR * 2f,15:F4}{ringDist,10:F4}{ringR * 2f,13:F4}");
+        }
+        Debug.Log(sb.ToString());
+    }
+
     [MenuItem("Bonsai/Create Default Item Catalog")]
     public static void CreateDefaultCatalog()
     {
@@ -23,12 +69,12 @@ public static class ItemCatalogCreator
 
         // Pots — one per footprint size (maps to PotSoil.PotSize). Cost = Aesthetic Points; the
         // classic mid pot is free, the rest are cosmetic upgrades you save up for.
-        AddPot(catalog, "Unglazed Rect", "Classic unglazed rectangle, mid size.",          PotSoil.PotSize.M,      0, new Color(0.45f, 0.34f, 0.28f));
-        AddPot(catalog, "Mame Pot",      "Tiny round pot for shohin / mame trees.",        PotSoil.PotSize.XS,    80, new Color(0.40f, 0.26f, 0.20f));
-        AddPot(catalog, "Glazed Oval",   "Small glazed oval — good for informal styles.",  PotSoil.PotSize.S,    120, new Color(0.30f, 0.42f, 0.45f));
-        AddPot(catalog, "Grow Box",      "Large training box for trunk thickening.",       PotSoil.PotSize.XL,   100, new Color(0.40f, 0.36f, 0.24f));
-        AddPot(catalog, "Deep Cascade",  "Tall pot for cascade / semi-cascade trees.",     PotSoil.PotSize.L,    150, new Color(0.33f, 0.30f, 0.32f));
-        AddPot(catalog, "Slab",          "Flat slab for forest / root-on-rock plantings.", PotSoil.PotSize.Slab, 200, new Color(0.36f, 0.36f, 0.36f));
+        AddPot(catalog, "Unglazed Rect", "Classic unglazed rectangle, mid size.",          PotSoil.PotSize.M,      0, new Color(0.45f, 0.34f, 0.28f), "M Plastic Pot");
+        AddPot(catalog, "Mame Pot",      "Tiny round pot for shohin / mame trees.",        PotSoil.PotSize.XS,    80, new Color(0.40f, 0.26f, 0.20f), "XS Plastic Pot");
+        AddPot(catalog, "Glazed Oval",   "Small glazed oval — good for informal styles.",  PotSoil.PotSize.S,    120, new Color(0.30f, 0.42f, 0.45f), "S Plastic Pot");
+        AddPot(catalog, "Grow Box",      "Large training box for trunk thickening.",       PotSoil.PotSize.XL,   100, new Color(0.40f, 0.36f, 0.24f), "XL Plastic Pot");
+        AddPot(catalog, "Deep Cascade",  "Tall pot for cascade / semi-cascade trees.",     PotSoil.PotSize.L,    150, new Color(0.33f, 0.30f, 0.32f), "L Plastic Pot");
+        AddPot(catalog, "Slab",          "Flat slab for forest / root-on-rock plantings.", PotSoil.PotSize.Slab, 200, new Color(0.36f, 0.36f, 0.36f), "Slab 01 Plastic Pot");
 
         // Rocks — one per scale (for the rock entry point; maps to RockPlacer.RockSize).
         AddRock(catalog, "River Stone", "Smooth rounded stone.",   RockPlacer.RockSize.S,    0, new Color(0.50f, 0.48f, 0.44f));
@@ -77,7 +123,10 @@ public static class ItemCatalogCreator
                   "Assign it to buttonClicker's 'Item Catalog' field in the Inspector.");
     }
 
-    static void AddPot(ItemCatalog cat, string label, string desc, PotSoil.PotSize size, int cost, Color swatch)
+    const string MeshDir = "Assets/Prefabs/Meshes";
+
+    static void AddPot(ItemCatalog cat, string label, string desc, PotSoil.PotSize size, int cost,
+                       Color swatch, string meshName)
     {
         var def = ScriptableObject.CreateInstance<ItemDefinition>();
         def.name        = "Pot_" + size;
@@ -87,6 +136,10 @@ public static class ItemCatalogCreator
         def.potSize     = size;
         def.cost        = cost;
         def.swatchColor = swatch;
+        def.prefab      = AssetDatabase.LoadAssetAtPath<GameObject>($"{MeshDir}/{meshName}.fbx");
+        if (def.prefab == null)
+            Debug.LogWarning($"[Items] Pot mesh not found: {MeshDir}/{meshName}.fbx — " +
+                             $"{def.name} will fall back to the procedural placeholder.");
         SaveDef(cat, def);
     }
 

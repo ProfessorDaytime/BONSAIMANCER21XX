@@ -53,6 +53,7 @@
      <Compile Include="Assets\Scripts\QuickStartPanel.cs" />
      <Compile Include="Assets\Scripts\CameraOrbit.cs" />
      <Compile Include="Assets\Scripts\AudioManager.cs" />
+     <Compile Include="Assets\Scripts\Tree\TippingTestMode.cs" />
      <Compile Include="Assets\Scripts\Old Proc Meshes\scr_ProceduralMesh.cs" />
      <Compile Include="Assets\Scripts\PlayModeManager.cs" />
      <Compile Include="Assets\Shader\CameraFilterPack_TV_ARCADE.cs" />
@@ -62,6 +63,7 @@
      <Compile Include="Assets\Scripts\Progression\MusicManager.cs" />
      <Compile Include="Assets\Scripts\scr_Cyl_001.cs" />
      <Compile Include="Assets\Scripts\Tree\PotSoil.cs" />
+     <Compile Include="Assets\Scripts\Tree\ProceduralPot.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Init.cs" />
      <Compile Include="Assets\Scripts\PlayMenuSounds.cs" />
      <Compile Include="Assets\Scripts\Items\ItemCatalog.cs" />
@@ -77,6 +79,7 @@
      <Compile Include="Assets\Scripts\BezierSpline.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Care.cs" />
      <Compile Include="Assets\Scripts\RockPlacer.cs" />
+     <Compile Include="Assets\Scripts\Tree\TreeSkeleton.Stability.cs" />
      <Compile Include="Assets\Scripts\WindManager.cs" />
      <Compile Include="Assets\Scripts\Tree\LeafManager.cs" />
      <Compile Include="Assets\Scripts\CRTRendererFeature.cs" />
@@ -105,7 +108,9 @@
      <Compile Include="Assets\Scripts\Tree\StyleDefinition.cs" />
      <Compile Include="Assets\Scripts\Progression\UiTheme.cs" />
      <Compile Include="Assets\Scripts\ProceduralConeBackup.cs" />
+     <Compile Include="Assets\Scripts\Tree\WindSway.cs" />
      <Compile Include="Assets\Scripts\QuickStartManager.cs" />
+     <Compile Include="Assets\Scripts\WeatherManager.cs" />
      <Compile Include="Assets\Scripts\Progression\DecorationManager.cs" />
      <Compile Include="Assets\Scripts\TrainingRecorder.cs" />
      <Compile Include="Assets\Scripts\Tree\AutoStyler.cs" />
@@ -121,6 +126,7 @@
      <Compile Include="Assets\Scripts\Tree\BarkFlakerManager.cs" />
      <Compile Include="Assets\Scripts\Tree\TreeSpecies.cs" />
      <Compile Include="Assets\Scripts\CRTEffect.cs" />
+     <Compile Include="Assets\Scripts\Tree\LeafClusterMesh.cs" />
      <Compile Include="Assets\Scripts\buttonClicker.cs" />
      <Compile Include="Assets\Scripts\ProceduralCube.cs" />
      <None Include="Assets\TextMesh Pro\Shaders\TMPro.cginc" />

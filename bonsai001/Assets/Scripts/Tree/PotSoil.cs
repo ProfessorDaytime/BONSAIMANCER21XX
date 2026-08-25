@@ -93,24 +93,488 @@ public class PotSoil : MonoBehaviour
     /// Dimensions (width, depth, height) in world units for each pot size.
     /// Slab is wide but very shallow.
     /// </summary>
+    // 2026-07-04 scale calibration (queue #3): the old values (M = 2.6 wide) described a
+    // logical box ~5× wider than the authored pot meshes (~0.5 rim). Roots legally filled
+    // that phantom volume and read as a table-wide "root monster" dwarfing the fixed tree.
+    // These are sized to the ACTUAL pot visuals; root segment lengths + growth floors were
+    // rescaled with them (÷3.5) so root mechanics still function inside the honest box.
+    // Re-bumped 2026-07-04 (same day): the first calibration predated the chord-length
+    // stretch that made mature trees ~50% bigger — an L pot was dollhouse-scale under a
+    // 4-unit canopy. Target proportion: mature canopy ≈ 2.5–3× the pot width.
+    // 2026-08-24: all six sizes recalibrated to the real authored "<Size> Plastic Pot.fbx"
+    // meshes (parsed vertex bounds, confirmed 1:1 FBX import scale — verified against
+    // TinyPot01/XS first since its real dims were already known). Each row is that mesh's
+    // actual diameter × height, so box and visual can never drift apart (F1b's root cause).
+    // Deliberately NOT real-world inches (game keeps its game-feel unit convention).
     static readonly (float w, float d, float h)[] PotDimensions =
     {
-        (1.2f, 1.0f, 0.6f),   // XS
-        (1.8f, 1.5f, 0.8f),   // S
-        (2.6f, 2.0f, 1.0f),   // M  ← default
-        (3.4f, 2.6f, 1.1f),   // L
-        (4.2f, 3.2f, 1.2f),   // XL
-        (5.0f, 3.8f, 0.5f),   // Slab — wide, very shallow
+        (0.528f, 0.528f, 0.604f), // XS — matches XS Plastic Pot.fbx / TinyPot01.fbx exactly
+        (0.790f, 0.790f, 0.711f), // S  — matches S Plastic Pot.fbx exactly
+        (1.116f, 1.116f, 0.784f), // M  — matches M Plastic Pot.fbx exactly ← default
+        (1.371f, 1.371f, 0.621f), // L  — matches L Plastic Pot.fbx exactly
+        (1.706f, 1.706f, 0.547f), // XL — matches XL Plastic Pot.fbx exactly
+        (2.107f, 2.107f, 0.253f), // Slab — matches Slab 01 Plastic Pot.fbx exactly
     };
+
+    // ── Drainage-hole pattern (shared contract between the Blender models and the sim) ──────
+    // Expressed as fractions of the pot's FLOOR radius so ONE pattern scales to all six sizes:
+    // model the holes at these fractions of each pot's base radius and the sim's hole discs line
+    // up automatically — no per-pot marker objects, no per-pot table. `PotSoil.HoleWorldLayout`
+    // prints the real Blender numbers per size.
+    public const float HoleCentreRadiusFrac = 0.18f;   // central hole radius ÷ floor radius
+    public const float HoleRingFrac         = 0.55f;   // ring hole distance from centre ÷ floor radius
+    public const float HoleRadiusFrac       = 0.13f;   // ring hole radius ÷ floor radius
+
+    /// <summary>Height of the current pot in world units — the root-lift animation scales off this
+    /// so it stays proportional at every pot size.</summary>
+    public float CurrentPotHeight => PotDimensions[(int)potSize].h;
+
+    /// <summary>Interior soil volume of a pot size, in world units³. The pots are round tapered
+    /// frustums, so this is the exact frustum volume (πh/3)(R² + Rr + r²) using the measured
+    /// taper — not a box approximation, which would overstate a tapered pot by ~35%.</summary>
+    public static float SoilVolumeOf(PotSize size)
+    {
+        var (w, d, h) = PotDimensions[(int)size];
+        float R = (w + d) * 0.25f;                    // mean rim radius (w==d for these pots)
+        float r = R * PotTaper[(int)size];            // floor radius
+        return Mathf.PI * h / 3f * (R * R + R * r + r * r);
+    }
+
+    /// <summary>Soil volume of the pot currently in use.</summary>
+    public float SoilVolume => SoilVolumeOf(potSize);
+
+    /// <summary>Root capacity of the current pot relative to the reference size — the multiplier
+    /// applied to the tree's root-node budget. This is the horticultural core of bonsai: a small
+    /// pot holds less soil, so it supports fewer roots, so the tree takes up less water and
+    /// nutrient and grows more slowly and smaller. XS lands near 0.17 against the M reference.</summary>
+    public float PotVolumeFactor => SoilVolume / Mathf.Max(0.0001f, SoilVolumeOf(RootBudgetReferenceSize));
+
+    /// <summary>Pot size the tree's authored `maxTotalRootNodes` budget is expressed FOR. M is the
+    /// component default, so existing tuning keeps its meaning at M and scales from there.</summary>
+    public const PotSize RootBudgetReferenceSize = PotSize.M;
+
+    // ── Mass (drives tipping stability) ───────────────────────────────────────
+    // Dry bulk densities of each substrate, in g/cm³, real horticultural values. These give the
+    // soil mix a SECOND meaning beyond drainage: free-draining pumice/perlite mixes are the best
+    // for roots but the LIGHTEST, so they hold the tree down least — a real grower trade-off.
+    static readonly float[] ComponentBulkDensity =
+    {   // akadama pumice lava organic sand kanuma perlite
+        0.70f, 0.50f, 0.90f, 0.30f, 1.60f, 0.60f, 0.10f
+    };
+
+    /// <summary>Cubic centimetres in one cubic world unit. From the project's scale convention:
+    /// 0.527 units = 4 in = 10.16 cm, so 1 unit ≈ 19.28 cm and 1 unit³ ≈ 7166 cm³. Everything mass-
+    /// related resolves to GRAMS through this, so the stability numbers are physically meaningful
+    /// and checkable against reality (an XS pot of soil ≈ 475 g, which is right for a 4-in pot).</summary>
+    public const float WorldToCm3 = 7166f;
+
+    [Tooltip("Pot shell material density, g/cm³. 0.95 ≈ polypropylene nursery pot; a glazed " +
+             "ceramic pot is nearer 2.4 and resists tipping far better.")]
+    public float potShellDensity = 0.95f;
+
+    [Tooltip("Pot wall thickness in centimetres — drives the shell's mass.")]
+    public float potWallThicknessCm = 0.25f;
+
+    [Tooltip("Water held by saturated substrate as a fraction of total soil volume. Bonsai mixes " +
+             "run high — this is why a watered pot is far more stable than a dry one.")]
+    [Range(0f, 0.7f)] public float saturatedWaterFraction = 0.40f;
+
+    /// <summary>Dry bulk density of the CURRENT mix, g/cm³, from the normalised fractions.</summary>
+    public float MixDryDensity
+    {
+        get
+        {
+            float[] f = { akadama, pumice, lavaRock, organic, sand, kanuma, perlite };
+            float sum = 0f, dens = 0f;
+            for (int i = 0; i < f.Length; i++) { sum += f[i]; dens += f[i] * ComponentBulkDensity[i]; }
+            return sum > 0.0001f ? dens / sum : 0.6f;
+        }
+    }
+
+    /// <summary>Mass of the soil column in GRAMS, including held water. A saturated bonsai mix
+    /// carries ~40% of its volume as water, so a watered pot runs ~1.5× its dry weight.</summary>
+    public float SoilMass(float moisture01)
+    {
+        float cm3   = SoilVolume * WorldToCm3;
+        float dry   = cm3 * MixDryDensity;
+        float water = cm3 * saturatedWaterFraction * Mathf.Clamp01(moisture01);   // water = 1.0 g/cm³
+        return dry + water;
+    }
+
+    /// <summary>Mass of the empty pot shell in GRAMS — a thin shell over the frustum's outer
+    /// surface, so bigger pots are heavier without per-pot authoring.</summary>
+    public float PotShellMass
+    {
+        get
+        {
+            var (w, d, h) = PotDimensions[(int)potSize];
+            float R = (w + d) * 0.25f;
+            float r = R * PotTaper[(int)potSize];
+            float slant = Mathf.Sqrt((R - r) * (R - r) + h * h);
+            float areaWorld = Mathf.PI * (R + r) * slant + Mathf.PI * r * r;   // side + base
+            float areaCm2   = areaWorld * Mathf.Pow(WorldToCm3, 2f / 3f);      // world² → cm²
+            return areaCm2 * potWallThicknessCm * potShellDensity;
+        }
+    }
+
+    /// <summary>Half-width of the pot's FOOTPRINT — the lever arm resisting a tip. This is the
+    /// base radius, not the rim: a tapered pot pivots on its narrow base, which is exactly why
+    /// wide shallow bonsai pots are stable and tall nursery pots are not.</summary>
+    public float FootprintRadius
+    {
+        get
+        {
+            var (w, d, _) = PotDimensions[(int)potSize];
+            return (w + d) * 0.25f * PotTaper[(int)potSize];
+        }
+    }
+
+    /// <summary>Height of the pot+soil centre of mass above the pot's base, world units. Soil sits
+    /// low in the pot, which is what makes it an effective counterweight.</summary>
+    public float BallastCentreHeight => PotDimensions[(int)potSize].h * 0.45f;
+
+    /// <summary>Modelling aid: the drainage-hole layout for one pot size in WORLD units, ready to
+    /// punch into the Blender model. Returns floor radius, centre-hole radius, ring distance and
+    /// ring-hole radius.</summary>
+    public static (float floorR, float centreR, float ringDist, float ringR) HoleWorldLayout(PotSize size)
+    {
+        var (w, _, _) = PotDimensions[(int)size];
+        float floorR = w * 0.5f * PotTaper[(int)size];
+        return (floorR, HoleCentreRadiusFrac * floorR, HoleRingFrac * floorR, HoleRadiusFrac * floorR);
+    }
+
+    /// <summary>Base-to-rim radius ratio of each authored pot mesh (measured from the FBX vertex
+    /// rings, 2026-08-24). Every nursery pot came out at a uniform 0.706; the slab is shallower-
+    /// walled at 0.852. Drives both the soil surface radius and the root-containment profile.</summary>
+    static readonly float[] PotTaper = { 0.706f, 0.706f, 0.706f, 0.706f, 0.706f, 0.852f };
+
+    /// <summary>Containment test in root-box LOCAL space (the ±0.5 unit cube), against the pot's
+    /// real ROUND, TAPERED profile instead of the box itself. The box circumscribes the pot, so a
+    /// pure box test legally allowed roots into the corners (√2 ≈ 41% past the wall) and into the
+    /// taper void low down (up to ~42% past the base wall) — space that is outside the visible pot.
+    /// That is the residue of the F1b "roots through the pot wall" class.</summary>
+    public bool IsInsidePotProfile(float lx, float ly, float lz)
+    {
+        if (!useTaperedContainment) return Mathf.Abs(lx) <= 0.5f && Mathf.Abs(lz) <= 0.5f;
+        float t     = Mathf.Clamp01(ly + 0.5f);                       // 0 = floor, 1 = rim
+        float rNorm = Mathf.Lerp(0.5f * PotTaper[(int)potSize], 0.5f, t);
+        return (lx * lx + lz * lz) <= rNorm * rNorm;
+    }
+
+    [Tooltip("Contain roots to the pot's real round, tapered profile rather than the circumscribing " +
+             "box. More faithful (no roots in the phantom corners), but it removes ~36% of the box's " +
+             "volume, so trees become pot-bound sooner and want repotting more often. Turn off to " +
+             "restore the old box behaviour.")]
+    public bool useTaperedContainment = true;
 
     /// <summary>
     /// Resize the rootAreaTransform to match the chosen pot size.
     /// Call this after setting potSize, typically during Repot().
     /// </summary>
+    [Header("Pot Visual")]
+    [Tooltip("Optional pot visual object. With usePlaceholderPotMesh on, a procedural pot\n" +
+             "sized EXACTLY to PotDimensions is generated here on every size change, so the\n" +
+             "visual pot and the root box can never drift apart. Replace with authored\n" +
+             "models per size later and untick the flag.")]
+    public Transform potVisual;
+    [Tooltip("Generate placeholder pot meshes on potVisual at every size change. Turn OFF to " +
+             "use the authored meshes in Size Pot Prefabs below.")]
+    public bool usePlaceholderPotMesh = false;
+
+    [Tooltip("Authored pot model per PotSize, in enum order (XS, S, M, L, XL, Slab). Used when " +
+             "usePlaceholderPotMesh is off and no catalog pot has been chosen. Any empty slot " +
+             "falls back to the procedural placeholder for that size.")]
+    public GameObject[] sizePotPrefabs = new GameObject[6];
+
+    // Catalog override: a pot chosen in the item catalog wins over sizePotPrefabs until cleared.
+    GameObject catalogPotPrefab;
+
+    bool loggedSeating;   // one-shot [Seat] diagnostic guard
+
+    // Bench height: the fixed surface the pot rests on. Captured from the starting arrangement,
+    // then held, so changing pot depth moves the TREE rather than floating the pot.
+    float benchY;
+    bool  benchCaptured;
+
+    /// <summary>Skin the pot with a catalog-chosen model (null clears back to the per-size
+    /// default). The mesh is re-seated on the root box immediately.</summary>
+    public void SetPotModel(GameObject prefab, Transform rootAreaTransform)
+    {
+        catalogPotPrefab = prefab;
+        UpdatePotVisual(rootAreaTransform);
+    }
+
+    Material potCeramicMat, potSoilMat;
+
+    Transform soilVisual;   // runtime-built soil surface for authored (open-shell) pot meshes
+
+    /// <summary>Builds/updates the soil surface sitting inside an authored pot mesh. The pot is a
+    /// round tapered frustum, so the disc radius is the pot's interior radius AT the soil line,
+    /// derived from <see cref="PotTaper"/> — not the rim radius, which would clip through the wall.
+    /// Sits <c>soilDropFrac</c> below the rim so you look slightly down into the pot.</summary>
+    void UpdateSoilVisual(float w, float d, float h, Transform rootAreaTransform)
+    {
+        if (rootAreaTransform == null) return;
+        const float soilDropFrac = 0.10f;   // soil surface below the rim, fraction of pot height
+        const float wallFrac     = 0.94f;   // inside the wall thickness
+
+        if (soilVisual == null)
+        {
+            var go = new GameObject("_PotSoilSurface");
+            go.transform.SetParent(null, true);
+            go.AddComponent<MeshFilter>();
+            go.AddComponent<MeshRenderer>();
+            soilVisual = go.transform;
+        }
+
+        float taper  = PotTaper[(int)potSize];
+        float tSoil  = 1f - soilDropFrac;                       // 0 = floor, 1 = rim
+        float rTopX  = w * 0.5f, rTopZ = d * 0.5f;
+        float radX   = Mathf.Lerp(rTopX * taper, rTopX, tSoil) * wallFrac;
+        float radZ   = Mathf.Lerp(rTopZ * taper, rTopZ, tSoil) * wallFrac;
+
+        var mf = soilVisual.GetComponent<MeshFilter>();
+        mf.sharedMesh = ProceduralPot.BuildSoilSurface(radX, radZ, h * 0.10f);
+        CeramicMaterial();                                       // ensures potSoilMat exists
+        soilVisual.GetComponent<MeshRenderer>().sharedMaterial = potSoilMat;
+
+        float boxTop = rootAreaTransform.position.y + h * 0.5f;
+        soilVisual.position   = new Vector3(rootAreaTransform.position.x,
+                                            boxTop - h * soilDropFrac,
+                                            rootAreaTransform.position.z);
+        soilVisual.rotation   = Quaternion.identity;
+        soilVisual.localScale = Vector3.one;
+    }
+
+    // ── Tipping visuals ───────────────────────────────────────────────────────
+    // A tipped planting goes over as a unit — the tree does not leap out of a pot that stays
+    // upright. The pot and soil are separate scene objects from the tree, so they need rotating
+    // about the same pivot explicitly.
+    bool       visualsTipped;
+    Vector3    potHomePos,  soilHomePos;
+    Quaternion potHomeRot,  soilHomeRot;
+
+    /// <summary>Rotate pot + soil about a world pivot, so they fall with the tree.</summary>
+    public void TipVisuals(Vector3 pivotWorld, Vector3 axisWorld, float degrees)
+    {
+        if (visualsTipped) return;
+        visualsTipped = true;
+
+        var rot = Quaternion.AngleAxis(degrees, axisWorld.normalized);
+        if (potVisual != null)
+        {
+            potHomePos = potVisual.position; potHomeRot = potVisual.rotation;
+            potVisual.position = pivotWorld + rot * (potVisual.position - pivotWorld);
+            potVisual.rotation = rot * potVisual.rotation;
+        }
+        if (soilVisual != null)
+        {
+            soilHomePos = soilVisual.position; soilHomeRot = soilVisual.rotation;
+            soilVisual.position = pivotWorld + rot * (soilVisual.position - pivotWorld);
+            soilVisual.rotation = rot * soilVisual.rotation;
+        }
+    }
+
+    /// <summary>Stand the pot and soil back up.</summary>
+    public void RestoreVisuals()
+    {
+        if (!visualsTipped) return;
+        visualsTipped = false;
+        if (potVisual  != null) { potVisual.position  = potHomePos;  potVisual.rotation  = potHomeRot; }
+        if (soilVisual != null) { soilVisual.position = soilHomePos; soilVisual.rotation = soilHomeRot; }
+    }
+
+    /// <summary>Lazily builds the shared ceramic/soil materials and returns the ceramic one.
+    /// Also the fallback skin for an authored mesh that arrived without its own material.</summary>
+    Material CeramicMaterial()
+    {
+        if (potCeramicMat == null)
+        {
+            Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            potCeramicMat = new Material(sh);
+            Color ceramic = new Color(0.58f, 0.58f, 0.60f);
+            if (potCeramicMat.HasProperty("_BaseColor")) potCeramicMat.SetColor("_BaseColor", ceramic);
+            if (potCeramicMat.HasProperty("_Color"))     potCeramicMat.SetColor("_Color",     ceramic);
+            potSoilMat = new Material(sh);
+            Color soil = new Color(0.35f, 0.26f, 0.18f);
+            if (potSoilMat.HasProperty("_BaseColor")) potSoilMat.SetColor("_BaseColor", soil);
+            if (potSoilMat.HasProperty("_Color"))     potSoilMat.SetColor("_Color",     soil);
+        }
+        return potCeramicMat;
+    }
+
+    /// <summary>Puts the right pot mesh on potVisual for the current size and seats it on the
+    /// root box (rim top = box top). Source priority: catalog choice → authored per-size prefab
+    /// → procedural placeholder. Authored meshes are scaled from their real bounds to the
+    /// logical PotDimensions, so a model that drifts from its spec still can't desync the box.
+    /// World-size normalized against any scaled parents, same as the root box itself.</summary>
+    void UpdatePotVisual(Transform rootAreaTransform)
+    {
+        if (potVisual == null) return;
+        var (w, d, h) = PotDimensions[(int)potSize];
+
+        var mf = potVisual.GetComponent<MeshFilter>();
+        if (mf == null) mf = potVisual.gameObject.AddComponent<MeshFilter>();
+        var mr = potVisual.GetComponent<MeshRenderer>();
+        if (mr == null) mr = potVisual.gameObject.AddComponent<MeshRenderer>();
+
+        GameObject authored = catalogPotPrefab;
+        if (authored == null && !usePlaceholderPotMesh
+            && sizePotPrefabs != null && (int)potSize < sizePotPrefabs.Length)
+            authored = sizePotPrefabs[(int)potSize];
+
+        var srcFilter = authored != null ? authored.GetComponentInChildren<MeshFilter>() : null;
+        Mesh authoredMesh = srcFilter != null ? srcFilter.sharedMesh : null;
+
+        // A non-uniformly scaled ancestor SHEARS any rotated child — Unity's transform cannot
+        // represent rotation-under-nonuniform-scale, and dividing the parent scale out per-axis
+        // in LOCAL space does not undo it once the mesh is rotated. This scene has exactly that
+        // (rootArea's parent logged at 190×500×500), which rendered the pot as a squashed dome
+        // (2026-08-24). Detach to the world root — position/rotation/scale are all set
+        // explicitly below, so the pot gains nothing from being parented.
+        if (potVisual.parent != null)
+        {
+            Vector3 pls = potVisual.parent.lossyScale;
+            bool nonUniform = Mathf.Abs(pls.x - pls.y) > 0.001f || Mathf.Abs(pls.y - pls.z) > 0.001f;
+            if (nonUniform)
+            {
+                Debug.Log($"[Seat] Detaching potVisual from '{potVisual.parent.name}' " +
+                          $"(non-uniform lossyScale {pls}) — it was shearing the rotated pot mesh.");
+                potVisual.SetParent(null, true);
+            }
+        }
+
+        Vector3 ps = potVisual.parent != null ? potVisual.parent.lossyScale : Vector3.one;
+        Vector3 parentNorm = new Vector3(
+            1f / Mathf.Max(0.0001f, Mathf.Abs(ps.x)),
+            1f / Mathf.Max(0.0001f, Mathf.Abs(ps.y)),
+            1f / Mathf.Max(0.0001f, Mathf.Abs(ps.z)));
+
+        if (authoredMesh != null)
+        {
+            mf.sharedMesh = authoredMesh;
+            var srcRend = authored.GetComponentInChildren<MeshRenderer>();
+            bool gotMats = false;
+            if (srcRend != null && srcRend.sharedMaterials.Length > 0)
+            {
+                // An FBX with no authored material imports with a null/placeholder slot —
+                // copying that renders the pot solid black. Only take materials that exist.
+                bool allReal = true;
+                foreach (var m in srcRend.sharedMaterials) if (m == null) { allReal = false; break; }
+                if (allReal) { mr.sharedMaterials = srcRend.sharedMaterials; gotMats = true; }
+            }
+            if (!gotMats) mr.sharedMaterials = new[] { CeramicMaterial() };
+
+            // The mesh's own orientation inside the prefab MUST be honoured: Blender FBXs
+            // import Z-up with a -90° X rotation on the model transform rather than baked
+            // into the vertices, so forcing identity laid every pot on its side (2026-08-24).
+            // NOT relative-to-root: single-mesh FBXs collapse so the MeshFilter sits on the
+            // prefab ROOT and the -90° lives on that root's own transform — a relative matrix
+            // cancels it by construction (that bug shipped for one round: potVisualY logged
+            // 81.698 = the identity-rotation seat, not 81.396). Asset-space rotation
+            // accumulates from the root inclusive, so it is right in both layouts.
+            Quaternion meshRot = srcFilter.transform.rotation;
+
+            // Fit LOCAL mesh axes to the world dimension each one lands on after meshRot —
+            // scale is applied pre-rotation (Unity's TRS), so mapping matters.
+            Bounds b = authoredMesh.bounds;
+            Vector3 target = new Vector3(w, h, d);
+            Vector3 fit = Vector3.one;
+            for (int i = 0; i < 3; i++)
+            {
+                Vector3 localAxis = Vector3.zero; localAxis[i] = 1f;
+                Vector3 worldAxis = meshRot * localAxis;
+                int j = 0; float best = Mathf.Abs(worldAxis.x);
+                if (Mathf.Abs(worldAxis.y) > best) { best = Mathf.Abs(worldAxis.y); j = 1; }
+                if (Mathf.Abs(worldAxis.z) > best) j = 2;
+                fit[i] = target[j] / Mathf.Max(0.0001f, b.size[i]);
+            }
+
+            potVisual.rotation   = meshRot;
+            potVisual.localScale = Vector3.Scale(fit, parentNorm);
+
+            if (rootAreaTransform != null)
+            {
+                // Pivot is wherever the artist left it, so derive placement from the rotated,
+                // scaled corner extents rather than assuming a centered or based pivot.
+                Vector3 wMin = Vector3.positiveInfinity, wMax = Vector3.negativeInfinity;
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 corner = b.center + new Vector3(
+                        (k & 1) == 0 ? -b.extents.x : b.extents.x,
+                        (k & 2) == 0 ? -b.extents.y : b.extents.y,
+                        (k & 4) == 0 ? -b.extents.z : b.extents.z);
+                    Vector3 wp = meshRot * Vector3.Scale(fit, corner);
+                    wMin = Vector3.Min(wMin, wp); wMax = Vector3.Max(wMax, wp);
+                }
+                Vector3 wCenter = (wMin + wMax) * 0.5f;
+                float boxTop = rootAreaTransform.position.y + h * 0.5f;
+                potVisual.position = new Vector3(
+                    rootAreaTransform.position.x - wCenter.x,
+                    boxTop - wMax.y,                       // rim top sits on the box top
+                    rootAreaTransform.position.z - wCenter.z);
+            }
+            // Authored pots are open shells — the procedural pot carried its soil as submesh 1,
+            // so switching to real meshes left the player looking into an empty pot (2026-08-24).
+            UpdateSoilVisual(w, d, h, rootAreaTransform);
+            return;
+        }
+
+        mf.sharedMesh      = ProceduralPot.Build(w, d, h);
+        mr.sharedMaterials = new[] { CeramicMaterial(), potSoilMat };
+
+        // Sit exactly on the root box: same position, world-scale 1 (normalize parents).
+        if (rootAreaTransform != null) potVisual.position = rootAreaTransform.position;
+        potVisual.localScale = parentNorm;
+        potVisual.rotation = Quaternion.identity;
+    }
+
+    [Tooltip("Keep the root box's SOIL SURFACE (its top face) at the tree's base. The trunk's " +
+             "root node is created at mesh-local origin — i.e. the tree's own transform — but the " +
+             "box and pot are placed from rootAreaTransform, and nothing tied the two together: a " +
+             "rootArea object not sitting exactly at the tree's base left the tree rendering in " +
+             "mid-air above its pot at every age (2026-08-24). Also keeps roots growing inside the " +
+             "pot they are drawn in. Turn off only if a scene deliberately offsets the two.")]
+    public bool alignRootBoxToTreeBase = true;
+
     public void ApplyPotSize(Transform rootAreaTransform)
     {
         if (rootAreaTransform == null) return;
         var (w, d, h) = PotDimensions[(int)potSize];
+
+        if (alignRootBoxToTreeBase)
+        {
+            // The BENCH is the fixed thing — the pot rests on it, and the soil line is one pot
+            // height above it. Pinning the soil line to the tree instead meant every pot depth put
+            // its base somewhere different, so a shallow slab hovered 0.35 above the table
+            // (2026-08-24). Captured once from the starting arrangement.
+            // Use the tree's RESTING height, never the live transform: RootRake/RootPrune animate
+            // the tree several units into the air, and seating to that sent the pot up after it.
+            var skelForBase = GetComponent<TreeSkeleton>();
+            float baseY = skelForBase != null ? skelForBase.GroundedBaseY : transform.position.y;
+
+            if (!benchCaptured)
+            {
+                benchY        = baseY - h;   // bench = current soil line minus this pot's depth
+                benchCaptured = true;
+            }
+
+            // Soil line rides pot depth; the tree follows it so its base stays at the soil.
+            float soilTopY = benchY + h;
+            skelForBase?.SetGroundedBaseY(soilTopY);
+
+            Vector3 want = new Vector3(transform.position.x,
+                                       soilTopY - h * 0.5f,
+                                       transform.position.z);
+            if ((rootAreaTransform.position - want).sqrMagnitude > 1e-8f)
+            {
+                if (!loggedSeating)
+                    Debug.Log($"[Seat] Re-seating root box {rootAreaTransform.position} → {want} " +
+                              $"(tree base y={transform.position.y:F3}, pot {potSize} h={h:F3}) — " +
+                              "the tree was floating clear of its soil.");
+                rootAreaTransform.position = want;
+            }
+        }
         // PotDimensions are WORLD units (see doc above) but this sets localScale — so a
         // scaled parent silently broke the contract: one 2026-07-02 session logged the
         // rootArea at 3.12×2.77 world (sane) AND 494×1000 (under a ~150×-scaled pot/table
@@ -122,6 +586,30 @@ public class PotSoil : MonoBehaviour
             w / Mathf.Max(0.0001f, Mathf.Abs(ps.x)),
             h / Mathf.Max(0.0001f, Mathf.Abs(ps.y)),
             d / Mathf.Max(0.0001f, Mathf.Abs(ps.z)));
+
+        UpdatePotVisual(rootAreaTransform);
+
+        // One-shot seating report (2026-08-24): the tree renders in the AIR above the pot —
+        // even a 0.5-unit seedling floats clear of the soil, so it is a placement gap, not a
+        // missing trunk mesh. Prints who is where so the offset can be attributed to the
+        // pot box, the tree transform, or the table under them.
+        if (!loggedSeating)
+        {
+            loggedSeating = true;
+            var skel = GetComponent<TreeSkeleton>();
+            float boxTop = rootAreaTransform.position.y + h * 0.5f;
+            // node worldPosition is mesh-LOCAL despite the name — convert before comparing.
+            string rootInfo = (skel != null && skel.root != null)
+                ? $"treeBaseY={transform.TransformPoint(skel.root.worldPosition).y:F3} " +
+                  $"(gap above soil={(transform.TransformPoint(skel.root.worldPosition).y - boxTop):F3})"
+                : "treeRoot=<null>";
+            Debug.Log($"[Seat] pot={potSize} box={w:F3}×{d:F3}×{h:F3} " +
+                      $"| rootAreaY={rootAreaTransform.position.y:F3} soilTopY={boxTop:F3} " +
+                      $"| treeTransformY={transform.position.y:F3} {rootInfo} " +
+                      $"| potVisualY={(potVisual != null ? potVisual.position.y.ToString("F3") : "<none>")} " +
+                      $"| parentScale={ps}");
+        }
+
         if (verboseLog)
             Debug.Log($"[Soil] ApplyPotSize {potSize} | world={w}×{d}×{h} parentScale={ps} | year={GameManager.year}");
     }
@@ -162,6 +650,18 @@ public class PotSoil : MonoBehaviour
     {
         ApplyPreset(preset);
         ComputeDerivedProperties();
+    }
+
+    void Start()
+    {
+        // Build the pot immediately — not only on size changes — so assigning Pot Visual
+        // on an existing tree shows a pot without waiting for the next repot event
+        // (2026-07-04 setup confusion).
+        if (potVisual != null)
+        {
+            var skel = GetComponent<TreeSkeleton>();
+            UpdatePotVisual(skel != null ? skel.GetRootAreaTransform() : null);
+        }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -303,13 +803,23 @@ public class PotSoil : MonoBehaviour
         }
         else
         {
-            // Procedural default: one central hole plus a ring of four. Keep in sync with BaselineHoleArea.
-            drainageHoles.Add(new Hole { centre = new Vector2(0f, 0.05f), radius = 0.075f });
-            const float ring = 0.32f;
+            // Procedural default: one central hole plus a ring of four, sized and placed relative
+            // to the pot's real FLOOR radius (rim × taper), not the box half-extent.
+            // The old constants (ring 0.32, r 0.06) were box-relative and reached 0.38 box-local
+            // while the nursery-pot floor only extends to 0.5×0.706 = 0.353 — the ring holes sat
+            // OUTSIDE the base wall, so a root "escaping through a hole" emerged from thin air
+            // beside the pot (2026-08-24). Anything authored in Blender must match this pattern;
+            // see HoleRingFrac/HoleRadiusFrac and the table in PLAN.
+            float baseR = 0.5f * PotTaper[(int)potSize];          // pot floor radius, box-local
+            drainageHoles.Add(new Hole { centre = Vector2.zero, radius = HoleCentreRadiusFrac * baseR });
             for (int i = 0; i < 4; i++)
             {
                 float a = (i + 0.5f) / 4f * Mathf.PI * 2f;
-                drainageHoles.Add(new Hole { centre = new Vector2(Mathf.Cos(a) * ring, Mathf.Sin(a) * ring), radius = 0.06f });
+                drainageHoles.Add(new Hole
+                {
+                    centre = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * (HoleRingFrac * baseR),
+                    radius = HoleRadiusFrac * baseR
+                });
             }
         }
 
@@ -456,6 +966,10 @@ public class PotSoil : MonoBehaviour
         soilDegradation   = 0f;
         saturationLevel   = 0f;
         seasonsSinceRepot = 0;
+
+        // Repotting stands a tipped tree back up — re-seating it in fresh soil is exactly how a
+        // grower recovers one, and a bigger pot is the fix the player was being nudged toward.
+        skeleton.RightTree();
 
         if (sizeChanged)
         {

@@ -180,6 +180,12 @@ public class TreeMeshBuilder : MonoBehaviour
         meshCollider.cookingOptions = MeshColliderCookingOptions.CookForFasterSimulation
                                     | MeshColliderCookingOptions.WeldColocatedVertices;
         meshRenderer  = GetComponent<MeshRenderer>();
+        // Force the renderer ON. A stray Inspector click saved m_Enabled:0 into the scene
+        // (2026-08-24) and the tree went invisible for three debugging rounds — geometry,
+        // radii, and materials were all healthy the whole time. Nothing in the project ever
+        // intentionally disables this renderer, and the mesh is empty until the first build,
+        // so forcing it here is always safe and retires the whole accident class.
+        meshRenderer.enabled = true;
 
         if (skeleton == null)
             Debug.LogError("TreeMeshBuilder: no TreeSkeleton found on this GameObject.", this);
@@ -215,6 +221,7 @@ public class TreeMeshBuilder : MonoBehaviour
     }
 
     bool isDead = false;
+    int  loggedGeomYear = -1;   // [Geom] diagnostic: last year reported
 
     /// <summary>
     /// When dead=true, overrides all vertex colours to a grey-brown dead-wood tint.
@@ -330,6 +337,44 @@ public class TreeMeshBuilder : MonoBehaviour
 
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
+
+        // Geometry report (2026-08-24), once per in-game MONTH — the tree reads as floating above
+        // its pot with no trunk between. Prints where the mesh is ACTUALLY drawn in world space,
+        // plus the trunk's girth, to separate "drawn in the wrong place" from "drawn too thin to
+        // see". Monthly, not yearly/one-shot: the yearly guard fired on the first build of the
+        // year — the planting build — so two rounds of testing captured only the degenerate seed
+        // (29 verts, radius 0) and nothing about the grown tree the screenshots actually show.
+        int geomStamp = GameManager.year * 100 + GameManager.month;
+        if (loggedGeomYear != geomStamp && vertices.Count > 0)
+        {
+            loggedGeomYear = geomStamp;
+            Bounds lb = mesh.bounds;
+            Vector3 wMin = transform.TransformPoint(lb.min);
+            Vector3 wMax = transform.TransformPoint(lb.max);
+            var soil = GetComponent<PotSoil>();
+            string soilInfo = "soil=<none>";
+            if (soil != null && skeleton != null)
+            {
+                var ra = skeleton.GetRootAreaTransform();
+                if (ra != null) soilInfo = $"soilTopY={(ra.position.y + ra.lossyScale.y * 0.5f):F3}";
+            }
+            // Branch-side census: if branches exist but the mesh is thin, it is a girth problem;
+            // if they do not exist, it is a growth problem.
+            int branchCount = 0; float maxBranchR = 0f; float topBranchY = float.NegativeInfinity;
+            foreach (var n in skeleton.allNodes)
+            {
+                if (n.isRoot) continue;
+                branchCount++;
+                if (n.radius > maxBranchR) maxBranchR = n.radius;
+                float ty = transform.TransformPoint(n.tipPosition).y;
+                if (ty > topBranchY) topBranchY = ty;
+            }
+            Debug.Log($"[Geom] verts={vertices.Count} tris={triangles.Count / 3} " +
+                      $"| worldY {wMin.y:F3}→{wMax.y:F3} (height={(wMax.y - wMin.y):F3}) " +
+                      $"| worldX {wMin.x:F3}→{wMax.x:F3} | {soilInfo} " +
+                      $"| treeScale={transform.lossyScale} trunkRadius={skeleton.root.radius:F4} " +
+                      $"| branches={branchCount} maxBranchR={maxBranchR:F4} topBranchY={topBranchY:F3}");
+        }
 
         // Apply species bark colors to the material (no-op if no species assigned).
         ApplySpeciesColors();
@@ -699,7 +744,10 @@ public class TreeMeshBuilder : MonoBehaviour
         p1.Normalize();
         Vector3 p2 = Vector3.Cross(dir, p1).normalized;
 
-        Color barkCol = new Color(0f, 0f, 0f, 1f);          // clean mature bark (no wound/root/paste)
+        // Bark alpha inherits the NODE's real blend, not hardcoded 1: sway flex derives from
+        // color.a, so a mature-alpha stub on a young whippy branch would stay pinned while the
+        // branch bends around it. Side effect (correct): a stub on young wood shows young bark.
+        Color barkCol = new Color(0f, 0f, 0f, GrowthColor(node, node.radius, false).a);
 
         int baseStart = vertices.Count;
         for (int i = 0; i <= ringSegments; i++)
@@ -745,6 +793,9 @@ public class TreeMeshBuilder : MonoBehaviour
     void AddWoundDiscAt(TreeNode node, Vector3 center, Vector3 normal, Vector3 refUp, float radius, float healProg)
     {
         float pasteB = node.pasteApplied ? 1f : 0f;
+        // Disc alpha inherits the node's bark blend so its sway flex matches the branch it sits
+        // on (flex derives from color.a — a hardcoded 1 left discs behind on young swaying wood).
+        float blendA = GrowthColor(node, node.radius, false).a;
 
         // Callus roll-in: exposed pale heartwood at the centre gives way to callus as it closes,
         // and the face bulges into a domed knob. vertex.g picks the zone in the shader.
@@ -762,7 +813,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
         int c = vertices.Count;
         vertices.Add(center + normal * dome); uvs.Add(new Vector2(0.5f, 0.5f));
-        colors.Add(new Color(0f, centerG, pasteB, 1f)); scarUVs.Add(Vector4.zero);
+        colors.Add(new Color(0f, centerG, pasteB, blendA)); scarUVs.Add(Vector4.zero);
 
         int inner = vertices.Count;
         for (int i = 0; i <= ringSegments; i++)
@@ -770,7 +821,7 @@ public class TreeMeshBuilder : MonoBehaviour
             float a = (float)i / ringSegments * Mathf.PI * 2f;
             vertices.Add(center + normal * dome * 0.45f + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * (radius * 0.5f));
             uvs.Add(new Vector2((float)i / ringSegments, 0.5f));
-            colors.Add(new Color(0f, innerG, pasteB, 1f)); scarUVs.Add(Vector4.zero);
+            colors.Add(new Color(0f, innerG, pasteB, blendA)); scarUVs.Add(Vector4.zero);
         }
         int outer = vertices.Count;
         for (int i = 0; i <= ringSegments; i++)
@@ -778,7 +829,7 @@ public class TreeMeshBuilder : MonoBehaviour
             float a = (float)i / ringSegments * Mathf.PI * 2f;
             vertices.Add(center + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * radius);
             uvs.Add(new Vector2((float)i / ringSegments, 0.5f));
-            colors.Add(new Color(0f, outerG, pasteB, 1f)); scarUVs.Add(Vector4.zero);
+            colors.Add(new Color(0f, outerG, pasteB, blendA)); scarUVs.Add(Vector4.zero);
         }
 
         // Winding verified by cross product so RecalculateNormals faces the disc along +normal
@@ -1032,6 +1083,17 @@ public class TreeMeshBuilder : MonoBehaviour
     ///   B = paste applied   (0 = none,    1 = paste sealed)
     ///   A = bark blend      (0 = new growth, 1 = mature bark)
     /// </summary>
+    /// <summary>Wind-sway flex for a node's TIP — what the bark vertices there compute in the
+    /// shader (TreeFlex from GrowthColor alpha + object-space position). Leaves, needle tufts and
+    /// wires anchored to this node use it so they ride the exact same bend as the bark. See the
+    /// MIRROR CONTRACT in WindSway.cs.</summary>
+    public float NodeSwayFlex(TreeNode node)
+    {
+        if (node == null) return 0f;
+        Color c = GrowthColor(node, node.tipRadius, false);
+        return WindSway.Flex(c.a, node.isRoot ? 1f : 0f, node.tipPosition);
+    }
+
     Color GrowthColor(TreeNode node, float radius, bool isExposed)
     {
         float fadeDays = (node.isRoot && isExposed && newGrowthFadeDays > 0f)

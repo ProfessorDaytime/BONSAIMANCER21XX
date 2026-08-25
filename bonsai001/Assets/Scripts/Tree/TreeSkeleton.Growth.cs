@@ -227,10 +227,15 @@ public partial class TreeSkeleton : MonoBehaviour
         bool structureChanged = false;
         bool anyGrew          = false;
 
-        // Soil moisture drain — modified by PotSoil water retention if present
+        // Soil moisture drain — modified by PotSoil water retention if present, and by weather:
+        // heat and wind pull moisture out faster, cloud and rain slow it. Rain is applied on the
+        // same fixed-step clock as the drain it opposes, so the two can never desync at speed.
         var potSoil = GetComponent<PotSoil>();
         float soilDrainMult = potSoil != null ? potSoil.DrainRateMultiplier : 1f;
+        var weather = WeatherManager.Instance;
+        if (weather != null) soilDrainMult *= weather.DryingMultiplier;
         soilMoisture = Mathf.Max(0f, soilMoisture - drainRatePerDay * soilDrainMult * inGameDays * rate);
+        weather?.ApplyRain(this, inGameDays * rate);
         if (soilMoisture < droughtThreshold)
         {
             if (autoWaterEnabled)
@@ -282,6 +287,9 @@ public partial class TreeSkeleton : MonoBehaviour
                 snapshot.Add(node);
         }
 
+        // Root-support factor for this grow pass — one census, reused by every shoot below.
+        _rootSupportCached = RootSupportFactor();
+
         // Log every 5 in-game days — filter console by [Tree5]
         int absDay = GameManager.year * 365 + GameManager.dayOfYear;
         bool doLog = absDay - lastSnapshotAbsDay >= snapshotLogIntervalDays;
@@ -299,6 +307,7 @@ public partial class TreeSkeleton : MonoBehaviour
             Debug.Log($"[Tree5] {GameManager.month}/{GameManager.day}/{GameManager.year} | " +
                       $"rate={rate:F2} growing={snapshot.Count} " +
                       $"total={allNodes.Count} (branches={branchNodes} roots={rootNodes}) maxDepth={maxNodeDepth} depthCap={SeasonDepthCap} | " +
+                      $"caps(root={EffectiveMaxRootNodes} branch={EffectiveMaxBranchNodes}) support={_rootSupportCached:F2} | " +
                       $"growthLoop avg={avgGrowth}ms over {growthFrames} steps");
 
             totalGrowthMs = 0;
@@ -331,6 +340,12 @@ public partial class TreeSkeleton : MonoBehaviour
             // Pot-bound roots near the tray wall grow slower
             if (node.isRoot && node.boundaryPressure >= boundaryPressureThreshold)
                 speed *= boundaryGrowthScale;
+
+            // Root-volume dwarfing: a canopy larger than the root system can supply extends
+            // slowly. Applied to SHOOTS only — roots must stay free to grow, since growing more
+            // roots is exactly how the tree escapes the deficit (and how repotting into a bigger
+            // pot relieves it). Cached per grow pass; the census is O(nodes).
+            if (!node.isRoot) speed *= _rootSupportCached;
 
             node.length += speed * inGameDays;
             node.age    += inGameDays * rate;
@@ -485,7 +500,20 @@ public partial class TreeSkeleton : MonoBehaviour
         // RootPrune, RockPlace and RootRake still lift. Everything else grounds the tree.
         bool inRootMode = state == GameState.RootPrune || state == GameState.RockPlace ||
                           state == GameState.RootRake;
-        float liftHeight = state == GameState.RootRake ? rootLiftHeight * rakeLiftMult : rootLiftHeight;
+        // Lift scales with the POT, not a fixed world distance. The serialized 4 × 1.5 rake mult
+        // was tuned when pots were ~2.6 units wide; against a real 0.604-tall XS pot that is a
+        // 6-unit hop — the tree shot off the top of the screen in rake mode (2026-08-24). Pot
+        // height × multiple keeps the root ball fully clear of the rim at every size.
+        float liftBase = rootLiftHeight;
+        if (liftFromPotHeight)
+        {
+            // Not _holePotSoil alone: that is assigned inside the grow pass, and this runs from
+            // the state-change handler, which can fire first.
+            var ps = _holePotSoil != null ? _holePotSoil : GetComponent<PotSoil>();
+            float potH = ps != null ? ps.CurrentPotHeight : 0f;
+            if (potH > 0.001f) liftBase = potH * rootLiftPotMultiple;
+        }
+        float liftHeight = state == GameState.RootRake ? liftBase * rakeLiftMult : liftBase;
         liftTarget = inRootMode ? liftHeight : 0f;
         if (meshBuilder.renderRoots != GameManager.IsRootLiftActive(state))
         {
@@ -640,6 +668,10 @@ public partial class TreeSkeleton : MonoBehaviour
         if (soil != null)
             nutrientReserve = Mathf.Min(nutrientReserve, soil.nutrientCapacity);
 
+        // Stability: the canopy grew this season, so re-run the tipping balance. After the soil
+        // tick, since held water is part of the ballast.
+        EvaluateStability();
+
         // Fertilizer: burn if over-applied, then drain for this season
         if (nutrientReserve > fertilizerBurnThreshold)
         {
@@ -712,7 +744,7 @@ public partial class TreeSkeleton : MonoBehaviour
             totalRootCount++;
             if (n.parent == root) trunkRootCount++;
         }
-        int rootsToAdd = Mathf.Min(targetTrunkRoots - trunkRootCount, Mathf.Min(trunkRootsPerYear, maxTotalRootNodes - totalRootCount));
+        int rootsToAdd = Mathf.Min(targetTrunkRoots - trunkRootCount, Mathf.Min(trunkRootsPerYear, EffectiveMaxRootNodes - totalRootCount));
         if (rootsToAdd > 0)
         {
             for (int i = 0; i < rootsToAdd; i++)
@@ -847,6 +879,7 @@ public partial class TreeSkeleton : MonoBehaviour
         int rootTerminals = 0;
         int branchTerminals = 0;
         foreach (var t in terminals) { if (t.isRoot) rootTerminals++; else branchTerminals++; }
+        ReportSeasonDamage();   // name last season's killers before this season starts
         Debug.Log($"[Tree] StartNewGrowingSeason year={GameManager.year} | depthCap={SeasonDepthCap} | terminals={terminals.Count} (roots={rootTerminals} branches={branchTerminals}) resuming={resuming} total={allNodes.Count}");
 
         // Count current root nodes once so the cap check is O(1) per terminal
@@ -860,8 +893,8 @@ public partial class TreeSkeleton : MonoBehaviour
 
         // Vigor: lateral chances scale down as the tree approaches the branch node cap.
         // Floors at 0.05 so old-wood / back-bud growth never stops completely on a living tree.
-        float vigorFactor = Mathf.Max(0.05f, 1f - (float)currentBranchCount / maxBranchNodes);
-        Debug.Log($"[Tree] branchNodes={currentBranchCount}/{maxBranchNodes} vigorFactor={vigorFactor:F2}");
+        float vigorFactor = Mathf.Max(0.05f, 1f - (float)currentBranchCount / EffectiveMaxBranchNodes);
+        Debug.Log($"[Tree] branchNodes={currentBranchCount}/{EffectiveMaxBranchNodes} vigorFactor={vigorFactor:F2}");
 
         // Drainage-hole escape: cache the pot + pot-bound pressure once for this growth pass.
         _holePotSoil        = GetComponent<PotSoil>();
@@ -892,7 +925,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
             if (terminal.isRoot)
             {
-                if (currentRootCount >= maxTotalRootNodes) continue;  // hard cap reached
+                if (currentRootCount >= EffectiveMaxRootNodes) continue;  // hard cap reached
 
                 bool isIshitsuki = isIshitsukiMode;
                 float distRatio  = RootDistRatio(terminal);
@@ -910,7 +943,11 @@ public partial class TreeSkeleton : MonoBehaviour
                 {
                     Vector3 tipW  = transform.TransformPoint(terminal.tipPosition);
                     Vector3 local = rootAreaTransform.InverseTransformPoint(tipW);
-                    bool outsideSide   = Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.z) > 0.5f;
+                    // Round + tapered profile, not the circumscribing box — the box let roots
+                    // occupy the corners and the taper void, i.e. outside the visible pot wall.
+                    bool outsideSide   = _holePotSoil != null
+                        ? !_holePotSoil.IsInsidePotProfile(local.x, local.y, local.z)
+                        : (Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.z) > 0.5f);
                     bool outsideBottom = local.y < -0.5f;
                     bool outsideTop    = local.y >  0.5f;
 
@@ -950,7 +987,10 @@ public partial class TreeSkeleton : MonoBehaviour
                         // tower + shading near-death). 0.65 local ≈ 15% of the box
                         // height above the rim: enough for a knuckle of exposed root,
                         // not a chimney.
-                        if (rimDistSq > 0.35f * 0.35f || local.y > 0.65f)
+                        // 0.55: surfaced roots may rise only ~5% of box height above the soil
+                        // plane — they HUG the soil (was 0.65; the extra 10% left a spray of
+                        // root stubs hovering in air above the rim, 2026-07-04).
+                        if (rimDistSq > 0.35f * 0.35f || local.y > 0.55f)
                         {
                             ClipRoot(terminal);
                             continue;
@@ -997,7 +1037,7 @@ public partial class TreeSkeleton : MonoBehaviour
                 // Training-wire→underground transitions get laterals; mid-rock Ishitsuki cables don't.
                 float lateralScale  = (isIshitsuki && !isTrainingWireTransition) ? 0f : Mathf.Clamp01(1f - distRatio);
                 float lateralChance = rootLateralChance * lateralScale;
-                if (currentRootCount < maxTotalRootNodes && Random.value < lateralChance)
+                if (currentRootCount < EffectiveMaxRootNodes && Random.value < lateralChance)
                 {
                     var lat = CreateNode(terminal.tipPosition, LateralDirection(terminal), nodeRadius, childLength * 0.85f, terminal);
                     lat.isRoot         = true;
@@ -1013,7 +1053,7 @@ public partial class TreeSkeleton : MonoBehaviour
                 // years, and the cap then froze apical growth entirely: a flat pancake of
                 // twigs with no trunk (2026-07-02). Depth ≤ 1 terminals (trunk tip +
                 // scaffold leaders) are few, so the overshoot is bounded.
-                if (currentBranchCount >= maxBranchNodes && terminal.depth > 1) continue;
+                if (currentBranchCount >= EffectiveMaxBranchNodes && terminal.depth > 1) continue;
 
                 // Bud break — hand the dormant bud GameObject to LeafManager, which keeps
                 // it visible (swelling) until its leaf cluster finishes unfurling. Falls
@@ -1035,7 +1075,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
                 if (budType == BudType.Opposite)
                 {
-                    var forkNeeded = currentBranchCount + 2 <= maxBranchNodes;
+                    var forkNeeded = currentBranchCount + 2 <= EffectiveMaxBranchNodes;
                     var (dirA, dirB) = OppositeForkDirections(terminal);
                     var forkA = CreateNode(terminal.tipPosition, dirA, nodeRadius, childLength, terminal);
                     forkA.isRoot = false;
@@ -1059,7 +1099,10 @@ public partial class TreeSkeleton : MonoBehaviour
                     cont.growthStartDelay = Random.Range(0f, branchSpawnMaxDelay * 0.3f);
                     currentBranchCount++;
 
-                    if (currentBranchCount < maxBranchNodes && Random.value < springLateralChance * vigorFactor * treeEnergy * terminal.branchVigor)
+                    // _rootSupportCached also gates NEW laterals, not just extension — a
+                    // root-starved tree should stop adding canopy it cannot feed, which is what
+                    // keeps a small pot genuinely dwarfing instead of merely slow.
+                    if (currentBranchCount < EffectiveMaxBranchNodes && Random.value < springLateralChance * vigorFactor * treeEnergy * terminal.branchVigor * _rootSupportCached)
                     {
                         float latLength = childLength * 0.85f * Mathf.Max(0.1f, 1f - apicalDominance);
                         var lat = CreateNode(terminal.tipPosition, LateralDirection(terminal), nodeRadius, latLength, terminal);
@@ -1081,7 +1124,7 @@ public partial class TreeSkeleton : MonoBehaviour
         var fillCandidates = new List<TreeNode>(allNodes);
         foreach (var node in fillCandidates)
         {
-            if (currentRootCount >= maxTotalRootNodes) break;  // hard cap reached
+            if (currentRootCount >= EffectiveMaxRootNodes) break;  // hard cap reached
 
             if (!node.isRoot || node.isTrimmed || node.isTerminal) continue;
             if (node.depth >= maxRootDepth - 1) continue;
@@ -1094,7 +1137,7 @@ public partial class TreeSkeleton : MonoBehaviour
             if (Random.value < chance)
             {
                 float segLen = rootSegmentLength * Mathf.Pow(rootSegmentLengthDecay, node.depth + 1);
-                segLen = Mathf.Max(segLen, 0.3f);
+                segLen = Mathf.Max(segLen, 0.08f);   // floor rescaled with the 2026-07-04 pot calibration (was 0.3 — one hop crossed the honest box)
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), rootTerminalRadius, segLen, node);
                 lat.isRoot = true;
                 fillCount++;
@@ -1148,7 +1191,7 @@ public partial class TreeSkeleton : MonoBehaviour
         int potBoundFillCount = 0;
         // Use a slightly higher ceiling so inner fill still works when outer cap is full,
         // but cap total roots at 1.5× maxTotalRootNodes to prevent unbounded growth.
-        int potBoundRootCap = Mathf.RoundToInt(maxTotalRootNodes * 1.5f);
+        int potBoundRootCap = Mathf.RoundToInt(EffectiveMaxRootNodes * 1.5f);
         foreach (var node in potBoundInnerCandidates)
         {
             if (potBoundFillCount >= potBoundMaxFillPerYear) break;
@@ -1160,7 +1203,7 @@ public partial class TreeSkeleton : MonoBehaviour
             if (Random.value < chance)
             {
                 float segLen = rootSegmentLength * Mathf.Pow(rootSegmentLengthDecay, node.depth + 1);
-                segLen = Mathf.Max(segLen, 0.3f);
+                segLen = Mathf.Max(segLen, 0.08f);   // floor rescaled with the 2026-07-04 pot calibration (was 0.3 — one hop crossed the honest box)
                 var lat = CreateNode(node.tipPosition, LateralDirection(node), rootTerminalRadius, segLen, node);
                 lat.isRoot = true;
                 currentRootCount++;
@@ -1214,7 +1257,7 @@ public partial class TreeSkeleton : MonoBehaviour
                 continue;
             }
 
-            if (currentBranchCount >= maxBranchNodes) continue;  // hard cap
+            if (currentBranchCount >= EffectiveMaxBranchNodes) continue;  // hard cap
 
             bool belowCap = node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
             if (!belowCap) continue;
@@ -1254,7 +1297,7 @@ public partial class TreeSkeleton : MonoBehaviour
                 bool isSubJunction = node.children.Count == 1 && node.children[0].depth == node.depth;
                 if (isSubJunction) continue;
 
-                if (currentBranchCount >= maxBranchNodes) break;  // hard cap
+                if (currentBranchCount >= EffectiveMaxBranchNodes) break;  // hard cap
 
                 bool belowCap = node.depth < SeasonDepthCap && node.depth < CutPointDepthCap(node);
                 if (!belowCap) continue;

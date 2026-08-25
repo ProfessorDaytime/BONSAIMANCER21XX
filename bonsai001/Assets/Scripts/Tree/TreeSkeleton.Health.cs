@@ -295,9 +295,19 @@ public partial class TreeSkeleton : MonoBehaviour
     /// <summary>Returns true if any descendant of node has leaves.</summary>
     bool NodeHasLeafDescendant(TreeNode node)
     {
+        // A LIVE TERMINAL counts as a foliage carrier — it holds (or will hold, this
+        // season) leaves/needles. The old check read child.hasLeaves, a flag NOTHING
+        // in the codebase ever set: shading believed every tree was permanently
+        // leafless and bled ALL interior wood every season. Fast broadleaves outgrew
+        // it (chronic ~60% avg health); slow conifers were executed branch by branch —
+        // the "cut to a stump" white pines/junipers (2026-07-05), found by the
+        // per-type damage forensics (Shading=120.9/season vs ~1 for everything else).
+        // Dead/trimmed subtrees still read leafless, so genuinely doomed interior
+        // stubs die back as intended.
         foreach (var child in node.children)
         {
-            if (child.hasLeaves) return true;
+            if (child.isTrimmed || child.isDead) continue;
+            if (child.isTerminal && !child.isRoot) return true;
             if (NodeHasLeafDescendant(child)) return true;
         }
         return false;

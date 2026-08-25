@@ -126,7 +126,7 @@ public partial class TreeSkeleton : MonoBehaviour
             Vector3 outward = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
             Vector3 dir     = (outward + Vector3.down * rootInitialPitch).normalized;
             float   len     = Mathf.Max(rootSegmentLength * rootSegmentLengthDecay, 0.3f);
-            var r           = CreateNode(root.worldPosition, dir, rootTerminalRadius, len, root);
+            var r           = CreateNode(root.worldPosition + Vector3.down * 0.03f, dir, rootTerminalRadius, len, root);   // seated just under the soil — bases at exactly y=0 rendered as a surface starburst (2026-07-04)
             r.isRoot        = true;
         }
 
@@ -135,6 +135,10 @@ public partial class TreeSkeleton : MonoBehaviour
 
         RecalculateRadii(root);
         meshBuilder.SetDirty();
+
+        // Seed the stability readout so the Tree Health panel shows real numbers immediately
+        // rather than dashes until the first season boundary.
+        EvaluateStability();
     }
 
     // Root Planting
@@ -219,7 +223,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
         float len = Mathf.Max(rootSegmentLength * rootSegmentLengthDecay, 0.3f);
 
-        var newRoot = CreateNode(root.worldPosition, dir, rootTerminalRadius, len, root);
+        var newRoot = CreateNode(root.worldPosition + Vector3.down * 0.03f, dir, rootTerminalRadius, len, root);   // seated just under the soil — bases at exactly y=0 rendered as a surface starburst (2026-07-04)
         newRoot.isRoot = true;
 
         int totalRoots = 0;

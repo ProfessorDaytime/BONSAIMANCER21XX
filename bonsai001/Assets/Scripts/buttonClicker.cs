@@ -1383,8 +1383,109 @@ public class ButtonClicker : MonoBehaviour
         if (statRepot != null)
             statRepot.text = potSoil != null ? $"{potSoil.seasonsSinceRepot} seasons" : "—";
 
+        RefreshStabilityStats();
+
         // Root health score (nebari quality) — only shown in root panel; omitted here to avoid confusion
         // with the separate "root vitality" (avg health %) which is a different metric.
+    }
+
+    // ── Stability stats (tipping) ─────────────────────────────────────────────
+    // Built in code rather than added to ButtonUI.uxml: the code-built path is what the theme
+    // system repaints cleanly, and it keeps the whole stability feature in one place.
+    Label statStability, statBallast, statTopHeavy;
+    VisualElement stabilitySection;
+
+    void EnsureStabilityRows()
+    {
+        if (stabilitySection != null || treeStatsPanel == null) return;
+
+        stabilitySection = new VisualElement();
+        stabilitySection.style.marginTop = 6;
+
+        var heading = new Label("STABILITY");
+        heading.style.fontSize = 10;
+        heading.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Bold);
+        heading.style.color = new StyleColor(UiTheme.Current.textSub);
+        heading.style.marginBottom = 3;
+        stabilitySection.Add(heading);
+
+        statStability = AddStabilityRow("Stability");
+        statBallast   = AddStabilityRow("Pot ballast");
+        statTopHeavy  = AddStabilityRow("Canopy load");
+
+        treeStatsPanel.Add(stabilitySection);
+    }
+
+    Label AddStabilityRow(string label)
+    {
+        var row = new VisualElement();
+        row.style.flexDirection  = FlexDirection.Row;
+        row.style.justifyContent = Justify.SpaceBetween;
+        row.style.marginBottom   = 3;
+
+        var name = new Label(label);
+        name.style.fontSize = 10;
+        name.style.color    = new StyleColor(UiTheme.Current.textSub);
+
+        var value = new Label("—");
+        value.style.fontSize = 10;
+        value.style.color    = new StyleColor(UiTheme.Current.textMain);
+
+        row.Add(name); row.Add(value);
+        stabilitySection.Add(row);
+        return value;
+    }
+
+    void RefreshStabilityStats()
+    {
+        EnsureStabilityRows();
+        if (statStability == null || skeleton == null) return;
+
+        var s = skeleton.Stability;
+
+        // Ratio is "how many times over" the pot can hold the tree down. Report it as a plain
+        // word plus the margin — a bare number means nothing to a player mid-game.
+        if (skeleton.HasTipped)
+        {
+            statStability.text = "TIPPED — repot to right it";
+            statStability.style.color = new StyleColor(new Color(0.9f, 0.3f, 0.3f));
+        }
+        else if (s.ratio >= 900f || s.ballastMass <= 0f)
+        {
+            statStability.text = "—";
+            statStability.style.color = new StyleColor(UiTheme.Current.textMain);
+        }
+        else
+        {
+            string word = s.ratio >= 2.5f ? "Solid"
+                        : s.ratio >= 1.8f ? "Steady"
+                        : s.ratio >= 1.3f ? "Leaning"
+                        : "Precarious";
+            statStability.text = $"{word} ({s.ratio:F1}×)";
+            statStability.style.color = new StyleColor(
+                s.ratio >= 2.5f ? new Color(0.55f, 0.85f, 0.55f)
+              : s.ratio >= 1.8f ? new Color(0.75f, 0.85f, 0.55f)
+              : s.ratio >= 1.3f ? new Color(0.9f,  0.7f,  0.3f)
+              :                   new Color(0.9f,  0.4f,  0.3f));
+        }
+
+        // Ballast: the counterweight, and whether water is currently helping. This is the line
+        // that teaches "water before wind" without a tutorial.
+        if (statBallast != null)
+        {
+            statBallast.text = s.ballastMass > 0f
+                ? (s.wetBonusActive ? $"{s.ballastMass:F0} (wet)" : $"{s.ballastMass:F0} (dry)")
+                : "—";
+            statBallast.style.color = new StyleColor(s.wetBonusActive
+                ? new Color(0.55f, 0.85f, 0.55f)
+                : new Color(0.9f, 0.7f, 0.3f));
+        }
+
+        // Canopy load: mass and how far it overhangs, which is what actually threatens the pot.
+        if (statTopHeavy != null)
+            statTopHeavy.text = s.canopyMass > 0f
+                ? $"{s.canopyMass:F0} · reach {s.comOffset:F2}"
+                : "—";
     }
 
     // ── Pause menu helpers ───────────────────────────────────────────────────
@@ -2519,7 +2620,10 @@ public class ButtonClicker : MonoBehaviour
         {
             pendingPotItem = pot;
             pendingPotSize = pot.potSize;          // map the chosen pot to its footprint
-            // pot.prefab is the mesh-swap hook for when pot art is authored — applied on repot.
+            // Skin the pot now so the choice is visible while picking; the footprint itself
+            // only changes on repot confirm (PotSoil.Repot → ApplyPotSize).
+            var soil = skeleton != null ? skeleton.GetComponent<PotSoil>() : null;
+            soil?.SetPotModel(pot.prefab, skeleton.GetRootAreaTransform());
             RefreshPotSizeButtons();
             if (potSizeLabel != null) potSizeLabel.text = $"Current: {pot.Label}";
         });

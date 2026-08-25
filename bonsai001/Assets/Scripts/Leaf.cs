@@ -88,6 +88,34 @@ public class Leaf : MonoBehaviour
     float      windPhase;
     Quaternion baseLocalRotation;
 
+    [Tooltip("Largest angle a leaf may swing about its stem attachment, in degrees.")]
+    public float maxSwingDeg = 32f;
+
+    // Branch-level wind identity: leaves sharing a branch share these, so they swing as one
+    // group. Cached at Start — walking the parent chain every frame for every leaf is wasteful.
+    float   branchPhase;
+    Vector3 branchAnchorWorld;
+
+    // The bark now bends in the vertex shader (BarkVertexColor TreeSway); the leaf's anchor must
+    // ride the SAME displacement or the stem visibly detaches from its twig. Computed through
+    // WindSway.cs — the CPU mirror of the shader function (see its MIRROR CONTRACT header).
+    TreeMeshBuilder swayBuilder;
+
+    /// <summary>Finds the branch this leaf belongs to (the nearest scaffold-level ancestor) and
+    /// caches a phase + sample point from it, so a whole branch's foliage moves together.</summary>
+    void CacheBranchIdentity()
+    {
+        var b = ownerNode;
+        while (b != null && b.parent != null && b.depth > 1) b = b.parent;
+        if (b == null) b = ownerNode;
+        branchPhase       = b != null ? (b.id * 0.6180339f) % 1f : windPhase;   // golden-ratio spread
+        // Node positions are in SKELETON space, and the leaf is parented to the skeleton — so the
+        // parent does the conversion, not the leaf's own (rotated, scaled) transform.
+        branchAnchorWorld = (b != null && transform.parent != null)
+            ? transform.parent.TransformPoint(b.tipPosition)
+            : transform.position;
+    }
+
     // ── Unity ─────────────────────────────────────────────────────────────────
 
     void Start()
@@ -97,6 +125,10 @@ public class Leaf : MonoBehaviour
 
         windPhase         = Random.value;
         baseLocalRotation = transform.localRotation;
+        CacheBranchIdentity();
+        // For riding the bark's vertex-shader sway: leaves are parented under the skeleton, so
+        // the builder is findable here. Cached now — falling leaves may be reparented later.
+        swayBuilder = GetComponentInParent<TreeMeshBuilder>();
 
         // Start small immediately — no full-size flash on the spawn frame.
         // (Unless StartFalling already ran before Start — shed needles spawn falling
@@ -123,21 +155,60 @@ public class Leaf : MonoBehaviour
         // plus a rotation wobble around the captured base orientation.
         if (!isFalling && ownerNode != null)
         {
+            // The stem attachment ALWAYS sits exactly on its twig. The twig itself now BENDS in
+            // the bark vertex shader, so "on its twig" means node position PLUS the same sway
+            // displacement the bark vertices get there — computed via WindSway (the CPU mirror
+            // of the shader's TreeSway/TreeFlex). One offset for the whole leaf: the stem stays
+            // welded to the moving twig, never sliding relative to it (2026-08-24 rule).
             Vector3 basePos = ownerNode.tipPosition + tipOffset;
+            Vector3 swayLocal = Vector3.zero;
+            if (swayBuilder != null && transform.parent != null && WindManager.CanonStrength > 0f)
+            {
+                float flex = swayBuilder.NodeSwayFlex(ownerNode);
+                if (flex > 0f)
+                {
+                    Vector3 restW = transform.parent.TransformPoint(basePos);
+                    swayLocal = transform.parent.InverseTransformVector(WindSway.Sway(restW, flex));
+                }
+            }
+            transform.localPosition = basePos + swayLocal;
+
             var wind = WindManager.Instance;
             if (wind != null && wind.strength > 0f)
             {
-                Vector3 sway = wind.SampleSway(transform.position, windPhase);
-                if (transform.parent != null)
-                    sway = transform.parent.InverseTransformVector(sway);
-                transform.localPosition = basePos + sway;
+                // Sample at the BRANCH, with a branch-level phase, so every leaf on the same
+                // branch swings together as if the branch itself were moving — instead of each
+                // leaf fluttering independently, which reads as insects rather than foliage.
+                Vector3 swayW = wind.SampleSway(branchAnchorWorld, branchPhase);
+
+                Quaternion parentRot = transform.parent != null ? transform.parent.rotation
+                                                                : Quaternion.identity;
+                Quaternion restWorld = parentRot * baseLocalRotation;
+                Vector3    bladeDirW = restWorld * Vector3.forward;   // blade runs along local +Z
+
+                // Only the component across the blade swings it; along-blade wind just compresses.
+                Vector3 lateral = Vector3.ProjectOnPlane(swayW, bladeDirW);
+                Quaternion swung = restWorld;
+                if (lateral.sqrMagnitude > 1e-10f)
+                {
+                    // Displacement → angle about the attachment, using the blade as the lever arm.
+                    float arm   = Mathf.Max(0.01f, targetScale.z);
+                    float angle = Mathf.Min(maxSwingDeg,
+                                            Mathf.Rad2Deg * Mathf.Atan2(lateral.magnitude, arm));
+                    Vector3 axis = Vector3.Cross(bladeDirW, lateral.normalized);
+                    if (axis.sqrMagnitude > 1e-10f)
+                        swung = Quaternion.AngleAxis(angle, axis.normalized) * restWorld;
+                }
+
+                // Per-leaf flutter on top: a twist about the leaf's own axes, still pivoting at
+                // the stem, so individual leaves shimmer within the branch's shared motion.
                 float w = Mathf.Sin(Time.time * (2.1f + windPhase * 1.7f) + windPhase * 11f)
                           * 6f * wind.GustLevel;
-                transform.localRotation = baseLocalRotation * Quaternion.Euler(w, 0f, w * 0.7f);
+                transform.rotation = swung * Quaternion.Euler(w, 0f, w * 0.7f);
             }
             else
             {
-                transform.localPosition = basePos;
+                transform.localRotation = baseLocalRotation;
             }
         }
 

@@ -1108,10 +1108,34 @@ public partial class TreeSkeleton : MonoBehaviour
 
     /// <summary>
     /// Reduces a node's health by amount, clamped to 0.
+    /// Accumulates per-type totals so the seasonal report can name the killer —
+    /// added 2026-07-05 after white pines died of an UNKNOWN tree-wide drain
+    /// (avgHealth 0.06) with every styler cut vetoed. No more guessing.
     /// </summary>
     public void ApplyDamage(TreeNode node, DamageType type, float amount)
     {
         node.health = Mathf.Max(0f, node.health - amount);
+
+        if (!damageThisSeason.TryGetValue(type, out float t)) t = 0f;
+        damageThisSeason[type] = t + amount;
     }
 
+    readonly System.Collections.Generic.Dictionary<DamageType, float> damageThisSeason
+        = new System.Collections.Generic.Dictionary<DamageType, float>();
+
+    /// <summary>Logs and resets the per-type damage totals. Called each spring.</summary>
+    public void ReportSeasonDamage()
+    {
+        if (damageThisSeason.Count == 0)
+        {
+            Debug.Log($"[Health] Season damage: none | year={GameManager.year}");
+            return;
+        }
+        var parts = new System.Collections.Generic.List<string>();
+        foreach (var kv in damageThisSeason)
+            parts.Add($"{kv.Key}={kv.Value:F2}");
+        parts.Sort();
+        Debug.Log($"[Health] Season damage totals: {string.Join(" ", parts)} | year={GameManager.year}");
+        damageThisSeason.Clear();
+    }
 }

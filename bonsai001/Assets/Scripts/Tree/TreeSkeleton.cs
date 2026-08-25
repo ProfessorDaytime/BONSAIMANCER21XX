@@ -216,8 +216,10 @@ public partial class TreeSkeleton : MonoBehaviour
              "so vigor naturally diminishes with density. Trim regularly to stay vigorous.")]
     [SerializeField] int maxBranchNodes = 2000;
 
-    /// <summary>Hard branch-node budget (read by AutoStyler's crowding score).</summary>
-    public int MaxBranchNodesPublic => maxBranchNodes;
+    /// <summary>Hard branch-node budget (read by AutoStyler's crowding score). Returns the
+    /// POT-SCALED budget so the styler judges crowding against what this pot can actually carry —
+    /// against the flat 2000 a shohin would never register as crowded.</summary>
+    public int MaxBranchNodesPublic => EffectiveMaxBranchNodes;
 
     [Tooltip("Pipe-model exponent: parent = (Σ child^e)^(1/e). Leonardo's classic e=2\n" +
              "over-thickens at bonsai twig counts (the 'fist of stubs' look); field data\n" +
@@ -589,9 +591,95 @@ public partial class TreeSkeleton : MonoBehaviour
              "This budget is independent of maxTotalRootNodes so it fires even when the outer cap is full.")]
     [SerializeField] int potBoundMaxFillPerYear = 30;
 
-    [Tooltip("Hard cap on total root nodes. No new root segments (continuation or lateral) " +
-             "spawn once this is reached. Prevents unbounded root growth over many seasons.")]
+    [Tooltip("Hard cap on total root nodes for the REFERENCE pot size (M). No new root segments " +
+             "spawn once this is reached. With Pot Volume Limits Roots on, the live cap scales " +
+             "with the current pot's soil volume — see EffectiveMaxRootNodes.")]
     [SerializeField] int maxTotalRootNodes = 1500;
+
+    // ── Pot-volume dwarfing (2026-08-24) ──────────────────────────────────────
+    // The central bonsai mechanic: a small pot holds less soil → supports fewer roots → the tree
+    // takes up less water/nutrient → it grows more slowly and stays smaller. Before this, pot size
+    // was purely geometric (it bounded where roots could go, and shrank leaves via
+    // RootPressureFactor) but a seedling in a 4-in pot grew exactly as fast as one in a 16-in slab.
+
+    [Tooltip("Scale the root-node budget by the current pot's soil volume, relative to the M " +
+             "reference. XS ≈ 0.17× and XL ≈ 1.63×, from real frustum volumes. Off = flat cap.")]
+    [SerializeField] bool potVolumeLimitsRoots = true;
+
+    [Tooltip("Softens the volume→root-cap curve. 1 = true volume ratio (most realistic); lower " +
+             "values compress the range so small pots are less punishing. Try 0.7 if XS stalls.")]
+    [SerializeField] [Range(0.3f, 1f)] float rootCapVolumeExponent = 1f;
+
+    [Tooltip("Floor on the scaled root cap, so no pot can starve the tree into never rooting.")]
+    [SerializeField] int minScaledRootNodes = 120;
+
+    [Tooltip("Throttle growth when the root system cannot support the canopy. This is what makes a " +
+             "small pot actually DWARF the tree rather than just cap its roots.")]
+    [SerializeField] bool potVolumeLimitsGrowth = true;
+
+    /// <summary>Runtime override for the pot-volume growth limit (used by TippingTestMode, which
+    /// needs a canopy that can outgrow its pot).</summary>
+    public bool PotVolumeLimitsGrowth
+    {
+        get => potVolumeLimitsGrowth;
+        set => potVolumeLimitsGrowth = value;
+    }
+
+    [Tooltip("Fraction of the pot's branch budget a tree can reach before growth starts throttling. " +
+             "0.7 = free growth to 70% of capacity, then a smooth ramp down to the floor as it fills.")]
+    [SerializeField] [Range(0.2f, 1f)] float canopyComfortFrac = 0.7f;
+
+    [Tooltip("Lowest growth multiplier a root-starved tree can fall to. Dwarfing should slow growth, " +
+             "never freeze it — a stalled tree reads as a bug to the player.")]
+    [SerializeField] [Range(0.1f, 1f)] float rootSupportFloor = 0.5f;
+
+    /// <summary>Root-node budget for the CURRENT pot — `maxTotalRootNodes` scaled by the pot's soil
+    /// volume against the M reference. This is where pot size stops being cosmetic.</summary>
+    public int EffectiveMaxRootNodes
+    {
+        get
+        {
+            if (!potVolumeLimitsRoots) return maxTotalRootNodes;
+            var ps = _holePotSoil != null ? _holePotSoil : GetComponent<PotSoil>();
+            if (ps == null) return maxTotalRootNodes;
+            float f = Mathf.Pow(Mathf.Max(0.0001f, ps.PotVolumeFactor), rootCapVolumeExponent);
+            return Mathf.Max(minScaledRootNodes, Mathf.RoundToInt(maxTotalRootNodes * f));
+        }
+    }
+
+    /// <summary>Canopy budget for the CURRENT pot. The hard bound on tree size — without it a
+    /// speed penalty alone just takes longer to reach the same huge tree (measured 2026-08-24: a
+    /// flat 0.5× throttle still let an XS-potted tree reach 1,691 branches).</summary>
+    public int EffectiveMaxBranchNodes
+    {
+        get
+        {
+            if (!potVolumeLimitsGrowth) return maxBranchNodes;
+            var ps = _holePotSoil != null ? _holePotSoil : GetComponent<PotSoil>();
+            if (ps == null) return maxBranchNodes;
+            float f = Mathf.Pow(Mathf.Max(0.0001f, ps.PotVolumeFactor), rootCapVolumeExponent);
+            int scaled = Mathf.RoundToInt(maxBranchNodes * f);
+            return Mathf.Clamp(scaled, minScaledBranchNodes, maxBranchNodes * 2);
+        }
+    }
+
+    [Tooltip("Floor on the scaled canopy budget — even the smallest pot must allow enough " +
+             "ramification to read as a tree.")]
+    [SerializeField] int minScaledBranchNodes = 150;
+
+    /// <summary>Growth throttle as the canopy approaches what its pot can carry, 1 → floor.
+    /// Measured against the pot's own branch budget rather than a root:shoot node ratio — that
+    /// first attempt calibrated `rootsPerBranchNode` from a YOUNG tree (roots outnumber branches
+    /// early) and inverted at maturity, pinning the factor at its floor all run (2026-08-24).</summary>
+    public float RootSupportFactor()
+    {
+        if (!potVolumeLimitsGrowth) return 1f;
+        int branches = 0;
+        foreach (var n in allNodes) if (!n.isTrimmed && !n.isRoot) branches++;
+        if (branches <= 0) return 1f;
+        float supported = EffectiveMaxBranchNodes * canopyComfortFrac;
+        return Mathf.Clamp(supported / branches, rootSupportFloor, 1f);
+    }
 
     [Tooltip("Outward-from-trunk radial bias on root continuation. Keeps roots spreading wide.")]
     [SerializeField] float rootRadialWeight = 0.25f;
@@ -611,6 +699,16 @@ public partial class TreeSkeleton : MonoBehaviour
     [Tooltip("Lift multiplier while raking (RootRake state) so the soil-caked root ball — " +
              "which hangs below the trunk base — fully clears the pot rim.")]
     [SerializeField] float rakeLiftMult = 1.5f;
+
+    [Tooltip("Derive the root-lift height from the CURRENT POT's height instead of the fixed " +
+             "Root Lift Height above. Keeps the lift proportional at every pot size — the fixed " +
+             "value was tuned for the old oversized pots and threw the tree off-screen once pots " +
+             "were calibrated to real meshes. Untick to go back to the absolute value.")]
+    [SerializeField] bool liftFromPotHeight = true;
+
+    [Tooltip("Root lift as a multiple of pot height (used when Lift From Pot Height is on). " +
+             "2 = the tree rises two pot-heights, clearing the rim with the root ball fully visible.")]
+    [SerializeField] [Range(0.5f, 6f)] float rootLiftPotMultiple = 2f;
 
     [Tooltip("Lift/lower animation speed (units per second).")]
     [SerializeField] float rootLiftSpeed = 4f;
@@ -1111,7 +1209,30 @@ public partial class TreeSkeleton : MonoBehaviour
 
     // Root lift animation
     float initY       = 0f;  // world Y the tree rests at (updated by SetPlantingSurface)
+
+    /// <summary>World Y the tree RESTS at, ignoring the root-lift animation. Anything that seats
+    /// the pot or root box must use this, never <c>transform.position.y</c> — during RootRake/
+    /// RootPrune the tree transform is animated up by several units, and seating to the live
+    /// position sent the pot flying up after the tree (2026-08-24).</summary>
+    public float GroundedBaseY => initY;
+
+    /// <summary>True while the root-lift animation has the tree off its resting height.</summary>
+    public bool IsLifted => currentLift > 0.001f;
+
+    /// <summary>Move the tree's RESTING height — used when a repot changes pot depth. The pot sits
+    /// on the bench, so a deeper pot lifts the tree and a shallow slab lowers it; pinning the tree
+    /// instead left shallow pots hovering above the table (2026-08-24). Preserves any active
+    /// root-lift offset and keeps the planting surface in step.</summary>
+    public void SetGroundedBaseY(float y)
+    {
+        if (Mathf.Abs(initY - y) < 0.0001f) return;
+        initY = y;
+        var p = transform.position;
+        transform.position   = new Vector3(p.x, initY + currentLift, p.z);
+        plantingSurfacePoint = new Vector3(plantingSurfacePoint.x, y, plantingSurfacePoint.z);
+    }
     float liftTarget  = 0f;  // 0 = grounded, rootLiftHeight = lifted
+    float _rootSupportCached = 1f;  // RootSupportFactor for the current grow pass
     float currentLift = 0f;
 
     // Planting surface -- the surface the tree rests on.
