@@ -7,6 +7,21 @@ using UnityEngine;
 
 public enum TreeOrigin { Seedling, Cutting, AirLayer }
 
+/// <summary>
+/// What the game scene should do when it loads, decided by the main menu before the scene change
+/// (PLAN "Release Prep" R1).
+/// </summary>
+public enum PendingLaunchAction
+{
+    /// <summary>Nothing was decided — the game scene decides for itself. This is the state when
+    /// Game001 is opened directly in the editor, so that workflow keeps working unchanged.</summary>
+    None,
+    /// <summary>Load <see cref="SaveManager.ActiveSlotId"/> and go straight into play.</summary>
+    LoadSlot,
+    /// <summary>Skip the picker and go to species selection.</summary>
+    NewTree,
+}
+
 // ── Data classes ──────────────────────────────────────────────────────────────
 
 [System.Serializable]
@@ -125,6 +140,12 @@ public class SaveFusionBond
 
 public class SaveData
 {
+    // Save-format version this file was written with. 0 means "written before versioning
+    // existed": JsonUtility leaves a field absent from the JSON at its initializer value,
+    // so every pre-2026-10-12 save reads back as 0. That is exactly how they're detected.
+    // See SaveManager.SchemaVersion and SaveManager.MigrateToCurrent.
+    public int schemaVersion;
+
     // Tree nodes
     public List<SaveNode> nodes = new List<SaveNode>();
 
@@ -192,6 +213,10 @@ public class SaveData
 [System.Serializable]
 public class SaveMeta
 {
+    // Mirrors SaveData.schemaVersion so the load menu can tell a slot is unloadable
+    // without parsing the whole save.json. 0 = pre-versioning (see SaveData).
+    public int    schemaVersion;
+
     public string slotId;
     public string saveName;
     public int    treeOrigin;   // TreeOrigin cast to int
@@ -211,6 +236,48 @@ public static class SaveManager
 {
     /// <summary>Fired after any successful save. Payload is a short display string, e.g. "Autosaved" or "Saved".</summary>
     public static event System.Action<string> OnSaved;
+
+    // ── Schema version ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Current save-format version, written into every save.json and meta.json.
+    ///
+    /// <para><b>Bump this whenever a change to SaveData / SaveNode / SaveMeta cannot be
+    /// absorbed by a field initializer</b> — i.e. any time an existing field changes
+    /// meaning, units or encoding, or a field is removed or renamed. Purely <i>additive</i>
+    /// fields do NOT need a bump: JsonUtility leaves a field that's missing from the JSON at
+    /// its initializer value, which is what the "0 in old saves" comments throughout this
+    /// file rely on.</para>
+    ///
+    /// <para>When you bump it: add an <c>UpgradeV&lt;n&gt;ToV&lt;n+1&gt;</c> method, add its
+    /// <c>case</c> to <see cref="MigrateToCurrent"/>, and add a line to the history below.
+    /// Never renumber or reuse a version number.</para>
+    ///
+    /// History:
+    /// <list type="bullet">
+    ///   <item>0 — every save written before 2026-10-12; no version field on disk.</item>
+    ///   <item>1 — versioning introduced. Structurally identical to 0, so the 0→1 upgrade
+    ///         is a no-op stamp.</item>
+    /// </list>
+    /// </summary>
+    public const int SchemaVersion = 1;
+
+    /// <summary>
+    /// Why the most recent load attempt failed, in words meant for the player. Null when the
+    /// last attempt succeeded. Set by every failure path in <see cref="LoadSlot"/> /
+    /// <see cref="LoadOriginal"/> and cleared at the start of each attempt, so UI that calls a
+    /// load can show a reason instead of appearing to do nothing.
+    /// </summary>
+    public static string LastLoadError { get; private set; }
+
+    /// <summary>
+    /// True if a save written with schema version <paramref name="v"/> can be loaded by this
+    /// build. False only for saves from a NEWER build than this one — those are refused
+    /// rather than read, because fields this build doesn't know about would be dropped and
+    /// fields whose meaning changed would be misread, and the result would be written back
+    /// over the newer save on the next autosave.
+    /// </summary>
+    public static bool IsSchemaLoadable(int v) => v <= SchemaVersion;
 
     // ── Paths ─────────────────────────────────────────────────────────────────
 
@@ -258,6 +325,28 @@ public static class SaveManager
                 PlayerPrefs.SetString("BonsaiActiveSlot", _activeSlotId);
             PlayerPrefs.Save();
         }
+    }
+
+    // ── Pending launch (menu → game scene) ────────────────────────────────
+
+    /// <summary>
+    /// What the main menu decided the game scene should do. Deliberately a plain static rather
+    /// than a PlayerPrefs value: it describes one scene transition, not a persistent preference,
+    /// and statics survive a scene load. Persisting it would make a crash mid-load resume into
+    /// the wrong thing on next launch.
+    ///
+    /// <para><see cref="ActiveSlotId"/> carries <i>which</i> slot (it already persists); this
+    /// carries <i>whether to use it</i>.</para>
+    /// </summary>
+    public static PendingLaunchAction PendingLaunch { get; set; } = PendingLaunchAction.None;
+
+    /// <summary>Reads and clears <see cref="PendingLaunch"/>, so a single decision is acted on
+    /// once. Returning to the menu and coming back sets it again.</summary>
+    public static PendingLaunchAction ConsumePendingLaunch()
+    {
+        var a = PendingLaunch;
+        PendingLaunch = PendingLaunchAction.None;
+        return a;
     }
 
     // ── Slot ID factory ───────────────────────────────────────────────────────
@@ -321,6 +410,10 @@ public static class SaveManager
                 saveTimestamp     = "20000101_000000",   // sorts to bottom
                 seasonsSinceRepot = data.soilSeasonsSinceRepot,
                 nodeCount         = data.nodes?.Count ?? 0,
+                // schemaVersion deliberately left 0: the legacy file is copied byte-for-byte
+                // below, so the data on disk really is pre-versioning. It gets upgraded in
+                // memory on first load and written forward on the next save.
+                schemaVersion     = 0,
             };
             File.WriteAllText(SlotMetaPath(slotId), JsonUtility.ToJson(meta, true));
 
@@ -392,6 +485,12 @@ public static class SaveManager
         data.treeOrigin    = meta.treeOrigin;
         data.speciesName   = meta.speciesName;
         data.saveTimestamp = meta.saveTimestamp;
+
+        // Stamp both files here — the one place every save path funnels through. Re-saving a
+        // slot loaded from an older format upgrades it on disk, since the loader already
+        // migrated the data in memory.
+        data.schemaVersion = SchemaVersion;
+        meta.schemaVersion = SchemaVersion;
 
         File.WriteAllText(SlotSavePath(slotId), JsonUtility.ToJson(data, prettyPrint: true));
         File.WriteAllText(SlotMetaPath(slotId), JsonUtility.ToJson(meta, prettyPrint: true));
@@ -488,28 +587,98 @@ public static class SaveManager
         return true;
     }
 
+    // ── Migration (schema upgrades) ─────────────────────────────────────────
+
+    /// <summary>
+    /// Brings a freshly-parsed <paramref name="data"/> up to <see cref="SchemaVersion"/>,
+    /// in place, by running each upgrade step in order. Must be called after parsing and
+    /// <b>before</b> any of the data is applied to the game.
+    ///
+    /// Returns false and sets <see cref="LastLoadError"/> when the save cannot be brought
+    /// forward — either it comes from a newer build, or an upgrade step is missing.
+    /// </summary>
+    /// <param name="label">Human-readable source of the save, for log messages.</param>
+    static bool MigrateToCurrent(SaveData data, string label)
+    {
+        if (data.schemaVersion > SchemaVersion)
+            return LoadFailed($"This save was made with a newer version of the game " +
+                              $"(save format v{data.schemaVersion}, this build reads up to " +
+                              $"v{SchemaVersion}). Update the game to open it.");
+
+        if (data.schemaVersion == SchemaVersion) return true;
+
+        int from = data.schemaVersion;
+
+        while (data.schemaVersion < SchemaVersion)
+        {
+            int before = data.schemaVersion;
+
+            switch (data.schemaVersion)
+            {
+                case 0: UpgradeV0ToV1(data); break;
+
+                default:
+                    // A version exists on disk that this build has no upgrade step for.
+                    // Means someone bumped SchemaVersion without adding a case here.
+                    return LoadFailed($"Can't upgrade this save: no upgrade step for save " +
+                                      $"format v{data.schemaVersion}.");
+            }
+
+            if (data.schemaVersion <= before)
+                return LoadFailed($"Can't upgrade this save: the v{before} upgrade step " +
+                                  $"didn't advance the version (bug).");
+        }
+
+        Debug.Log($"[Save] Migrated {label}: save format v{from} → v{data.schemaVersion}.");
+        return true;
+    }
+
+    /// <summary>
+    /// 0 → 1. Version 0 is every save written before the version field existed. It is
+    /// structurally identical to v1 — the pre-versioning saves were kept readable by field
+    /// initializers alone (see the "0 in old saves" comments on SaveData / SaveNode) — so
+    /// this step only stamps the version. It stays as the worked example for the next one.
+    /// </summary>
+    static void UpgradeV0ToV1(SaveData data)
+    {
+        data.schemaVersion = 1;
+    }
+
+    /// <summary>Records why a load failed, logs it, and returns false so callers can
+    /// <c>return LoadFailed(...)</c> in one line.</summary>
+    static bool LoadFailed(string reason)
+    {
+        LastLoadError = reason;
+        Debug.LogWarning($"[Save] Load failed: {reason}");
+        return false;
+    }
+
     // ── Load slot ─────────────────────────────────────────────────────────────
 
     /// <summary>Loads the named slot into the skeleton. Sets ActiveSlotId on success.</summary>
     public static bool LoadSlot(string slotId, TreeSkeleton skeleton,
                                 LeafManager leafManager = null)
     {
+        LastLoadError = null;
+
         string path = SlotSavePath(slotId);
         if (!File.Exists(path))
-        {
-            Debug.LogWarning($"[Save] LoadSlot: no save.json at slot={slotId}");
-            return false;
-        }
+            return LoadFailed($"Save file is missing (slot {slotId}).");
 
         SaveData data;
         try { data = JsonUtility.FromJson<SaveData>(File.ReadAllText(path)); }
-        catch (Exception e) { Debug.LogError($"[Save] LoadSlot parse error: {e.Message}"); return false; }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Save] LoadSlot parse error: {e}");
+            return LoadFailed("Save file is damaged and couldn't be read.");
+        }
 
         if (data == null || data.nodes == null || data.nodes.Count == 0)
-        {
-            Debug.LogWarning($"[Save] LoadSlot: slot={slotId} is empty or corrupt.");
-            return false;
-        }
+            return LoadFailed($"Save file is empty or damaged (slot {slotId}).");
+
+        // Upgrade before ANY of it is applied — a rejected save must leave the current game
+        // untouched, so this has to happen before the first GameManager write below.
+        if (!MigrateToCurrent(data, $"slot {slotId}")) return false;
 
         GameManager.year      = data.year;
         GameManager.month     = data.month;
@@ -577,20 +746,21 @@ public static class SaveManager
 
     public static bool LoadOriginal(TreeSkeleton skeleton, LeafManager leafManager = null)
     {
+        LastLoadError = null;
+
         if (!File.Exists(OriginalSavePath))
         {
             Debug.Log("[Save] No original backup found.");
-            return false;
+            return LoadFailed("There's no pre-sever original to restore.");
         }
         SaveData data;
         try { data = JsonUtility.FromJson<SaveData>(File.ReadAllText(OriginalSavePath)); }
-        catch { Debug.LogWarning("[Save] Original backup corrupt."); return false; }
+        catch { return LoadFailed("The pre-sever original is damaged and couldn't be read."); }
 
         if (data == null || data.nodes == null || data.nodes.Count == 0)
-        {
-            Debug.LogWarning("[Save] Original backup empty.");
-            return false;
-        }
+            return LoadFailed("The pre-sever original is empty or damaged.");
+
+        if (!MigrateToCurrent(data, "original backup")) return false;
 
         GameManager.year      = data.year;
         GameManager.month     = data.month;
@@ -632,6 +802,8 @@ public static class SaveManager
 
         var data = new SaveData
         {
+            schemaVersion = SchemaVersion,
+
             year      = GameManager.year,
             month     = GameManager.month,
             day       = GameManager.day,

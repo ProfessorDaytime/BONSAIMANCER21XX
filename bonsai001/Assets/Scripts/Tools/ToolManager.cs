@@ -76,7 +76,8 @@ public class ToolManager : MonoBehaviour
         GameManager.canGraft      = tool == ToolType.Graft;
         GameManager.canPromote    = tool == ToolType.Promote;
         GameManager.canJin        = tool == ToolType.Jin;
-        Debug.Log($"[Tool] SelectTool={tool} | canTrim={GameManager.canTrim} canWire={GameManager.canWire} canRemoveWire={GameManager.canRemoveWire} canPaste={GameManager.canPaste} | gameState={GameManager.Instance?.state}");
+        if (BonsaiDebug.Enabled)
+            Debug.Log($"[Tool] SelectTool={tool} | canTrim={GameManager.canTrim} canWire={GameManager.canWire} canRemoveWire={GameManager.canRemoveWire} canPaste={GameManager.canPaste} | gameState={GameManager.Instance?.state}");
     }
 
     public void ClearTool()
@@ -93,6 +94,7 @@ public class ToolManager : MonoBehaviour
         GameManager.canGraft      = false;
         GameManager.canPromote    = false;
         GameManager.canJin        = false;
-        Debug.Log($"[Tool] ClearTool | gameState={GameManager.Instance?.state}");
+        if (BonsaiDebug.Enabled)
+            Debug.Log($"[Tool] ClearTool | gameState={GameManager.Instance?.state}");
     }
 }

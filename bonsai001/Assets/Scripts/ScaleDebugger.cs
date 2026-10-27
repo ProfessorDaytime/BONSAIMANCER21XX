@@ -54,7 +54,7 @@ public class ScaleDebugger : MonoBehaviour
 
     void OnEndCameraRendering(ScriptableRenderContext ctx, Camera camera)
     {
-        if (!Visible || _mat == null) return;
+        if (!Visible || !BonsaiDebug.Enabled || _mat == null) return;
         if (camera.cameraType != CameraType.Game && camera.cameraType != CameraType.SceneView) return;
 
         // Resolve base Y: prefer inspector override, then TreeSkeleton soil surface

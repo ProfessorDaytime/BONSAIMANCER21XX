@@ -15,7 +15,13 @@ public class AudioManager : MonoBehaviour
             Instance = this;
             DontDestroyOnLoad(gameObject);
         } else{
-            Destroy(gameObject);
+            // Destroy only this component, never the GameObject. In Game001 this component shares
+            // its GameObject with GameManager and seven other managers; destroying the object
+            // silently killed the whole simulation whenever a second AudioManager arrived from
+            // another scene (2026-10-13). A duplicate should remove itself and nothing else.
+            Debug.LogWarning($"[Audio] Duplicate AudioManager on '{gameObject.name}' — removing the " +
+                             "duplicate component only.");
+            Destroy(this);
         }
 
     }

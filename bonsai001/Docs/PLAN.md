@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-08-24 · **Pot pipeline shipped** (queue #3): all 6 sizes authored + `PotDimensions` calibrated to real mesh bounds + `PotSoil` renders authored meshes with a catalog override. Unit convention settled as game-feel, not real-world. · Prior: **Fable 5 Work Orders** section (time-boxed audit — see below). · Flower/fruit system (all 9 conifers cone), needle foliage for conifers, plus the H item menus and Quick-Start/Multi-Tree from earlier this phase. See "Completed This Phase" below for the full list and the Completed Items Log at the bottom for prior phases.
+Last updated: 2026-10-12 · **R1 (Main Menu + launch flow), R2 (Settings) and R5's four code items built** — see Release Prep below; both compile-verified against the real package assemblies. · **New section: "Release Prep — Playable Test Build & Store Launch"** (R0–R8) — the front-of-house shell (build identity, main menu, settings, menu showcase tree, tool cursors, test-build hygiene) plus the Steam store/marketing/admin asset pipeline. R0 and the save-schema version are blocking and semi-irreversible; do them before any build leaves this machine. · Prior: 2026-08-24 — **Pot pipeline shipped** (queue #3): all 6 sizes authored + `PotDimensions` calibrated to real mesh bounds + `PotSoil` renders authored meshes with a catalog override. Unit convention settled as game-feel, not real-world. · Prior: **Fable 5 Work Orders** section (time-boxed audit — see below). · Flower/fruit system (all 9 conifers cone), needle foliage for conifers, plus the H item menus and Quick-Start/Multi-Tree from earlier this phase. See "Completed This Phase" below for the full list and the Completed Items Log at the bottom for prior phases.
 
 ---
 
@@ -24,7 +24,723 @@ Pending work in recommended priority order. Detailed specs are under "Pending �
 | 3 | **Tipping — branch weight vs pot stability** | ✅ **built 2026-08-24** — `TreeSkeleton.Stability.cs` (new partial). Analytic moment balance, deliberately NOT rigid-body physics (the mesh rebuilds constantly and a real collider would fight the growth system). Canopy mass = wood volume πr²ℓ × density + foliage via the existing `leafMassEach`, with segment mass acting at the midpoint and foliage at the tip; ballast = pot shell + soil + held water; both resolved about the pot's **base** edge (`FootprintRadius` = rim × taper — a tapered pot pivots on its narrow base, which is exactly why wide shallow bonsai pots are stable). Soil mass comes from the **existing 7-component mix** at real bulk densities, so free-draining pumice/perlite is lightest and tippiest while sand/akadama is heavy and stable, and `saturatedWaterFraction` 0.40 makes a watered pot ~1.5× its dry weight. Warning **lean** ramps in below `leanWarnRatio` before an outright tip; tipping takes the pot and soil over with the tree (`PotSoil.TipVisuals`, separate scene objects); repotting calls `RightTree()`. Anchor wire (`AnchorWireSet`) multiplies the righting moment — no UI yet, that's the follow-up. Evaluated each season + on init. **Stability stats are live in the Tree Health panel** (code-built rows: Stability word + ratio, Pot ballast wet/dry, Canopy load + reach). **Remaining:** tune `tipSafetyFactor`/`woodMassDensity` against real runs, add an anchor-wire tool button, and decide whether tipping damages the tree or is purely recoverable. *Original spec below.* A tree whose canopy outgrows its pot should **fall over**. Real bonsai physics: the pot+soil mass and footprint resist the canopy's overturning moment, and an unbalanced or over-large tree in a small pot topples — which is exactly why wide shallow pots exist and why growers wire trees INTO the pot. Compute the canopy's centre of mass + total branch mass (`ComputeLeafLoad` already exists for leaf weight; extend to wood via node radius×length), take the moment about the pot's rim edge, and compare against the righting moment from pot mass × base radius (`PotDimensions` + `PotTaper` give the real footprint). Exceeding it = tip. **The counterweight is the SOIL, and it must be modelled dry vs wet** (2026-08-24): soil volume is the exact frustum `(πh/3)(R²+Rr+r²)`; dry mass = volume × bulk density derived from the **existing 7-component mix** (real bulk g/cm³ — akadama 0.7, pumice 0.5, lava 0.9, organic 0.3, sand 1.6, kanuma 0.6, perlite 0.1); wet mass adds `volume × waterFraction × moisture`. Bonsai substrate holds ~40% water by volume, so a freshly watered pot runs **~1.5× its dry weight** — watering genuinely stabilises the tree, and a dry pot is the one that goes over. This gives the soil-mix sliders a second meaning and a real trade-off: free-draining pumice/perlite mixes are best for roots but **lightest and tippiest**, while sand/akadama mixes are heavy and stable. Ties into the existing `moisture`/`waterRetention`/`saturationLevel` state at no extra cost. Design questions: soft warning (visible lean, "your tree is unstable" tell) before an outright topple; whether toppling damages the tree or is just recoverable; **anchor wire** as the counter-move (real practice — the tie-down through the drainage holes, which the `DrainageHole` system already models); heavier pot / wider pot / slab as the other counters. Ties into repot sizing decisions and gives the pot-size choice real gameplay stakes instead of being cosmetic. **Files:** `Tree/TreeSkeleton.Health.cs` (or a new `Stability.cs`), `Tree/PotSoil.cs` (mass/footprint), `TreeMeshBuilder` (lean transform). |
 | 3 | **Branch sway — vertex-shader wind on the bark mesh** | ✅ **built 2026-08-24** — the bark now bends, zero rebuild cost, all FOUR shader passes displaced identically (ForwardLit + Outline + ShadowCaster + DepthOnly — miss one and the silhouette/shadow detaches from the bark). **Key design deviation from the spec: flex is DERIVED, not baked.** The mesh already carries everything needed — `color.a` (GrowthColor = max(radius-blend, age-blend), a true thin-and-young stiffness proxy), `color.r` (root ⇒ rigid), and object-space position (height pins the base; horizontal *reach* lets aged-but-thin outer branchwood sway even though its bark reads mature). That killed the planned per-vertex bake and the ~10-site append-threading it required. **MIRROR CONTRACT:** `TreeFlex`/`TreeSway` live in an HLSLINCLUDE block in `BarkVertexColor.shader` and are mirrored constant-for-constant in `WindSway.cs`; `WindManager` publishes ONE canonical wind state per frame (shader globals `_TreeWindA/B` + C# `Canon*` statics) so GPU bark and CPU riders sample the identical field — phase comes from rest world position, so the field is continuous (no tearing) and any anchored object can compute its exact local displacement. Riders wired: **leaves/needle tufts** (`Leaf` adds the node's sway to its anchor via `TreeMeshBuilder.NodeSwayFlex` — the stem stays welded to the *moving* twig) and **wires** (`WireRenderer` helix, eased base→tip; the styler wires young shoots, exactly where flex peaks). **Wound stubs/discs now inherit their node's bark-blend alpha** instead of hardcoded mature — flex derives from alpha, so a mature-alpha disc on a young branch stayed pinned while the branch bent around it (side effect, correct: stubs on young wood show young bark). Sway amplitude rides `WindManager.strength`, which **Weather already drives** — storms visibly thrash the tree. Tunables on WindManager: `branchSwayMax` 0.22, `swayHeightRef` 1.2, `swayReachInner` 0.35, `swayReachSpan` 1.2. **Known non-riders:** flowers/fruit (never tracked their node, pre-existing), GL tool overlays + hover markers (drawn at rest pose; collider is rest pose too — hitboxes unchanged). **Verify in-editor:** storm via TippingTestMode or WeatherManager force — bark, outline, shadow, leaves and wire must all move as one. |
 | 3 | **Weather — wind load, rain, and the stability loop** | 🔧 **core built 2026-08-24** — `WeatherManager` (singleton): 5 states (Clear/Overcast/Rain/Storm/Heat) rolled on **seasonally weighted** odds (summer = heat + thunderstorms, autumn/winter = wet and gales, spring changeable), spells averaging ~4 in-game days, advanced on day boundaries so it keeps pace at any timescale. Drives **existing** systems rather than parallel ones: settles `WindManager.strength` toward a per-state level (Clear 0.18 → Storm 1.0), which the stability system already reads as wind **load**; scales soil drying via `DryingMultiplier` (heat 2.2×, rain 0.25×, **plus a wind term** — wind strips a pot faster than sun and is a classic bonsai killer); and `ApplyRain` waters the tree for free, riding the **same fixed-step clock** as the drain it opposes so the two cannot desync at speed. Prolonged rain on poor drainage raises `saturationLevel`, giving the soil mix and drainage holes a weather cost they never had. **Setup: add a `WeatherManager` component.** **Remaining:** visuals (rain particles, sky/light per state), frost/freeze dieback for tender species, snow load as static branch weight, a forecast UI tell so the player can water before a storm, and shelter as a counter-move. *Original spec below.* 🆕 raised 2026-08-24. Feeds the same physics as **Tipping** above; build them together. Wind already exists **visually** (`WindManager`, F6 — gust Perlin, wandering direction, canopy sway) but exerts no force and nothing else reacts to sky conditions. **Wind load:** the canopy is a sail — lateral force ∝ gust² × canopy frontal area (derivable from the leaf census / mesh bounds, and dropping in winter for deciduous species) applied as an extra overturning moment at the canopy's centre of mass, added to the static branch-weight moment. A gust is what actually tips a top-heavy tree; the static case alone rarely does. **The loop that makes this interesting:** a storm brings wind (tipping force) *and* rain (soil soaks → up to ~1.5× dry weight → more righting moment), so weather both threatens and stabilises — and the danger case is the **dry pot in high wind**, which is exactly what growers guard against. Deciduous trees also shed their sail in autumn, so a winter storm is survivable where a summer one is not. **Weather states:** Clear / Overcast / Rain / Storm / Heat, seasonally weighted, driving: rain → `moisture` + `saturationLevel` (free watering, and waterlogging risk if drainage is poor — ties into `HoleDrainageFactor`); sun + heat + wind → faster drying and transpiration (wind dries a pot much faster than still air, a classic bonsai killer); frost/freeze → dieback risk for tender species; optional snow load as extra static weight on branches. **Player counters:** water before a storm, move to a heavier/wider pot, anchor wire through the drainage holes, or shelter the tree. **Thigmomorphogenesis — the tree fights back** *(raised 2026-08-24)*: real trees respond to repeated mechanical stress by growing reaction wood and extra root mass on the loaded side, thickening the trunk base, and staying shorter — it is why sheltered, staked nursery stock blows over when planted out, and why growers deliberately flex saplings. Today root direction is purely `growDirection·inertia + radial·rootRadialWeight + down·rootGravityWeight + noise` with **no stress term at all** (verified 2026-08-24; the only special cases are air-layer roots and Ishitsuki). Add a wind-history bias so roots preferentially extend along the prevailing wind axis and loaded nodes thicken faster. That feeds straight back into `PotSoil.FootprintRadius` and the stability balance, so a wind-exposed tree **anchors itself and grows genuinely harder to tip over seasons** — a real feedback loop, and it gives a sheltered tree a hidden fragility the player can be caught out by. **Scope:** new `WeatherManager` (state machine + seasonal weighting) driving `WindManager` gust strength; force hookup in the stability system; `PotSoil` moisture/saturation input. **Files:** new `WeatherManager.cs`, `WindManager.cs`, `Tree/PotSoil.cs`, stability system, `Tree/LeafManager.cs` (frontal area). |
+| 1 | **Release Prep — R0 Build identity** | 🔧 **mostly done 2026-10-12** — identity complete (`WZRDHAU5` / `Bonsaimancer` / `0.1.0` / `com.wzrdhau5.bonsaimancer`), `resizableWindow` enabled for R2's Windowed mode, and the dead files deleted (`_Recovery/` + 4 unreferenced scripts, ~1.3 MB). **Two small items left**: the pixel-art icon needs to go on Default Icon with Point filtering (not new art), and the Unity splash is still enabled. |
+| ✅ | **Release Prep — R5 test-build hygiene** | 🔧 **4 of 7 built 2026-10-12** — save `schemaVersion` + migration ladder + load-failure reasons surfaced at all 4 call sites; onboarding tooltips back on as a persisted setting with a replay button; `BonsaiDebug` single dev-surface switch (F1 readout, dev pause tabs, GL gizmos, tipping harness, per-click logs); `CrashLogger` session logs + "Open Log Folder". Compile-verified, 0 errors. Remaining 3 are hands-on: death-loop walkthrough, perf floor, build on another machine. |
+| ✅ | **Release Prep — R1 Main Menu + launch flow** | ✅ **built 2026-10-12** — `MainMenuUI` (themed UI Toolkit menu: Play / New Tree / Settings / Credits / Quit + version), `SaveSelectPanel` (one card implementation, now used by *both* the menu and the in-game pause menu — 168 lines of duplicate removed from `buttonClicker`), `SaveManager.PendingLaunch` handoff, `LoadingScreen` with real `AsyncOperation.progress`, music fade instead of destroying the AudioManager. One Unity step left: run **Bonsai ▸ Set Up Main Menu Scene**. |
+| ✅ | **Release Prep — R2 Settings Menu** | ✅ **built 2026-10-12** — `GameSettings` (single owner of the `set.*` keys, applies on load + every scene load) + `SettingsPanel` (5 tabs, hosted from **both** the main menu and the pause menu). Colour-blind highlight palettes (Okabe–Ito), reduced motion, real display/quality/audio controls, read-only key reference. `FullscreenPrompt` retired. Remaining: UI/text scale, high-contrast, key rebinding, an AudioMixer. |
+| 1 | **Release Prep — R3 Menu showcase tree** | 🆕 raised 2026-10-12. Author a tree in-game, bake it to a static prefab via an editor tool, display it non-interactable behind the main menu. Gotcha: wind flex is derived from object-space position, so combine in the tree root's local space. |
+| 1 | **Release Prep — R4 Tool cursors** | 🆕 raised 2026-10-12. Zero `Cursor.` calls in the project today. `ToolManager.ActiveTool` (13 tools) + `TreeInteraction`'s existing hover state give idle/valid/invalid per tool for free. |
+| 2 | **Release Prep — R6–R8 Steam page, marketing, admin** | 🆕 raised 2026-10-12. Capsule/screenshots/trailer/descriptions, press kit + socials + demo, Steamworks SDK + SteamCMD + IARC + banking. Steam Direct starts a 30-day clock — submit early. |
 | 4 | **K — Additional AutoStyler Styles** | **Lowest priority.** Blocked on user (descriptions + reference images). Chokkan / Shakan / cascade / windswept / broom / literati. |
+
+---
+
+## Release Prep — Playable Test Build & Store Launch
+
+Raised 2026-10-12. Everything between "the game is fun in the editor" and "a stranger can download a
+build and I can point marketing at a Steam page." Two tracks that interleave: **front-of-house**
+(R0–R5 — the shell the player meets before any bonsai logic runs) and **storefront** (R6–R8 — the
+Steam/marketing asset pipeline, sourced from the Obsidian KB and the LLC-filing checklist).
+
+R0–R5 is almost entirely **new surface, not changes to the sim**. The sim is the part that works;
+the shell around it is the part a stranger judges first.
+
+---
+
+### R0. Build identity — do this before any build leaves this machine
+
+🔴 **Blocking and semi-irreversible.** `ProjectSettings/ProjectSettings.asset` still ships the Unity
+defaults:
+
+🔧 **Updated 2026-10-12** — the two irreversible fields are done; the rest remain.
+
+| Field | Value | Status |
+|---|---|---|
+| `companyName` | `WZRDHAU5` | ✅ |
+| `productName` | `Bonsaimancer` | ✅ |
+| `bundleVersion` | `0.1.0` | ✅ — bump every upload. The main menu prints this via `Application.version`, so it identifies the build in a bug report |
+| `applicationIdentifier.Standalone` | `com.wzrdhau5.bonsaimancer` | ✅ — was still `com.DefaultCompany.bonsai001`; it did not follow the rename |
+| `resizableWindow` | `1` | ✅ — now required: R2 ships a **Windowed** option, and a windowed game that can't be resized is a visible inconsistency |
+| Dead files | removed | ✅ — `_Recovery/` (4 orphan scenes) + `ProceduralConeBackup.cs`, `PreGrowRootsToSoil_backup_2026-03-31.cs`, `Old Proc Meshes/` (~1.3 MB). All four scripts verified unreferenced by either build scene before deleting |
+| **App icon** | 64×64 slot only | ⚠ **set Default Icon + Point filtering** — see below |
+| **Unity splash** | still enabled | ⚠ **open** — see below |
+
+#### ⚠ The app icon is filled in one slot only
+
+The icon is deliberate **pixel art** (`Assets/Sprite/BonsaimancerLogo01_64x.png`, a 128×128 file),
+so it does **not** need higher-resolution art — pixel art scales cleanly at integer multiples. Two
+practical fixes remain, both small:
+
+1. **Only the 64×64 Standalone slot is filled**; the other sizes are empty and the **Default Icon**
+   field is empty, so the other sizes don't reliably pick it up. Drop the same image on
+   **Default Icon** (Player ▸ Icon).
+2. **Its import settings will blur it** when Unity scales it: Filter Mode is **Bilinear**,
+   compression is **on**, and mipmaps are **on**. For pixel art set **Filter Mode: Point**,
+   **Compression: None**, mipmaps **off**. The texture is only used as the icon, so nothing else is
+   affected. From 128 px every Windows size is a clean integer scale except **48**, which will drop
+   pixels unevenly — minor.
+
+*Also worth clearing*: the 64 px logo also got assigned to `m_VirtualRealitySplashScreen`, which is the
+**VR** splash field and does nothing for a PC build. Harmless, but it isn't what it looks like.
+
+#### ⚠ The Unity splash is still on
+
+`m_ShowUnitySplashScreen: 1`, `m_ShowUnitySplashLogo: 1`, no custom logos. Unity 6 made the splash
+optional for Personal licences, unlike earlier versions — so this is probably a matter of unticking
+"Show Splash Screen" under Player ▸ Splash Image. If the toggle is locked, the licence tier doesn't
+permit it and the item is closed rather than open.
+
+✅ **The save-orphaning risk described below has already been taken**, deliberately, on 2026-10-12:
+the rename moved `persistentDataPath` and the PlayerPrefs registry key, stranding the then-current
+save slot, `_original`, `profile.json` and all prefs under
+`LocalLow/DefaultCompany/bonsai001/` and `HKCU\Software\Unity\UnityEditor\DefaultCompany\bonsai001`.
+Migration was considered and **declined in favour of a clean first-run state** for testing the
+onboarding re-enabled in R5. The old folders are untouched if anything is ever wanted back.
+
+**Why this is first and not cosmetic:** `Application.persistentDataPath` is derived from
+`companyName` + `productName`. Every save slot (`SaveManager.SavesRoot` →
+`persistentDataPath/saves/<slot>/`), the per-slot `thumb.png`, `profile.json`
+(`ProgressionProfile.FilePath`) and the `TrainingRecorder` JSONL logs all live under that path.
+Change either field *after* a tester has played and every one of their saves and their whole
+progression profile silently vanishes — the game looks freshly installed and there is no migration
+path that doesn't involve guessing old folder names. Do it now, while the only affected player is me.
+
+Also in this pass: app icon (all sizes), splash screen, `resizableWindow` (currently `0`) and
+`fullscreenMode` (currently `1`) reviewed against whatever R2 decides for display settings, and
+`Assets/_Recovery/` (4 stray `.unity` files) plus the dead backups (`ProceduralConeBackup.cs`,
+`PreGrowRootsToSoil_backup_2026-03-31.cs`, `Old Proc Meshes/`) pulled out of the build.
+
+**Acceptance:** a fresh install writes to a sanely-named `…/LocalLow/<LLC>/Bonsaimancer 21XX/`, the
+title bar and task-manager entry read as the shipping title, and the version string is visible
+in-game (main-menu corner — see R1) so a bug report identifies its own build.
+
+---
+
+### R1. Main Menu — real front end, and the launch-flow restructure
+
+**What exists now.** `Assets/Scenes/MainMenu.unity` is the oldest surviving thing in the project: a
+uGUI `Canvas` with TMP `Start` / `Credits` / `Exit` buttons, a static `Background` image, and
+`MainMenu.cs` (33 lines) whose `StartGame()` waits 1.5 s, destroys the `AudioManager`, and calls
+`LoadSceneAsync("Game001")`. The save picker is **not** here — it lives inside the game scene:
+`GameManager.cs:251` runs `UpdateGameState(SaveManager.HasAnySave() ? GameState.LoadMenu :
+GameState.SpeciesSelect)` and `buttonClicker` paints `LoadMenuOverlay` from `ButtonUI.uxml`. So today
+the player passes a 2014-looking menu, eats a full game-scene load, and *then* chooses a save. There
+is no settings screen at all outside the dev pause panel.
+
+**Target flow.**
+
+```
+MainMenu scene                                            Game001 scene
+┌──────────────────────────────┐   ┌──────────────────┐    ┌──────────────┐
+│  title + showcase tree (R3)  │   │  Select a Save   │    │              │
+│                              │──▶│  ┌────┐ ┌────┐   │───▶│  loading  →  │
+│  ▸ Play                      │   │  │slot│ │slot│   │    │  gameplay    │
+│  ▸ Settings ──▶ R2 panel     │   │  └────┘ └────┘   │    │              │
+│  ▸ Credits                   │◀──│  + New Tree      │    └──────────────┘
+│  ▸ Quit            v0.1.0    │   │  ◂ Back          │
+└──────────────────────────────┘   └──────────────────┘
+```
+
+**Decision: the save select moves into the MainMenu scene.** It can move cheaply because
+`SaveManager` is a `static class` doing nothing but file IO — `ListAllSaves()`, `SaveMeta`, the
+`thumb.png` beside each `save.json` — with zero scene dependencies. The picker is fully portable, and
+the game scene then only ever loads *after* the player has decided what they're loading, which is
+what lets a real loading screen exist at all.
+
+Work:
+
+1. **Scrap the uGUI canvas.** Rebuild `MainMenu.unity`'s UI as a `UIDocument` + code-built UI Toolkit
+   panel (`MainMenuUI.cs`), the same pattern as the in-game panels: read `UiTheme.Current`, repaint
+   on `UiTheme.OnThemeChanged`. This is what makes the equipped UI theme (the `CustomizeManager`
+   cosmetic) visible from the first frame instead of only once you're in-game.
+2. **Extract the save-select panel.** Lift `BuildLoadMenuCards()` / the card builder /
+   `OnLoadMenuCardLoad()` / `OnLoadMenuCardDelete()` (`buttonClicker.cs:2042–2300`) into a shared
+   `SaveSelectPanel` that both scenes construct. The in-game copy stays reachable from the pause
+   menu's `BrowseSavesButton` (`buttonClicker.cs:717`) so mid-session slot switching still works —
+   one implementation, two hosts.
+3. **Hand the choice across the scene load.** `SaveManager.ActiveSlotId` already persists through
+   `PlayerPrefs` — reuse it, plus one static `SaveManager.PendingLaunch { LoadSlot, NewTree }`.
+   `GameManager.cs:251` stops deciding the entry state and instead obeys that flag: `LoadSlot` → load
+   and go straight to `Idle`; `NewTree` → `SpeciesSelect`. The "no saves exist" branch collapses into
+   the main menu (Play goes straight to species select, skipping an empty picker).
+4. **Loading screen.** `LoadSceneAsync` currently runs behind a blind 1.5 s `WaitForSeconds`. Swap for
+   a real progress/fade screen driven off `AsyncOperation.progress`, and fix the
+   `AudioManager.DestroyAudioManager()` call while in there — menu music should cross-fade into the
+   game's `MusicManager` track, not be destroyed mid-note.
+5. **Credits** carried over from the old scene, plus an LLC / attribution line (fonts, audio, any
+   third-party asset licences) — needed for the store page anyway.
+
+**Acceptance:** cold boot → themed main menu with the showcase tree behind it → Settings opens and
+persists → Play → save select with real thumbnails → load → gameplay. No uGUI `Canvas` left in the
+scene and no IMGUI dialog (see R2) anywhere in the boot path.
+
+---
+
+### ✅ R1 — built 2026-10-12
+
+Compile-verified with Unity's bundled Roslyn against the real package assemblies: **0 errors in both
+the runtime and editor assemblies, 0 new warnings** beyond the standard `CS0649` that every
+`[SerializeField]` field in this project produces.
+
+**New files**
+
+| File | Role |
+|---|---|
+| `Scripts/MainMenuUI.cs` | The menu itself — four views (Menu / Save Select / Credits / Settings) as code-built UI Toolkit, reading `UiTheme.Current` and rebuilding on `OnThemeChanged` |
+| `Scripts/SaveSelectPanel.cs` | The save-card list, extracted so there is **one** implementation |
+| `Scripts/LoadingScreen.cs` | Async load with a real progress bar and fade |
+| `Editor/MainMenuSceneSetup.cs` | One-click scene wiring (**Bonsai ▸ Set Up Main Menu Scene**) |
+
+**Changed files**: `MainMenu.cs` (rewritten), `SaveManager.cs` (+`PendingLaunch`), `GameManager.cs`
+(+`ResolveEntryState`), `buttonClicker.cs` (delegates card building; duplicate removed).
+
+#### Decisions worth knowing
+
+- **`MainMenu` keeps its class name.** The component is already attached to the Main Camera in
+  `MainMenu.unity`; renaming the class would break that scene reference by GUID. So `MainMenu.cs`
+  became a thin bootstrapper rather than being replaced by a new class.
+- **The scene was not hand-edited.** `MainMenu` adds its own `UIDocument` at runtime and
+  *deactivates* the legacy uGUI Canvas rather than requiring it be deleted — which also means
+  reverting to the old menu is one checkbox. Editing `.unity` YAML by hand risks silent corruption
+  and conflicts with whatever the editor has open, so the tidy-up is an **editor tool** instead.
+- **The old `StartGame()` / `QuitGame()` are kept.** The hidden uGUI buttons still hold persistent
+  `onClick` references to them; a broken UnityEvent target logs an error every time the object is
+  enabled, so keeping them is quieter than removing them.
+- **`PendingLaunch` is a plain static, not a PlayerPrefs value.** It describes one scene transition,
+  not a preference, and statics survive a scene load. Persisting it would make a crash mid-load
+  resume into the wrong thing next launch. `ActiveSlotId` (which already persists) carries *which*
+  slot; `PendingLaunch` carries *whether to use it*.
+- **Opening `Game001` directly in the editor still behaves exactly as before.**
+  `ResolveEntryState()` falls back to the original `HasAnySave() ? LoadMenu : SpeciesSelect` when
+  nothing was decided — that workflow is used constantly and must not regress.
+- **The slot load happens in `buttonClicker.Start()`, not `GameManager.Awake()`.** At Awake the
+  `TreeSkeleton` has not necessarily initialised, and `buttonClicker` is where the skeleton and
+  leaf-manager references are wired. It is `Start` rather than `OnEnable` because Unity runs
+  Awake+OnEnable per GameObject *in scene order*, so `OnEnable` here can run before
+  `GameManager.Awake` — and the load path dereferences `GameManager.Instance`. Every `Awake`
+  completes before any `Start`. (The pre-existing `GameManager.Instance?.state` null-check a few
+  lines above is the same hazard, already defended against.)
+- **A failed load leaves the player in the save list** with the R5 error toast, rather than dropping
+  them into a broken scene. That fallback came free from reusing `OnLoadMenuCardLoad`.
+
+#### Improvements made while extracting
+
+- **The duplicate is gone, not just bypassed.** `buttonClicker.MakeSaveCard` (147 lines),
+  `OnLoadMenuCardDelete` (21 lines) and the `pendingDeleteSlotId` field were deleted once
+  `SaveSelectPanel` took over. Leaving them would have produced two card renderers that drift.
+- **Thumbnail textures no longer leak.** The old card builder decoded a `Texture2D` per card and
+  never released it; `Clear()`ing the container does not free unmanaged texture memory, and the load
+  menu rebuilds every time it opens. `SaveSelectPanel` tracks and destroys them on each rebuild.
+- **Cards are now themed** from `UiTheme` instead of hardcoded greens — so the in-game picker
+  follows the equipped theme too, which it previously did not.
+- **Unloadable saves are marked on the card.** A save from a newer build now shows
+  "⚠ Made with a newer version of the game" with LOAD disabled, using R5's
+  `SaveManager.IsSchemaLoadable` — better than letting the player click LOAD and get a toast.
+- **One definition of the thumbnail path.** `buttonClicker.ThumbPath` (the writer) now delegates to
+  `SaveSelectPanel.ThumbPath` (the reader), so the two cannot disagree about where thumbs go.
+
+#### Deliberately minimal: the Settings view
+
+R1's flow diagram includes a Settings entry, and a dead button is worse than none — so the view
+exists with the three options that already have backing APIs today: **fullscreen toggle**,
+**anti-aliasing** (migrating the existing `antiAliasing` pref) and **music volume**. It is explicitly
+a placeholder: **R2 replaces it wholesale** with the shared Display / Audio / Gameplay / Controls /
+Accessibility panel hosted from both the menu and the pause screen, and deletes `FullscreenPrompt.cs`.
+
+#### 🐛 Found in first play-test (2026-10-13)
+
+The menu scene's EventSystem still carried the legacy `StandaloneInputModule`, which reads the old
+`UnityEngine.Input` class. Active Input Handling is "Input System Package" only (it was before this
+session too), so the module threw an `InvalidOperationException` **every frame** — 1,516 times in one
+short run — and, since UI Toolkit routes pointer input through the EventSystem when one exists, the
+menu received **no clicks**. Pre-existing: the committed scene has the same module, so the old uGUI
+menu was throwing too; it went unnoticed because play usually starts from `Game001`, which uses the
+right module. Fixed in `MainMenu.Awake` (swaps in `InputSystemUIInputModule` before the first
+EventSystem update) and in the setup tool, which now makes the swap permanent in the scene.
+
+**Second play-test finding — blank screen, no errors.** `MainPanelSettings` doesn't draw to the
+screen: its Target Texture is `UIToolkitRT`, which `Game001` composites through a uGUI RawImage
+(presumably so the CRT effect covers the HUD). The menu scene has no RawImage, so the menu rendered
+into an undisplayed texture. Fixed by giving the menu a runtime copy of the panel settings with no
+target texture (`MainMenu.ScreenTargetCopy`) — a copy, because editing the shared asset would break
+the HUD. Open question for art consistency: the menu UI therefore does **not** get the CRT
+treatment the in-game UI does.
+
+**Third play-test finding — simulation froze when launched from the menu (caused by R1).** In
+`Game001` the `AudioManager` component shares a GameObject with `GameManager`, `PlayModeManager`,
+`ProgressionManager`, `MusicManager`, `BackgroundManager`, `CustomizeManager`, `DecorationManager`
+and `AutoRunManager`. `AudioManager` is a `DontDestroyOnLoad` singleton whose duplicate branch ran
+`Destroy(gameObject)`. The old menu destroyed its AudioManager before loading the game; R1 dropped
+that call (to fade the music instead of cutting it), so the menu's copy survived, Game001's copy
+destroyed its own GameObject, and every manager on it went with it. `GameManager.Update` never ran,
+so time and growth stopped while the UI kept responding. Direct play from `Game001` was unaffected.
+**Fixed twice over**: the menu destroys its AudioManager after the fade (`MainMenuUI.LaunchRoutine`,
+and the legacy `StartGame` path), and a duplicate `AudioManager` now removes only its own component
+(`Destroy(this)`) and logs a warning. Worth separating those managers onto their own GameObject
+eventually — nine managers on one object is how a one-line singleton bug took out the whole sim.
+
+#### ⚠ Remaining work
+
+- **One Unity step**: run **Bonsai ▸ Set Up Main Menu Scene**. It adds the `UIDocument`, assigns
+  `MainPanelSettings`, serializes both references onto the component and deactivates the Canvas, then
+  saves the scene. Without it the menu still works (it self-bootstraps and resolves the panel
+  settings through the editor-only `AssetDatabase` path), but a **release build** would fall back to
+  a runtime-created `PanelSettings` — so this must be run before shipping a build.
+- **Not verified in-engine.** Everything here is compile-checked, not play-tested; the menu has not
+  been seen on screen. First run should confirm: the panel renders at the right size, Esc backs out
+  of each sub-view, the card thumbnails appear, and a load from the menu lands in play.
+- **The showcase tree (R3) is not in the scene yet**, so the menu currently sits on the old static
+  `Background` image. The layout already reserves the right-hand side for it — the menu column is
+  left-aligned with a 72px gutter.
+- **`ATTRIBUTIONS.txt`** is referenced by the Credits view but does not exist yet; it needs writing
+  before a build ships (fonts, audio, any third-party asset licences).
+
+---
+
+### R2. Settings Menu — the player-facing one
+
+**What exists now.** There is no player settings screen. What's called "Settings" today is the pause
+panel in `ButtonUI.uxml` (`PauseMenuOverlay`), whose tabs are **Time / Growth / Ishitsuki / Debug**
+and whose contents are developer sliders — `SliderGrowSpeed`, `SliderSpringLaterals`,
+`SliderDepthDecay`, `SliderCableRadius`, `SliderMinCableAngle`, `ToggleScaleCubes`. The only real
+player options anywhere are `ToggleAntiAliasing` and the three timescale prefs (`ts_slow` / `ts_med` /
+`ts_fast`). Display mode is handled by `FullscreenPrompt.cs` — a raw `OnGUI()` box that asks "Play
+fullscreen?" once at startup and destroys itself. That dialog is the most amateur-looking thing a new
+player currently sees, and R2 is what retires it.
+
+**Build one `SettingsPanel`, hosted from two places** (main menu and pause menu), backed by a new
+`GameSettings` static that owns the `PlayerPrefs` keys and applies them on load. Only 7 keys exist
+project-wide today (`BonsaiActiveSlot`, `antiAliasing`, `ts_fast`/`ts_med`/`ts_slow`, `playModes`,
+`activeModeIndex`), so there is no legacy mess — namespace the new ones (`set.*`) from the start.
+
+| Tab | Contents |
+|---|---|
+| **Display** | Resolution, display mode (fullscreen / borderless / windowed — *replaces `FullscreenPrompt`*), VSync, frame cap, anti-aliasing (migrate the existing `antiAliasing` pref), quality/shadow preset, UI scale |
+| **Audio** | Master / Music / SFX / Ambient sliders, each with a mute. Needs an `AudioMixer` first: `AudioManager` holds two bare `AudioSource`s (`musicSource`, `sfxSource`) and `MusicManager.SetVolume(float)` sets a source volume directly — route both through mixer groups so one slider governs everything, weather/ambient beds included |
+| **Gameplay** | Default timescale, autosave cadence, auto-water / auto-fertilize defaults, tooltip + tutorial re-enable (see R5), date format, Career ↔ Sandbox default |
+| **Controls** | Keybinds are hardcoded `Keyboard.current` reads scattered across `ToolManager` (A/D/S tool cycle), `buttonClicker` (Esc, F1) and `CameraOrbit`. Minimum viable version is a **read-only reference sheet** of the existing binds; real rebinding is a separate Input System actions-asset job and should not block the test build |
+| **Accessibility** | Colourblind-safe highlight colours (the `TreeInteraction.HighlightMode` hover colours are red / gold / green — the worst possible triad for deuteranopia), text size, reduced motion (kills idle camera orbit + wind sway), hold-vs-toggle |
+
+**Interaction with existing systems:** UI theme selection stays where it is (the `CustomizeManager` ⚙
+cosmetic shop) — Settings should *link* to it, not duplicate it, since themes are an unlockable. The
+dev sliders stay in the pause panel but move behind a Debug tab that is compiled out or key-gated in
+release builds (see R5).
+
+**Acceptance:** every control round-trips through a quit-and-relaunch; the panel is reachable and
+identical from both the main menu and mid-game pause; `FullscreenPrompt.cs` is deleted — *retired
+to an empty self-removing component instead; see below for why.*
+
+---
+
+### ✅ R2 — built 2026-10-12
+
+Compile-verified: **0 errors, 0 warnings** in the new files, both runtime and editor assemblies.
+
+**New files**
+
+| File | Role |
+|---|---|
+| `Scripts/GameSettings.cs` | The single owner of every `set.*` key *and* of applying them. Typed properties that persist and apply on assignment, so UI can never save without applying or vice versa. Installs via `RuntimeInitializeOnLoadMethod`, so settings take effect with no scene wiring. |
+| `Scripts/SettingsPanel.cs` | The 5-tab themed UI. Builds into any parent, so one instance type serves both hosts. |
+
+**Changed**: `MainMenuUI` (R1's stub settings view replaced by the real panel — ~70 lines became 6),
+`buttonClicker` (⚙ SETTINGS injected into the pause panel's Time tab; Esc closes the overlay first),
+`TreeInteraction` (highlight colours are repalettable), `TreeSkeleton.Growth` (autosave honours the
+setting), `GameManager` (applies the chosen default speed preset), `FullscreenPrompt` (retired).
+
+#### What each tab actually does
+
+- **Display** — window mode (fullscreen / borderless / windowed), resolution from
+  `Screen.resolutions`, V-Sync, frame cap, anti-aliasing, quality preset.
+- **Audio** — master / music / effects with a mute-all.
+- **Game** — default speed preset, fast winter, autosave-per-season, first-use tips, date format,
+  and Career↔Sandbox.
+- **Keys** — a read-only reference sheet of the real bindings (including F1 only in a development
+  build).
+- **Access** — colour-blind mode and reduced motion.
+
+Plus **Reset to Defaults**, which clears only the `set.*` keys — deliberately not saves, the
+progression profile, or the seen-tooltip list.
+
+#### Decisions worth knowing
+
+- ⭐ **Colour-blind mode is the substantive accessibility win.** The default hover highlights are
+  **red / gold / green** for trim / wire / unwire — the least distinguishable possible triad under
+  deuteranopia and protanopia, on the three most destructive actions in the game. The alternative
+  palettes are built from **Okabe–Ito**, and within each palette the three critical actions are
+  separated along the axis that mode can still see (blue–yellow for red–green deficiencies,
+  red–green for tritanopia). This needed the colours in `TreeInteraction` to stop being
+  `static readonly`; they were private to that file, so the change was contained.
+- **`FullscreenPrompt` was retired, not deleted.** It is still attached in `Game001.unity`, so
+  deleting the file would turn that into a missing-script reference. It is now an empty
+  self-removing component that `Destroy(this)`es on Awake — the same approach already used for
+  `GameUiThemer`. **Delete the file once the component is removed from the scene.**
+- **No AudioMixer, and no "Ambient" slider.** The project has **no mixer asset and no ambient
+  source** — `AudioManager` owns two bare `AudioSource`s and `MusicManager` a third. Volume is
+  therefore applied by scaling those directly. A mixer is still the right answer (per-category
+  effects, ducking, a master bus that new sources join automatically) but needs an `.mixer` asset
+  authored in the editor. An Ambient slider was **deliberately omitted**: nothing plays an ambient
+  bed, and a slider that controls nothing is worse than an absent one. The panel says so.
+- **Career/Sandbox is not duplicated.** `ProgressionManager` already persists the mode in
+  `profile.json`; the tab reads and writes *that*, rather than adding a second source of truth. Same
+  reasoning as UI themes, which stay in the ⚙ cosmetic shop and are only pointed at from here.
+- **Frame cap is disabled while V-Sync is on**, because Unity ignores `targetFrameRate` when
+  `vSyncCount > 0`. Better to grey it out than let the player set a value that silently does nothing.
+- **Anti-aliasing is re-asserted after a quality-preset change**, since quality levels carry their
+  own AA value and would otherwise overwrite the player's explicit choice.
+- **The old `antiAliasing` key is migrated to `set.aa`** and kept in step, so nobody's existing
+  choice is lost.
+- **Dropdowns cycle on click** rather than opening a popup list. UI Toolkit's `DropdownField` styling
+  fights the hand-built theming used everywhere else here; a cycling button is less code, has fewer
+  failure modes, and always displays the current value.
+
+#### A real bug caught during the build
+
+`GameSettings.Install` runs `BeforeSceneLoad`, so the **scene-bound** settings — audio sources,
+`WindManager`, the idle orbit — had nothing to apply to yet, and would never have been applied.
+Fixed by also re-applying on `SceneManager.sceneLoaded`, which is additionally what makes them
+survive the menu → game transition.
+
+### ✅ R2b — settings unified, 2026-10-13
+
+Triggered by a real confusion in play-testing: auto-water/auto-fertilise were switched on in
+**Calendar ▸ Modes**, which looked like the AutoStyler acting on its own. Settings were spread
+across three places (the old pause menu, the calendar's Modes and Speed tabs, and R2's panel).
+Now there is **one panel**.
+
+**Three contexts, one class** (`SettingsPanel`): **Menu** (preferences only, BACK), **Pause** (what
+Esc and ☰ open; RESUME), and **PreStart** (the new-game screen; START). Sidebar navigation, since a
+pause-context panel can show eleven tabs:
+
+`Game` · `Play Modes` · `Speed` · `Display` · `Audio` · `Gameplay` · `Controls` · `Accessibility`
+· *(dev builds only)* `Growth` · `Ishitsuki` · `Debug`
+
+- **Game** (pause only) — Save / Load / Browse Saves / Load Original, Open Log Folder, and a new
+  **Quit to Main Menu** that autosaves first. (Quitting has to destroy the AudioManager by hand: it
+  is `DontDestroyOnLoad` and shares its GameObject with `GameManager` and seven other managers, so
+  otherwise the whole simulation would follow the player into the menu.)
+- **Play Modes / Speed** — the calendar's tabs, **removed from the calendar**, which is now the
+  schedule only. The old Time tab's Time Scale slider joins Speed.
+- **Controls** gains the tool selection-radius slider from the old Time tab.
+- The old Time tab's **Quick Winter** and **Anti-aliasing** were *not* moved — Settings already had
+  persisted versions of both, and two controls for one value drift apart.
+
+**How it was done safely:** the old controls are **adopted, not rebuilt** —
+`SettingsPanel.AdoptTab` moves the existing UXML elements into the panel, so every callback
+`buttonClicker` registered on them keeps working. Several hundred lines of UXML-bound UI changed
+hosts without being rewritten.
+
+**New-game flow:** pick a species → Settings opens on **Play Modes** with **START** → START plants
+the tree (the existing "Your Juniper is planted" tip follows). Esc can't dismiss it — START is the
+way forward. A collapsible **Quick Start** section sits at the top of Play Modes **only in this
+pre-start screen**: opt in, choose a target style and an age (5/10/20/40 yrs), and START grows a
+developed tree instead of planting a seed. Picking a style or age ticks the opt-in. This replaces
+the old "⚡ Quick-Start" button and modal on the species screen (`QuickStartPanel.cs` is now unused).
+
+**Removed:** Settings ▸ Gameplay ▸ *Default speed*. Each play mode carries its own speed and
+`PlayModeManager` applies it continuously, so a global default was simply overridden — a control
+that did nothing. Also found and fixed: **Date display** was a dead control (the setting existed but
+nothing read it). It now formats the HUD date as "November 7, 2027" or "2027-11-07".
+
+**Speed rules made edge-triggered (2026-10-13).** Rules were re-applied every frame while their
+condition held, so "Month = January → Slow" locked the game at Slow for all of January, and the
+one-frame "wire set gold" pulse slowed it for exactly one frame. A `suppressed` flag for player
+overrides existed but nothing ever set it, and the mode's default speed was also re-forced every
+frame (the speed button wrote back into it as a workaround). Now a rule fires once when its condition
+**becomes** true and then leaves the player free until the condition resets; a mode's speed is applied
+when the mode is chosen; idle-resume re-applies a still-true rule once after the player overrides it
+and goes idle.
+
+**Auto-style is now per play mode (2026-10-27).** The AutoStyler ran in *every* mode whenever its component was enabled (it checks only its own flag), so it wired and repotted the tree in Active Play. Each play mode now has an **Auto-style** setting (on: Screensaver, Hands-Off; off: Active Play, Focused) and `PlayModeManager` owns `AutoStyler.autoStyleEnabled` from it, except while Quick Start is generating (Quick Start used to switch the styler on and never switch it off). Also fixed: **built-in modes were rebuilt from code on every launch**, so a player's edits to them (e.g. unticking auto-water in Active Play) were silently lost next session; edits now persist unless the code defaults change (DEFAULTS_VERSION 5).
+
+**"Watering on its own" was rain.** `WeatherManager.ApplyRain` fills soil moisture to 100% without
+calling `Water()`, and rain has no visuals yet (Tracked Ideas ▸ Rain and snow), so the moisture bar
+refilling looked like phantom auto-watering. A log of the reported run showed three rain/storm spells
+and zero `Water()` calls. Note also that **every built-in play mode ships with auto-water and
+auto-fertilise on**, including Active Play and Focused. That is a design default worth revisiting.
+
+#### ⚠ Deliberately left out
+
+- **UI / text scale.** Needs its own `PanelSettings` first: the menu and the in-game HUD currently
+  share `MainPanelSettings`, and mutating `PanelSettings.scale` at runtime writes to that shared
+  **asset**, which persists in the editor. Scaling both surfaces together with one slider is also
+  probably wrong. The panel states that it's unavailable rather than pretending.
+- **High-contrast mode** — listed in the original spec, not built.
+- **Key rebinding** — as the spec anticipated, this needs an Input System actions asset; bindings
+  are hardcoded `Keyboard.current` reads across `ToolManager`, `buttonClicker` and `CameraOrbit`.
+  The read-only sheet is most of the value for a fraction of the work, and does not block a test build.
+- **Reduced motion only covers wind sway and the idle orbit.** Leaf fall, the wire spring animation
+  and camera easing are untouched.
+- **Not play-tested.** Compile-checked only. First run should confirm the acceptance criterion that
+  matters most — that every control round-trips through a quit-and-relaunch — and that the pause-menu
+  overlay layers above the HUD correctly.
+
+---
+
+### R3. Menu Showcase Tree — author a beautiful tree in-game, display it in the menu
+
+**The ask:** play the game, grow and style a tree I'm proud of, press a button, and have *that* tree
+standing in the main menu — looking alive but entirely non-interactable.
+
+**Two ways to do it.**
+
+> **Recommended — bake it to a prefab.** An editor tool combines the live tree's renderers into static
+> meshes saved as assets, and the main menu just instantiates a `MenuTree` prefab. No `TreeSkeleton`,
+> no `LeafManager`, no `GameManager`, no growth tick, no raycasts, no save-schema coupling in the
+> MainMenu scene — the menu cannot be broken by a sim change, cannot drift when `SaveData` gains a
+> field, and costs one `Instantiate`. It also makes the tree a *shipped art asset* I can keep
+> curating and re-baking, which is what it actually is.
+>
+> **Alternative — load a save into a frozen live tree.** Put the real stack in the MainMenu scene and
+> load a reserved `_menu` slot, mirroring the existing `_original` special slot
+> (`SaveManager.OriginalSlotDir`, excluded from `ListAllSaves()`). Cheaper to write, and the tree
+> keeps real leaves/flowers/wind. But it drags `GameManager` and the whole sim into the menu scene,
+> adds boot time, and makes a save-format change able to break the main menu. Worth it only if the
+> menu tree needs to *change over time* (a seasonal menu tree, say).
+
+**Bake pipeline (recommended path):**
+
+1. **In-game:** a "Set as menu tree" action (pause panel, beside the save buttons) that saves the
+   slot, records the current camera pose, and — in the editor — flags the bake.
+2. **`Assets/Editor/MenuTreeBaker.cs`:** runs *during Play mode* (so a live, grown tree exists), walks
+   every renderer under the tree root, groups by material, `Mesh.CombineMeshes` per material group,
+   and writes the meshes + a prefab through `AssetDatabase`. Those assets survive exiting Play mode.
+3. **Gotchas that will bite if ignored:**
+   - **Combine in the tree root's local space, not world space.** Wind flex is *derived, not baked* —
+     `WindSway.Flex(barkBlendA, isRootBit, posOS)` reads vertex colour `.a` / `.r` **and object-space
+     position**, mirrored byte-for-byte in `BarkVertexColor.shader`. Re-origin the combined mesh and
+     every flex value changes, so the shader would bend the baked tree differently than it bent the
+     original.
+   - **Index format.** A mature maple with cluster leaves blows past 65,535 verts — set
+     `mesh.indexFormat = IndexFormat.UInt32` on the combined meshes, or split per material group.
+   - **Leaves vs. sway.** Leaves are separate GameObjects riding the CPU mirror (`WindSway`) while bark
+     bends on the GPU. Baked static leaves + a GPU-swaying bark mesh = leaves detaching from their
+     branches. The clean answer is **no `WindManager` in the MainMenu scene**: the shader globals
+     `_TreeWindA` / `_TreeWindB` / `_TreeWindReachSpan` are then never published, flex resolves to zero
+     displacement, and the whole baked tree is simply still. *Verify* this rather than assume it — if
+     the shader has non-zero defaults, author a sway-free material variant.
+   - Bake the **pot, soil, rock and table** too (`PotSoil` renders the authored pot meshes; per the
+     scale convention the units are game-feel, so don't "correct" anything during the bake), plus the
+     equipped `DecorationManager` placeable if there is one.
+4. **Presentation:** slow idle camera drift, reusing the existing cinematic path rather than new code —
+   `CameraOrbit.SetCinematicMode(bool)` and the `PlayModeManager` idle orbit (`IdleOrbitActive`)
+   already do exactly this. Light it for the menu specifically (rim light + soft key), sit it on the
+   themed background (`BackgroundManager`), and park the UI column so the tree is never behind text.
+5. **Non-interactable means non-interactable:** no `TreeInteraction`, no colliders needed, no
+   `ToolManager`, no cursor swap (R4 is gameplay-only), camera input disabled. The tree is set
+   dressing that happens to be the player's own work.
+
+**Bonus, nearly free:** the same bake output is the best screenshot and trailer subject available
+(R6), and because it's a static prefab it can be posed and relit without touching the sim.
+
+**Acceptance:** grow a tree, bake it, exit Play mode, open `MainMenu.unity`, see it — with the sim
+entirely absent from that scene's component list.
+
+---
+
+### R4. Tool Cursors — per-tool cursor art
+
+**What exists now.** Nothing: `grep -rn "Cursor\." Assets/Scripts` returns zero hits. The cursor is
+the OS arrow in every state, which is why selecting a tool currently feels like nothing happened
+until you hover geometry and a highlight appears.
+
+**The source of truth already exists.** `ToolManager.ActiveTool` is a clean `ToolType` enum of 13
+values (`None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire, Paste, AirLayer, Pinch,
+Defoliate, Graft, Promote, Jin`) set in exactly one place (`SelectTool`). So a new `CursorManager`
+needs one subscription point, not scattered hooks — cleanest is to add an `OnToolChanged` event to
+`ToolManager` rather than polling in `Update()`.
+
+**Three-state model per tool** — this is what sells immersion, more than the art itself does:
+
+| State | Meaning | Example |
+|---|---|---|
+| **Idle** | tool held, not over a valid target | clippers, closed |
+| **Valid** | hovering something this tool can act on | clippers, open + accent tint |
+| **Invalid** | hovering something it can't (deadwood, wrong depth, locked tool) | clippers + slash |
+
+`TreeInteraction` already computes that distinction every frame — `highlightMode` / `highlightedNode`
+/ `hoveredPinchNode` / `hoveredPromoteNode` go non-null precisely when the hover is valid. So the
+valid/invalid cursor state is a *read of existing state*, not new hover logic.
+
+**Non-tool contexts that also need a cursor:** weed pulling (`WeedPuller`, RMB drag — a grab/pull
+cursor, ideally reflecting rip risk), the `RootRake` mini-game, `RockPlace` / `TreeOrient`
+(move/rotate), camera orbit drag (grabbing hand), watering (`watering_can.png` already exists in
+`Assets/Sprite/`), and a plain arrow over all UI — UI Toolkit panels must **not** show the shears.
+
+**Implementation notes:**
+
+- `Cursor.SetCursor(tex, hotspot, CursorMode.Auto)` with 32×32 or 64×64 art; `CursorMode.Auto` gets
+  hardware cursors, so no input lag. The hotspot is the fiddly part — a blade tip is not the texture
+  centre — so author it as data in a `CursorSet` ScriptableObject (tool → 3 textures + hotspot), not
+  hardcoded.
+- Import textures as `Cursor` type: uncompressed, no mipmaps, `Clamp`.
+- **Art:** pixel-art cursors fit the project's existing pipeline — `Aseprite/` at the repo root plus
+  `Trimmer.png` / `trimmer1.png` / `watering_can.png` / `can1.png` already in `Assets/Sprite/` are the
+  start of the set. 13 tools × 3 states is 39 sprites; scope it down by sharing the invalid-state
+  overlay (one slash sprite composited at import or at runtime), which brings the real authoring load
+  to ~13 idle + ~13 valid + 1 overlay.
+- Gate it: no cursor swap in `GameState.GamePause`, `SpeciesSelect`, `LoadMenu`, `TreeDead`,
+  `AirLayerSever` or `CalendarOpen` (the same guard list `ToolManager.Update()` already uses), nor
+  anywhere in the MainMenu scene.
+- A Settings → Accessibility toggle for "large cursors" and one for "disable custom cursors" costs
+  almost nothing here and pre-empts a whole class of bug report.
+
+**Acceptance:** every tool shows a distinct cursor, the cursor changes on hover over a valid target,
+UI always shows the arrow, and alt-tabbing away and back doesn't lose the cursor.
+
+---
+
+### R5. Test-build hygiene — what else stands between here and a build a stranger can run
+
+🔧 **4 of 7 built 2026-10-12.** The four code items are done and compile-verified (Roslyn against
+the real package assemblies, 0 errors, 0 new warnings). The remaining three are hands-on and can't be
+done from the keyboard alone — they're listed last.
+
+**✅ Save-schema versioning** — `SaveData.schemaVersion` + `SaveMeta.schemaVersion`, stamped in
+`SaveManager.SaveSlot` (the one place every save path funnels through) and in `BuildSaveData` (which
+also covers `SaveOriginal`, the only writer that bypasses `SaveSlot`). `SaveManager.SchemaVersion = 1`
+is the constant to bump; its doc comment states the rule — **bump only when a change can't be absorbed
+by a field initializer**, because purely additive fields are already safe (that's what the "0 in old
+saves" comments rely on).
+
+`MigrateToCurrent(data, label)` runs the upgrade ladder on load, **before any of the data is applied**
+— a rejected save has to leave the running game untouched, so it happens before the first
+`GameManager` write. The ladder is a `while` loop over a `switch`, with a guard that fails loudly if a
+step forgets to advance the version, and `UpgradeV0ToV1` is in place as the worked example for the next
+one (v0 = every save written before 2026-10-12; structurally identical to v1, so it's a stamp).
+
+The protective case is the one that matters: a save from a **newer** build is **refused**, not read.
+Without that, unknown fields are silently dropped, changed fields are misread, and the next autosave
+writes the damage back over the newer save — which is exactly how Steam Cloud eats a save after a
+player rolls back a build.
+
+**✅ Load failures now say why.** Found while wiring the above: a failed load was *completely silent*
+at two of the four call sites. `OnDeadLoadClick` was the worst — it set `Time.timeScale = 1f` **before**
+attempting the load, so a failed load from the death screen resumed time with a dead tree behind the
+dialog. Now `SaveManager.LastLoadError` carries a player-readable reason from every failure path, and
+all four sites surface it (`OnLoadMenuCardLoad` and `OnDeadLoadClick` via a new error toast;
+`OnLoadButtonClick` and `OnLoadOriginalButtonClick` replaced their hardcoded "No save file found."
+with the real reason). `OnDeadLoadClick` only unfreezes time once the load has actually succeeded.
+
+**✅ Onboarding back on.** `buttonClicker.tooltipsEnabled` was a hardcoded `static bool = false` — the
+whole first-use system was dark, with ~18 wired call sites and working persistence behind it. Now a
+PlayerPrefs-backed property (`set.tooltips`) **defaulting to on**, so the eventual Settings → Gameplay
+tab (R2) has something to bind to. Added `ResetShownTooltips()` and a "Replay First-Use Tooltips"
+button, because each tooltip id burns permanently the first time it fires — without a reset the copy
+can't be audited or re-tested at all. *Still to do: audit the actual tooltip copy now that it's
+visible, and consider Quick-Start as the demo default.*
+
+**✅ One dev-surface switch** — `BonsaiDebug.Enabled` (on in the editor, in a Development Build, or with
+the `BONSAI_DEBUG` define). Now gates: the F1 state readout; the **Growth / Ishitsuki / Debug pause
+tabs** (the one piece of dev surface a player would find unaided — `SliderGrowSpeed` permanently
+deforms a tree — with `SelectTab` clamped so a hidden tab stays unreachable); all four GL gizmo
+overlays; the `TippingTestMode` harness, which deliberately mistreats the tree; and the per-click
+interpolated `Debug.Log` in `ToolManager`. The gizmos were already defaulted off, but they're gated by
+*serialized scene bools* — tick one, forget it, and it ships; gating the draw call too makes that
+impossible. It's `static readonly`, not `const`, deliberately: a `const` folds and every guarded body
+becomes CS0162-unreachable in one configuration or the other (confirmed against the compiler, not
+assumed), which would mean dozens of warnings teaching everyone to ignore the warning list.
+
+**✅ Crash/error log** — `CrashLogger` installs itself via `RuntimeInitializeOnLoadMethod`, so it's
+listening before any scene's `Awake` and catches startup errors, the interesting ones. Writes
+`persistentDataPath/logs/session_<timestamp>.log` with a hardware/build header, flushing immediately on
+error or exception (the point is surviving the crash that follows), keeping the last 10 sessions and
+capping at 8 MB so a per-frame error loop can't fill the disk. **Not** behind `BonsaiDebug` — it's a
+player-facing diagnostic. "OPEN LOG FOLDER" sits in the player-facing Time tab beside the save
+buttons, so one button gets a tester to their logs *and* their saves.
+
+**Still open — hands-on:**
+
+- **A dead-end check.** Tree death (`GameState.TreeDead`) has an overlay with load/restart. The silent
+  failure above is fixed, but walk the full loop as a player: death → restart → species select → play,
+  and death → load → play.
+- **Performance floor.** Decide the minimum spec (needed for the store page anyway, R6) and profile a
+  mature multi-tree save against it. The leaf-cluster batching work is the known lever if it misses.
+- **Build the thing.** An actual Windows standalone, run on a machine that is *not* this one, from a
+  clean user profile with no existing `persistentDataPath`. Nothing on this list is proven until that
+  happens — and it's the only way to exercise the `BonsaiDebug.Enabled == false` path, which nothing
+  in the editor ever takes.
+
+**Note on `profile.json`.** Left as-is: `ProgressionProfile` is global rather than per-slot and has no
+version field. It's lower-stakes than the tree saves (losing it costs unlocks, not a tree) but it has
+the same latent problem, so it wants the same treatment before strangers have one.
+
+---
+
+### R6. Steam store page — the mandatory asset list
+
+From the LLC-filing follow-up and the Obsidian marketing KB (`wiki/concepts/concept-steam-page.md`,
+`concept-capsule-art.md`, `concept-steam-direct.md`, `concept-steam-algorithm.md`). The KB's headline
+rule: **the page should be live 6+ months before launch**, because every wishlist it accumulates
+before then is stored launch-day energy — so the page goes up *before* these assets are final and
+gets refined in place.
+
+| Asset | Spec | Notes |
+|---|---|---|
+| **Capsule art** | 180×135 min, 450×315 recommended (plus the other capsule sizes Steam asks for) | The most-tested asset on the whole page — it's the thumbnail in every search result and widget. One legible tree silhouette + a title readable at thumbnail size beats detail. See `concept-capsule-art.md` |
+| **Screenshots** | ≥5; the first carries the most weight | **Gameplay, not menus.** The R3 baked tree is the hero shot; also want a wiring close-up, an autumn canopy, the calendar/care loop, and a before/after styling pair |
+| **Trailer** | ≤5 min, autoplays on hover | Genre legible in the **first 5 seconds** — show hands-on styling (a cut, a wire bend, leaves turning) before any logo or title card |
+| **Short description** | ~150 chars | Lead with genre, not flavour. Appears in search results and link previews |
+| **Long description** | the full pitch | Genre + hook first, then mechanics, then story. No developer biography at the top |
+| **Tags** | — | These decide which algorithmic widgets the game appears in (`concept-steam-algorithm.md`). Pick deliberately; don't leave them to Valve's suggestions |
+| **System requirements** | min + recommended | Affects whether the game shows up in players' filtered searches. Depends on the R5 performance floor |
+
+Trailer and capsule are the two highest-leverage items; everything else can be rough at Coming Soon
+launch.
+
+---
+
+### R7. Marketing & growth assets
+
+Target from the KB: **7,000–10,000 wishlists** before launch (`concept-steam-wishlist.md`,
+`concept-wishlist-velocity.md`).
+
+- **Social profiles** — Twitter/X, Instagram, TikTok, Discord: consistent handles and art, each linking
+  to the Steam page the moment it's live. The R3 showcase tree and timelapse captures are natural
+  recurring content; a bonsai game's growth footage is unusually well-suited to short video.
+- **Press kit** — high-res screenshots, logo variations, trailer, developer bio, contact, the LLC name,
+  and a factsheet. One page, one zip, publicly linked.
+- **Demo** — strongly recommended by the KB for both wishlists and feedback, and the natural home for
+  the R0–R5 work: a scoped slice (one species, a few seasons, Quick-Start on by default). Also the
+  entry ticket to **Steam Next Fest** (`concept-steam-next-fest.md`) — note a game can only
+  participate once, so timing matters.
+- **Steam Playtest** (`concept-steam-playtest.md`) as the lower-stakes alternative: real players on
+  the test build without committing to a public demo.
+- **Localization** — store-page text first (Chinese, Russian, Spanish, French, German, Japanese,
+  Korean), which is cheap and expands reach. UI localization is a much larger job and needs a string
+  table to exist first — the UI is all code-built literals today, so if localization is ever wanted
+  that decision shapes R1/R2's implementation. Decide *now*, even if the answer is "not yet."
+
+---
+
+### R8. Technical & administrative
+
+- **Steamworks SDK integration** — achievements, cloud saves, DRM wrapper. Cloud saves interact
+  directly with R0 (Steam Cloud paths need defining against the *final* `persistentDataPath`) and with
+  R5's `schemaVersion`, so a cloud save from an older build is recognised rather than mangled.
+  Achievements map naturally onto the existing `Journal` milestone hooks.
+- **Build upload** — SteamCMD access and a scripted upload (depot config kept with the project), once
+  an App ID exists.
+- **Age rating** — the free IARC questionnaire. Required before launch.
+- **Banking & tax** — business account in the LLC's exact legal name, routing/account numbers, address
+  for payouts. That legal name must match `companyName` from R0.
+- **Steam Direct** — the $100 fee starts a **30-day waiting period**, so submit as soon as the R6
+  mandatory assets are ready; the clock runs in parallel with everything else.
+
+---
+
+### Critical path
+
+1. **R0** — before any build leaves this machine. Half a day, saves a migration nightmare.
+2. **R5's save-schema version** — same reasoning: cheap now, impossible later.
+3. **R1 + R2 + R3 + R4** — the front-of-house pass. This is the chunk that turns "editor project" into
+   "a game someone else can open," and it's also what makes R6's screenshots and trailer possible,
+   since a trailer of a 2014 uGUI menu is not a trailer.
+4. **Launch the Coming Soon page** as soon as capsule + 5 screenshots + trailer + descriptions exist
+   (R6), and start the Steam Direct 30-day clock. Don't wait for polish.
+5. **R7 + R8** in parallel with the rest — the admin has waiting periods baked in, and the social
+   accounts should exist before there's anything to post.
+6. **Test build → demo / playtest** last, gated on R5.
 
 ---
 
@@ -1292,6 +2008,176 @@ public BudBreakType budBreakType = BudBreakType.Leaf;
 ## Backlog
 
 Future features not yet scheduled. Expand to read the spec.
+
+---
+
+<details>
+<summary><strong>Tracked Ideas — raised 2026-10-12, unscheduled</strong> — the full 2026-10-12 list, grouped (rain and snow are one entry). Not prioritised; recorded so they aren't lost. Several already have a partial implementation or an existing system to hang off — noted per item so none of them get re-invented from scratch.</summary>
+
+### Presentation & seasonal beauty
+
+- **Make every stage pretty — budding → flowers → summer growth → autumn.** The whole seasonal
+  arc should look deliberate, not just functional. The systems exist (`FlowerManager`, `LeafManager`,
+  bud GOs, autumn colour gradient); this is an art-and-timing pass over them, and it is also what
+  makes the R3 showcase tree and the R6 screenshots worth looking at.
+- **Rain and snow.** ⚠ Half built: `WeatherManager` already rolls 5 states (Clear / Overcast / Rain /
+  Storm / Heat) on seasonally weighted odds and they already drive the simulation — what's missing is
+  the **visuals**. The sim-side work is done; this is particles/shader/audio.
+  🔧 **Rain visual started 2026-10-13**: a looping rain video on a plane ("Rain" in Game001),
+  luma-keyed by `Shaders/LumaKeyVideo.shader` (material `RainLumaKey`), shown only while
+  `WeatherManager.IsRaining` by `RainVisual` (fades in/out, stronger and faster in a storm, paused
+  while hidden; any clip audio follows the fade and Settings ▸ Audio). The Rain object is a hidden
+  template; `RainVisual` spawns camera-parented vertical layers at staggered sideways offsets and
+  depths measured relative to the camera–tree distance, so some layers sit in front of the tree and
+  some behind it at any zoom (far layers fainter, each showing a different/mirrored slice of the
+  one shared video texture). Snow still to do.
+- **Birds.** New. Ambient life, no system to extend.
+- **Art style consistency pass.** Across bark, leaves, pot meshes, UI, the cyberpunk cityscape
+  backgrounds and the pixel-art sprites. Worth doing before R6 screenshots, since inconsistency is
+  most visible in a capsule image.
+- **Falling leaves must not cost frame rate.** `LeafManager` already has the lever: pooled cluster
+  meshes per tip instead of per-leaf prefab copies (the comment notes ~2,500 unbatchable objects on a
+  mature maple without it). This is the same perf work R5's "performance floor" item needs.
+- **Ambient sound should fade in and out**, not cut. Blocked on the same `AudioMixer` that R2 needs —
+  `AudioManager` currently holds two bare `AudioSource`s, so there is nothing to fade *through* yet.
+  Do it as part of R2's audio routing rather than twice.
+
+### Season pacing — the lesson from Tree.Bonsai
+
+Player feedback on Tree.Bonsai: *"Spring and summer felt too long; winter felt pointless; autumn was
+useful but too short."* **This must not be true of Bonsaimancer.**
+
+- Worth treating as a **design constraint on the calendar work**, not a separate feature. The relevant
+  specs already in this document are **Part 1 — Real Month Lengths** and **Part 6 — Speed Config
+  Tab**, both still pending.
+- ⚠ **Note what the current answer is**: `GameManager.quickWinter` defaults to `true` and simply
+  doubles time during winter months. That treats the symptom — winter is boring, so skip it faster —
+  rather than giving winter something to *do*. Real bonsai winter work exists (structural pruning on
+  bare wood, wiring visibility, repotting timing, dormancy management), and R5's winter-pruning plan
+  (`plan-winter-pruning-dormancy-refinements` in the Obsidian vault) is one way in.
+- The opposite failure is also possible: per-season speed multipliers that make summer fly past would
+  hide the growth the player is waiting to see. Pacing needs to be tuned against *what there is to do*
+  in each season, not just clock speed.
+
+### Life & ecology
+
+- **Bugs — good ones and bad ones.** No insect system exists today. The precedent to copy is the
+  weed and fungus systems: a per-tree load value, seasonal spread, a visible manifestation, and a
+  treatment tool. "Good bugs" (pollinators, predators eating the bad ones) is the more interesting
+  half and has no existing analogue — it would be the first mechanic that rewards *not* intervening.
+- **Mushrooms on dead branches, late game.** Two systems already carry the state this needs:
+  `fungalLoad` / `isMycorrhizal` on the fungus side, and `isDeadwood` / `isJin` for dead wood. A
+  visible fruiting body on old deadwood is a strong late-game signal that a tree has history.
+- **Fruit picking.** `FlowerManager` already runs the full flower-and-fruit lifecycle, so the fruit
+  exists — this is an *interaction* on top of it (and a natural tool-cursor case for R4).
+- ✅ **Done 2026-10-27 (30 days, deferred not skipped — `WeedManager.plantingGraceDays`, set from `InitTree`; loaded trees get no grace; a roll due mid-Quick-Start is dropped).** ~~Weeds shouldn't appear for at least the first 15 days.~~ A new tree currently has no grace
+  period: `WeedManager.ApplySeasonAndSpawn` rolls `spawnChancePerSeason` (0.5) the first time
+  TreeSkeleton calls it, so a tree planted in spring can sprout a weed on day one. There is a
+  `quickStarting` guard for the Quick-Start generator, but nothing for a hand-planted tree.
+  ⚠ **Implementation subtlety worth knowing before writing it**: the roll happens **once per
+  spring**, not daily. So a naive "skip if younger than 15 days" check doesn't delay the first weed
+  by a fortnight — it cancels that year's only spawn opportunity and pushes the first weed out by a
+  **whole year**. It should **defer** the roll (re-check once the grace period lapses) rather than
+  skip it. Days-since-planting is derivable from `SaveData.startYear` / `startMonth` and
+  `skeleton.SaveStartYear`.
+- ⭐ **Leaves should fall for different reasons, and differ by species.** Right now leaf fall is
+  **autumn-only**: `LeafManager` drops leaves stochastically at `baseFallChancePerDay` while the game
+  is in `GameState.LeafFall`, and otherwise only sheds the leaves of nodes that are already
+  `isDead` or `isTrimmed`. **A sick-but-living tree in midsummer looks exactly like a healthy one.**
+  - *What already exists* — more than it first appears. Species variation in *when* leaves fall is
+    partly there: evergreen conifers persist year-round with a slow needle-shed trickle
+    (`needleShedPer100TuftsPerDay`), deciduous conifers drop their tufts, broadleaves do the autumn
+    sequence. And `Leaf` already carries the whole colour pipeline — `springColor`, a per-species
+    `autumnColor`, `fallColorProgress`, `fallColorSpeed`, `youngTint`, and a `fungalSeverity` that
+    `LeafManager` already feeds from each node's `fungalLoad`.
+  - *What's missing* is the **driver**: nothing outside autumn moves `fallColorProgress` or triggers
+    a drop. Drought, fungal load, nutrient starvation, root damage, shade and transplant shock
+    should each be able to discolour and shed leaves out of season — and ideally with different
+    signatures, so the symptom hints at the cause (drought = wilt then crisp edges; overwatering and
+    root rot = yellowing from the inside out; nitrogen deficiency = pale uniform chlorosis).
+    Because the colour machinery exists, much of this is **driving existing fields from new inputs**
+    rather than new rendering work.
+  - *Why it matters beyond realism*: this is the game's main **diegetic health signal**. The debug
+    health rings are now release-gated (R5), so a player's only warning is a UI panel — the tree
+    itself barely changes until it dies. Leaf discolouration is how a bonsai actually tells you
+    something is wrong, and it is what makes "watch the tree" a real instruction rather than a
+    slogan.
+  - ⚠ *It is also a marketing dependency*: the "Near Death Experience" video concept in
+    `plan-short-form-content-concepts` is built on fast-forwarding **through the wilting process** —
+    and there is no wilt visual today. That content idea cannot be filmed until this exists.
+  - Pairs with the "make every stage pretty" item above, and with per-species behaviour in
+    `SPECIES_REALISM.md`.
+
+### Player expression & identity
+
+- **Let players name their tree whatever they want.** Partly present: `SaveMeta.saveName` and the
+  save-name prompt exist, but that names the *save slot*. The ask is a tree **identity** — shown
+  in-game, on the stats screen, in the save card, and presumably on a finished/displayed tree. Worth
+  deciding early whether the tree name and the slot name are one field or two.
+- **Built-in screenshot mode with filters and options.** Precedents exist on both halves:
+  `buttonClicker.TakeScreenshotForSlot` already captures to PNG, and `CRTEffect` /
+  `CRTRendererFeature` are a working custom renderer feature, which is where filters would live.
+  Wants: hide UI, free camera, aspect/resolution choice, filters, and a frame. This is also the
+  cheapest possible source of R6 store screenshots and R7 social content — and if players use it,
+  of player-made content worth sharing.
+- ⭐ **"Mark Tree as Finished"** — save a version that doesn't redraw every frame, so several trees
+  can be displayed at once, and possibly feed the main menu. **This is the same mechanism as R3's
+  menu-showcase bake**: combine the live tree's renderers into static meshes, drop the whole
+  simulation, instantiate cheaply. Build it once, use it for both. The R3 spec already covers the
+  gotchas (combine in the tree root's local space because wind flex is derived from object-space
+  position; `IndexFormat.UInt32` past 65,535 verts; no `WindManager` means no sway, so nothing
+  detaches). A finished-tree gallery is then a natural progression reward — and it is the
+  long-horizon payoff a game about patience should have.
+
+### Simulation depth
+
+- **Branch tension and snapping.** Partly built: `branchLoad`, `sagAngleDeg`, `pendingSagDeg` and
+  `elasticSagDeg` are already on the node, and `TreeSkeleton.Stability.cs` does analytic moment
+  balance for whole-tree tipping. What's missing is **per-branch failure** — a branch that snaps
+  under its own weight, or under a wire bent too far. Note it would also make wiring riskier, which
+  gives the wire-set timing real stakes. (Also worth knowing: the user's own short-form content idea
+  #3 is "a branch breaks under its own weight" — so this feature *is* marketing material.)
+
+### Information & onboarding
+
+- **In-depth stats screen when the tree dies.** `GameState.TreeDead` and its overlay already exist,
+  and `CareLog` already records care actions and season narratives — so the data is largely there.
+  A death screen that explains *what happened over the tree's life* turns a loss into the game's
+  best teaching moment, which fits the no-punishment-while-learning intent.
+- **Extremely clear and translatable tutorials.** ⚠ **Has a hard dependency**: the UI is built from
+  code-literal strings with no string table, so nothing is translatable today. R7's localization note
+  makes the same point. Decide the string-table question *before* writing tutorial copy, or the copy
+  gets written twice. The first-use tooltip system itself is live again as of R5.
+- **Document all features.** `Docs/` already holds per-system documents (`BudSystem.md`,
+  `WoundSystem.md`, `AirLayerSystem.md`, `IshitsukiSystem.md`, `SPECIES_REALISM.md`, …). The gap is
+  coverage and currency, not format. Newer systems (weather, tipping, branch sway, pot pipeline) have
+  their detail only in this plan.
+- **Reset camera button.** ✅ **Nearly free** — `CameraOrbit.ResetViewForTree(float treeHeight)`
+  already exists and is already called elsewhere. This is wiring a button to an existing method.
+
+### Play pattern — check in, adjust, leave it running
+
+- **Players want to check in, make small adjustments, and leave it running.** ⚠ This is largely
+  **already built** and worth auditing before building anything new: `PlayModeManager` has play modes
+  with rule evaluation, idle resume thresholds and an idle camera orbit; the calendar has scheduled
+  watering and fertilising; auto-water and auto-fertilize exist; and `runInBackground` is already
+  enabled in the player settings. The real gap is probably **legibility and trust** — the player
+  needs to believe it's safe to walk away, which means clear feedback on what the tree will do
+  unattended and what it did while they were gone. `CareLog` is the raw material for the "while you
+  were away" summary.
+- **Background-friendly notifications** — desktop toast, taskbar flash, second-monitor overlay
+  indicator. The natural companion to the above: if the game is meant to run unattended, it has to be
+  able to get attention without being the focused window. Note this is platform-specific work
+  (Windows taskbar flash and toast are native API calls, not Unity features) and interacts with
+  R2's settings (players must be able to turn each one off).
+
+### Secret
+
+- **Something trippy that is secret and random.** No notes beyond that, deliberately. Candidate
+  hooks that already exist: the species/seed RNG, the `CRTRendererFeature` post-processing stack, the
+  cyberpunk cityscape backgrounds, and the `_soilDbg` GL overlay path that is currently dead code.
+
+</details>
 
 ---
 

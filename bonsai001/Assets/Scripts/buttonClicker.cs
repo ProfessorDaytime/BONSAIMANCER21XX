@@ -9,12 +9,23 @@ public class ButtonClicker : MonoBehaviour
     [SerializeField] TreeSkeleton skeleton;
 
     // ── Load Menu ─────────────────────────────────────────────────────────────
+    // Card list is shared with the main menu's picker (PLAN R1) — one implementation, two hosts.
+    // This host keeps the UXML overlay, its scroll view and its New Game / Back buttons; only the
+    // card building is delegated.
+    readonly SaveSelectPanel savePanel = new SaveSelectPanel();
+
+    // The one settings-and-game screen (PLAN R2, unified 2026-10-13): what Esc opens, what a new
+    // game opens on (Play Modes), and the same class the main menu hosts. It ADOPTS the old pause
+    // menu's controls and the calendar's Modes/Speed tabs — moving those existing elements rather
+    // than rebuilding them, so every callback registered on them below keeps working.
+    readonly SettingsPanel settingsPanel = new SettingsPanel();
+    bool calModesAndSpeedMoved;   // true once the calendar's Modes/Speed tabs belong to Settings
+
     VisualElement loadMenuOverlay;
     VisualElement loadMenuCardContainer;
     Button        loadMenuNewGameButton;
     Button        loadMenuBackButton;
     bool          loadMenuHasBack;   // true when opened from pause menu (back returns to pause)
-    string        pendingDeleteSlotId;   // set on first DELETE click; cleared on confirm/cancel
 
     // ── Save Name Prompt ──────────────────────────────────────────────────────
     VisualElement           saveNamePromptOverlay;
@@ -148,6 +159,7 @@ public class ButtonClicker : MonoBehaviour
     VisualElement calModeChips, calRulesList, calAddRulePanel, calModeSettings;
     Button        calAddRuleButton, calModeResetButton, calRuleConfirmButton, calRuleCancelButton;
     Toggle        calModeAutoWater, calModeAutoFert, calModeIdleOrbit, calRuleIdleToggle;
+    Toggle        calModeAutoStyle;   // added in code, beside Auto-fertilize (2026-10-27)
     UnityEngine.UIElements.IntegerField calModeOrbitDelay;
     UnityEngine.UIElements.DropdownField calRuleTriggerDropdown;
     VisualElement calRuleParamRow, calRuleSpeedChips;
@@ -211,8 +223,13 @@ public class ButtonClicker : MonoBehaviour
     Button           chooseTableButton;         // "Choose table…" (settings / new-game)
 
     // ── Quick-Start (Multi-Tree / Quick-Start) ────────────────────────────────
-    QuickStartPanel  quickStartPanel;           // style + age picker
-    Button           quickStartButton;          // "⚡ Quick-Start" injected into the species overlay
+    // Quick-Start lives in a collapsible section of the pre-start Play Modes screen (2026-10-13),
+    // replacing the old "⚡ Quick-Start" button + modal on the species screen.
+    VisualElement    qsSection;
+    bool             qsEnabled;
+    StyleDefinition  qsStyle;
+    int              qsAge = 10;
+    static readonly int[] QuickStartAges = { 5, 10, 20, 40 };
 
     // ── Progression mode (Career / Sandbox) ───────────────────────────────────
     Button           modeToggleButton;          // "Mode: …" injected into the species overlay
@@ -299,8 +316,34 @@ public class ButtonClicker : MonoBehaviour
     // Debug tab controls
     Toggle        toggleScaleCubes;
 
-    // Set to true to re-enable first-use tooltips across the whole UI.
-    public static bool tooltipsEnabled = false;
+    // ── First-use onboarding tooltips ──────────────────────────────────────
+
+    const string TooltipsOnPrefsKey = "set.tooltips";
+
+    static int tooltipsEnabledCache = -1;   // -1 = not read from prefs yet
+
+    /// <summary>
+    /// Whether first-use tooltips fire at all. <b>Default ON</b> — this was a hardcoded
+    /// <c>false</c> until 2026-10-12, which left the whole onboarding system dark: a new player met
+    /// 13 tools, a calendar, soil chemistry and an air-layer tool with no first-use explanation of
+    /// any of them. Persisted so the player's choice survives a relaunch, and so the eventual
+    /// Settings → Gameplay tab has something to bind to.
+    /// </summary>
+    public static bool tooltipsEnabled
+    {
+        get
+        {
+            if (tooltipsEnabledCache < 0)
+                tooltipsEnabledCache = PlayerPrefs.GetInt(TooltipsOnPrefsKey, 1);
+            return tooltipsEnabledCache != 0;
+        }
+        set
+        {
+            tooltipsEnabledCache = value ? 1 : 0;
+            PlayerPrefs.SetInt(TooltipsOnPrefsKey, tooltipsEnabledCache);
+            PlayerPrefs.Save();
+        }
+    }
 
     // Sliders + value labels
     Slider sliderTimescale;      Label labelTimescale;
@@ -316,6 +359,8 @@ public class ButtonClicker : MonoBehaviour
     float  saveToastFadeEndTime = 0f;
     const float TOAST_HOLD = 2f;
     const float TOAST_FADE = 0.4f;
+    // A failed load is a sentence to read, not a confirmation to glance at.
+    const float TOAST_ERROR_HOLD = 6f;
     Slider sliderGrowSpeed;      Label labelGrowSpeed;
     Slider sliderSpringLaterals; Label labelSpringLaterals;
     Slider sliderDepthDecay;     Label labelDepthDecay;
@@ -455,6 +500,7 @@ public class ButtonClicker : MonoBehaviour
         // Modes tab wiring
         calModeAutoWater?.RegisterValueChangedCallback(evt  => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.autoWater    = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
         calModeAutoFert?.RegisterValueChangedCallback(evt   => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.autoFertilize = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
+        SetupAutoStyleToggle();
         calModeIdleOrbit?.RegisterValueChangedCallback(evt  => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.idleOrbit    = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
         calModeOrbitDelay?.RegisterValueChangedCallback(evt => { var m = PlayModeManager.Instance?.ActiveMode; if (m != null) { m.idleOrbitDelaySecs = evt.newValue; PlayModeManager.Instance.SaveModes(); } });
         calAddRuleButton?.RegisterCallback<ClickEvent>(_ =>    { if (calAddRulePanel != null) calAddRulePanel.style.display = DisplayStyle.Flex; });
@@ -651,7 +697,6 @@ public class ButtonClicker : MonoBehaviour
         speciesConfirmButton  = root.Q("SpeciesConfirmButton") as Button;
         speciesConfirmButton?.RegisterCallback<ClickEvent>(_ => OnSpeciesConfirmClick());
         SetupSpeciesButtonRow(root);   // single row that the injected buttons join
-        SetupQuickStart(root);
         SetupModeToggle(root);    // Career/Sandbox pick beside the species Confirm
         SetupItemCatalog(root);   // after repot/rock/species lookups so all inject targets exist
         BuildFilterBar();
@@ -708,6 +753,7 @@ public class ButtonClicker : MonoBehaviour
         tabContentIshitsuki = root.Q("TabContentIshitsuki");
         tabContentDebug     = root.Q("TabContentDebug");
         SetupTrainingToggle();
+        HideDevTabsInRelease();
 
         toggleScaleCubes    = root.Q("ToggleScaleCubes")    as Toggle;
 
@@ -890,6 +936,8 @@ public class ButtonClicker : MonoBehaviour
         ProgressionManager.OnToolUnlocked += OnToolUnlockedRefresh;
         UiTheme.OnThemeChanged           += RefreshThemeAll;
 
+        SetupUnifiedSettings(root);
+
         // Sync overlay visibility to whatever state was set before OnEnable ran
         var initState = GameManager.Instance?.state ?? GameState.SpeciesSelect;
         if (speciesSelectOverlay != null)
@@ -913,6 +961,26 @@ public class ButtonClicker : MonoBehaviour
         ApplyToolGates();
     }
 
+    void Start()
+    {
+        // The main menu may have already chosen a slot to load (PLAN "Release Prep" R1).
+        //
+        // This runs in Start, not OnEnable: Unity runs Awake+OnEnable per GameObject in scene
+        // order, so OnEnable here can execute before GameManager.Awake — and the load path
+        // dereferences GameManager.Instance. Every Awake completes before any Start, so this is
+        // the first point at which both GameManager and this component's own references are live.
+        //
+        // The load itself reuses OnLoadMenuCardLoad because it already handles both outcomes:
+        // success enters play, failure leaves the player in the save list with a readable reason.
+        if (SaveManager.PendingLaunch == PendingLaunchAction.LoadSlot &&
+            !string.IsNullOrEmpty(SaveManager.ActiveSlotId))
+        {
+            SaveManager.ConsumePendingLaunch();
+            loadMenuHasBack = false;   // came from the main menu; there is no pause menu behind us
+            OnLoadMenuCardLoad(SaveManager.ActiveSlotId);
+        }
+    }
+
     void OnDisable()
     {
         CareLog.OnChanged                -= MarkCareLogDirty;
@@ -927,20 +995,29 @@ public class ButtonClicker : MonoBehaviour
 
     void Update()
     {
-        if (Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
+        if (BonsaiDebug.Enabled)
         {
-            debugStateVisible = !debugStateVisible;
-            if (debugStateLabel != null)
-                debugStateLabel.style.display = debugStateVisible ? DisplayStyle.Flex : DisplayStyle.None;
-        }
+            if (Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
+            {
+                debugStateVisible = !debugStateVisible;
+                if (debugStateLabel != null)
+                    debugStateLabel.style.display = debugStateVisible ? DisplayStyle.Flex : DisplayStyle.None;
+            }
 
-        if (debugStateVisible && debugStateLabel != null)
-            debugStateLabel.text = GameManager.Instance != null ? GameManager.Instance.state.ToString() : "—";
+            if (debugStateVisible && debugStateLabel != null)
+                debugStateLabel.text = GameManager.Instance != null ? GameManager.Instance.state.ToString() : "—";
+        }
 
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
             var s = GameManager.Instance?.state ?? GameState.Idle;
-            if (s == GameState.CalendarOpen)
+            // Settings sits above everything, so it consumes Esc first. In pre-start it is the
+            // new-game screen and only START leaves it.
+            if (settingsPanel.IsOpen)
+            {
+                if (settingsPanel.CurrentContext != SettingsPanel.Context.PreStart) TogglePauseMenu();
+            }
+            else if (s == GameState.CalendarOpen)
                 CloseCalendar();
             else if (s == GameState.LoadMenu && loadMenuHasBack)
                 OnLoadMenuBack();
@@ -1202,13 +1279,28 @@ public class ButtonClicker : MonoBehaviour
         PlayerPrefs.Save();
     }
 
+    /// <summary>
+    /// Forgets every tooltip the player has seen, so the full first-use sequence fires again from
+    /// the next action onward. Needed to audit or re-test onboarding at all: each id is burned
+    /// permanently the first time it shows, so without this the only way to see the sequence a
+    /// second time is to hand-edit PlayerPrefs.
+    /// </summary>
+    public static void ResetShownTooltips()
+    {
+        shownTooltips?.Clear();
+        PlayerPrefs.DeleteKey(TooltipPrefsKey);
+        PlayerPrefs.Save();
+        Debug.Log("[Tooltips] Reset — first-use tooltips will show again.");
+    }
+
     // ── Speed toggle ─────────────────────────────────────────────────────────
 
     void OnSpeedToggleClick()
     {
         GameManager.Instance.ToggleSpeed();
-        // Keep PlayModeManager's defaultSpeed in sync so it doesn't immediately override
-        // the manual choice back to whatever the active mode's baseline was.
+        // Remember the player's choice as the mode's starting speed, so returning to this mode
+        // later starts at the speed they last used. (This used to be a workaround for the play
+        // mode re-asserting its speed every frame; since 2026-10-13 it doesn't.)
         if (PlayModeManager.Instance?.ActiveMode != null)
             PlayModeManager.Instance.ActiveMode.defaultSpeed = GameManager.CurrentSpeed;
         RefreshSpeedToggleButton();
@@ -1490,34 +1582,34 @@ public class ButtonClicker : MonoBehaviour
 
     // ── Pause menu helpers ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// Opens or closes the unified Settings panel in its Pause context (Esc, the ☰ button, and
+    /// RESUME all come through here). The old UXML pause overlay is no longer shown; its controls
+    /// now live in the panel's tabs.
+    /// </summary>
     void TogglePauseMenu()
     {
-        if (pauseMenuOverlay == null) return;
-        // Use resolvedStyle (the actual computed visibility) — style.display reads only the inline
-        // value, which is unset at startup when the menu is hidden via USS, so the first click would
-        // otherwise misread the toggle state and require a second click to open.
-        bool opening = pauseMenuOverlay.resolvedStyle.display == DisplayStyle.None;
-        // Don't open the pause menu from non-gameplay states.
+        // During pre-start the panel is the new-game screen; only START may close it.
+        if (settingsPanel.IsOpen && settingsPanel.CurrentContext == SettingsPanel.Context.PreStart) return;
+
+        bool opening = !settingsPanel.IsOpen;
         if (opening)
         {
+            // Don't open from non-gameplay states.
             var s = GameManager.Instance?.state ?? GameState.Idle;
             if (s == GameState.LoadMenu   || s == GameState.SpeciesSelect ||
                 s == GameState.TipPause   || s == GameState.TreeDead      ||
                 s == GameState.AirLayerSever) return;
-        }
-        pauseMenuOverlay.style.display = opening ? DisplayStyle.Flex : DisplayStyle.None;
 
-        if (opening)
-        {
             GameManager.Instance.TogglePause();
-            SyncSlidersFromGame();  // refresh values each time menu opens
-            SelectTab(0);           // always open on Time tab
-            ThemeOverlay(pauseMenuOverlay);   // paint the settings panel in the active theme
+            SyncSlidersFromGame();
+            settingsPanel.Open(SettingsPanel.Context.Pause, "game");
         }
         else
         {
-            // Only unpause if we are in GamePause (don't unpause if we were
-            // already paused for another reason before opening the menu)
+            settingsPanel.SetVisible(false);
+            // Only unpause if we are in GamePause (don't unpause if we were already paused for
+            // another reason before opening the menu).
             if (GameManager.Instance.state == GameState.GamePause)
                 GameManager.Instance.TogglePause();
         }
@@ -1540,8 +1632,29 @@ public class ButtonClicker : MonoBehaviour
         tabContentDebug.Add(t);
     }
 
+    /// <summary>
+    /// Hides the Growth / Ishitsuki / Debug tabs in a release build. These are the one piece of
+    /// developer surface a player would find on their own: they're tabs in the pause menu, not
+    /// hidden gizmos, and <c>SliderGrowSpeed</c> / <c>SliderDepthDecay</c> will permanently
+    /// deform a tree. The Time tab stays — timescale, anti-aliasing, selection radius and the
+    /// save/load buttons are all player-facing.
+    /// </summary>
+    void HideDevTabsInRelease()
+    {
+        if (BonsaiDebug.Enabled) return;
+
+        if (tabBtnGrowth    != null) tabBtnGrowth.style.display    = DisplayStyle.None;
+        if (tabBtnIshitsuki != null) tabBtnIshitsuki.style.display = DisplayStyle.None;
+        if (tabBtnDebug     != null) tabBtnDebug.style.display     = DisplayStyle.None;
+
+        SelectTab(0);
+    }
+
     void SelectTab(int index)
     {
+        // A hidden dev tab must stay unreachable even if something asks for it by index.
+        if (!BonsaiDebug.Enabled && index != 0) index = 0;
+
         currentTabIndex = index;
         // Content panels
         if (tabContentTime      != null) tabContentTime.style.display      = index == 0 ? DisplayStyle.Flex : DisplayStyle.None;
@@ -1972,13 +2085,34 @@ public class ButtonClicker : MonoBehaviour
 
     // ── Save toast ────────────────────────────────────────────────────────────
 
-    void ShowSaveToast(string message)
+    /// <summary>Signature is load-bearing: this is subscribed to <c>SaveManager.OnSaved</c> as an
+    /// <c>Action&lt;string&gt;</c>, and a method with an optional parameter won't convert to one.</summary>
+    void ShowSaveToast(string message) =>
+        ShowToast(message, new Color(0.63f, 0.82f, 0.63f), TOAST_HOLD, wrap: false);
+
+    /// <summary>
+    /// Shows why a load failed, using <see cref="SaveManager.LastLoadError"/> when the failure set
+    /// one. Before this existed a failed load did nothing visible at all — the player clicked
+    /// Load and the UI just sat there.
+    /// </summary>
+    void ShowLoadErrorToast(string fallback)
+    {
+        string msg = string.IsNullOrEmpty(SaveManager.LastLoadError) ? fallback
+                                                                    : SaveManager.LastLoadError;
+        ShowToast(msg, UiTheme.Current.negative, TOAST_ERROR_HOLD, wrap: true);
+    }
+
+    /// <summary>Paints the shared toast label. Both callers set every property they care about,
+    /// since they share one label and must not inherit the other's colour or wrapping.</summary>
+    void ShowToast(string message, Color color, float hold, bool wrap)
     {
         if (saveToastLabel == null) return;
         saveToastLabel.text                = message;
+        saveToastLabel.style.color         = new StyleColor(color);
+        saveToastLabel.style.whiteSpace    = wrap ? WhiteSpace.Normal : WhiteSpace.NoWrap;
         saveToastLabel.style.display       = DisplayStyle.Flex;
         saveToastLabel.style.opacity       = new StyleFloat(1f);
-        saveToastFadeEndTime               = Time.realtimeSinceStartup + TOAST_HOLD + TOAST_FADE;
+        saveToastFadeEndTime               = Time.realtimeSinceStartup + hold + TOAST_FADE;
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────────
@@ -2008,7 +2142,9 @@ public class ButtonClicker : MonoBehaviour
         bool ok = SaveManager.Load(skeleton, leafMgr);
         if (saveStatusLabel != null)
         {
-            saveStatusLabel.text = ok ? $"Loaded  ({System.DateTime.Now:HH:mm:ss})" : "No save file found.";
+            saveStatusLabel.text = ok
+                ? $"Loaded  ({System.DateTime.Now:HH:mm:ss})"
+                : (SaveManager.LastLoadError ?? "No save file found.");
             saveStatusClearTime  = Time.realtimeSinceStartup + 4f;
         }
         if (ok)
@@ -2033,179 +2169,18 @@ public class ButtonClicker : MonoBehaviour
         // Re-open the pause menu: show the overlay, set state to GamePause.
         // prePauseState in GameManager is still set from when the menu was open,
         // so Resume will correctly restore the game state.
-        if (pauseMenuOverlay != null) pauseMenuOverlay.style.display = DisplayStyle.Flex;
         SyncSlidersFromGame();
-        SelectTab(0);
+        settingsPanel.Open(SettingsPanel.Context.Pause, "game");
         GameManager.Instance.UpdateGameState(GameState.GamePause);
     }
 
     void BuildLoadMenuCards()
     {
         if (loadMenuCardContainer == null) return;
-        loadMenuCardContainer.Clear();
-        pendingDeleteSlotId = null;
 
-        var saves = SaveManager.ListAllSaves();
-        if (saves.Count == 0)
-        {
-            var empty = new UnityEngine.UIElements.Label { text = "No saved games found." };
-            empty.style.color    = new StyleColor(new Color(0.5f, 0.5f, 0.5f));
-            empty.style.fontSize = 13;
-            empty.style.unityTextAlign = TextAnchor.MiddleCenter;
-            empty.style.marginTop = 40;
-            loadMenuCardContainer.Add(empty);
-            return;
-        }
-
-        foreach (var meta in saves)
-            loadMenuCardContainer.Add(MakeSaveCard(meta));
-    }
-
-    VisualElement MakeSaveCard(SaveMeta meta)
-    {
-        // Card container
-        var card = new VisualElement();
-        card.style.flexDirection        = FlexDirection.Row;
-        card.style.alignItems           = Align.Center;
-        card.style.backgroundColor      = new StyleColor(new Color(0.08f, 0.12f, 0.08f));
-        card.style.borderTopLeftRadius  = card.style.borderTopRightRadius  = 6;
-        card.style.borderBottomLeftRadius = card.style.borderBottomRightRadius = 6;
-        card.style.marginBottom         = 8;
-        card.style.paddingTop = card.style.paddingBottom = 10;
-        card.style.paddingLeft = card.style.paddingRight = 14;
-
-        // Thumbnail (if available)
-        string thumbPath = ThumbPath(meta.slotId);
-        if (!string.IsNullOrEmpty(meta.slotId) && System.IO.File.Exists(thumbPath))
-        {
-            try
-            {
-                var thumbData = System.IO.File.ReadAllBytes(thumbPath);
-                var thumbTex  = new Texture2D(2, 2);
-                if (thumbTex.LoadImage(thumbData))
-                {
-                    var thumbEl = new VisualElement();
-                    thumbEl.style.width           = 80;
-                    thumbEl.style.minWidth        = 80;
-                    thumbEl.style.height          = 45;
-                    thumbEl.style.minHeight       = 45;
-                    thumbEl.style.marginRight     = 12;
-                    thumbEl.style.borderTopLeftRadius    = thumbEl.style.borderBottomLeftRadius = 4;
-                    thumbEl.style.borderTopRightRadius   = thumbEl.style.borderBottomRightRadius = 4;
-                    thumbEl.style.backgroundImage = new StyleBackground(thumbTex);
-                    card.Add(thumbEl);
-                }
-                else
-                    Destroy(thumbTex);
-            }
-            catch { /* skip broken thumb */ }
-        }
-
-        // Left info column
-        var info = new VisualElement();
-        info.style.flexGrow    = 1;
-        info.style.flexShrink  = 1;
-        info.style.marginRight = 12;
-
-        // Save name
-        var nameLabel = new UnityEngine.UIElements.Label { text = meta.saveName ?? "Unnamed" };
-        nameLabel.style.fontSize     = 16;
-        nameLabel.style.color        = new StyleColor(new Color(0.9f, 0.88f, 0.78f));
-        nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-        nameLabel.style.marginBottom = 4;
-        info.Add(nameLabel);
-
-        // Row 2: origin badge + species
-        var row2 = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 3 } };
-        var origin = (TreeOrigin)meta.treeOrigin;
-        var (badgeText, badgeCol) = origin switch
-        {
-            TreeOrigin.AirLayer => ("✦ Air Layer", new Color(0.3f, 0.85f, 0.65f)),
-            TreeOrigin.Cutting  => ("✂ Cutting",   new Color(0.85f, 0.75f, 0.3f)),
-            _                   => ("● Seedling",  new Color(0.5f,  0.85f, 0.4f)),
-        };
-        var badge = new UnityEngine.UIElements.Label { text = badgeText };
-        badge.style.fontSize         = 10;
-        badge.style.color            = new StyleColor(badgeCol);
-        badge.style.backgroundColor  = new StyleColor(new Color(badgeCol.r * 0.15f, badgeCol.g * 0.15f, badgeCol.b * 0.15f, 0.8f));
-        badge.style.paddingLeft = badge.style.paddingRight = 5;
-        badge.style.paddingTop  = badge.style.paddingBottom = 2;
-        badge.style.borderTopLeftRadius = badge.style.borderTopRightRadius = 3;
-        badge.style.borderBottomLeftRadius = badge.style.borderBottomRightRadius = 3;
-        badge.style.marginRight = 7;
-        row2.Add(badge);
-
-        var specLabel = new UnityEngine.UIElements.Label { text = meta.speciesName ?? "" };
-        specLabel.style.fontSize = 12;
-        specLabel.style.color    = new StyleColor(new Color(0.65f, 0.78f, 0.65f));
-        row2.Add(specLabel);
-        info.Add(row2);
-
-        // Row 3: date + tree age
-        string monthName = meta.month switch
-        {
-            3 => "Mar", 4 => "Apr", 5 => "May", 6 => "Jun",
-            7 => "Jul", 8 => "Aug", 9 => "Sep", 10 => "Oct",
-            11 => "Nov", 12 => "Dec", 1 => "Jan", 2 => "Feb", _ => "???"
-        };
-        string ageTxt = meta.treeAge <= 0 ? "seedling" : meta.treeAge == 1 ? "1 yr" : $"{meta.treeAge} yrs";
-        var row3 = new UnityEngine.UIElements.Label { text = $"{monthName} {meta.year}  ·  {ageTxt}" };
-        row3.style.fontSize = 11;
-        row3.style.color    = new StyleColor(new Color(0.45f, 0.55f, 0.45f));
-        info.Add(row3);
-
-        // Row 4: health bar
-        var row4 = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginTop = 4 } };
-        var healthLbl = new UnityEngine.UIElements.Label { text = "Health " };
-        healthLbl.style.fontSize = 10;
-        healthLbl.style.color    = new StyleColor(new Color(0.45f, 0.55f, 0.45f));
-        row4.Add(healthLbl);
-        var healthBg = new VisualElement();
-        healthBg.style.width  = 80; healthBg.style.height = 5;
-        healthBg.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.1f));
-        healthBg.style.borderTopLeftRadius = healthBg.style.borderTopRightRadius =
-            healthBg.style.borderBottomLeftRadius = healthBg.style.borderBottomRightRadius = 2;
-        float h = Mathf.Clamp01(meta.avgHealth);
-        var healthFill = new VisualElement();
-        healthFill.style.height = new StyleLength(new Length(100f, LengthUnit.Percent));
-        healthFill.style.width  = new StyleLength(new Length(h * 100f, LengthUnit.Percent));
-        Color hCol = h > 0.6f ? new Color(0.25f, 0.75f, 0.25f)
-                   : h > 0.3f ? new Color(0.85f, 0.65f, 0.1f)
-                               : new Color(0.75f, 0.1f,  0.1f);
-        healthFill.style.backgroundColor = new StyleColor(hCol);
-        healthFill.style.borderTopLeftRadius = healthFill.style.borderTopRightRadius =
-            healthFill.style.borderBottomLeftRadius = healthFill.style.borderBottomRightRadius = 2;
-        healthBg.Add(healthFill);
-        row4.Add(healthBg);
-        var healthPctLbl = new UnityEngine.UIElements.Label { text = $"  {h * 100f:F0}%" };
-        healthPctLbl.style.fontSize = 10;
-        healthPctLbl.style.color    = new StyleColor(hCol);
-        row4.Add(healthPctLbl);
-        info.Add(row4);
-
-        card.Add(info);
-
-        // Right button column
-        var btns = new VisualElement();
-        btns.style.flexDirection = FlexDirection.Column;
-        btns.style.alignItems    = Align.FlexEnd;
-
-        var slotId = meta.slotId;
-
-        var loadBtn = new Button { text = "LOAD" };
-        StyleButton(loadBtn, new Color(0.15f, 0.35f, 0.55f), new Color(0.7f, 0.85f, 1f));
-        loadBtn.style.marginBottom = 5;
-        loadBtn.RegisterCallback<ClickEvent>(_ => OnLoadMenuCardLoad(slotId));
-        btns.Add(loadBtn);
-
-        var delBtn = new Button { text = "DELETE" };
-        StyleButton(delBtn, new Color(0.35f, 0.1f, 0.1f), new Color(0.9f, 0.55f, 0.55f));
-        delBtn.style.fontSize = 11;
-        delBtn.RegisterCallback<ClickEvent>(_ => OnLoadMenuCardDelete(slotId, delBtn, card));
-        btns.Add(delBtn);
-
-        card.Add(btns);
-        return card;
+        savePanel.OnLoadRequested = OnLoadMenuCardLoad;
+        savePanel.OnSlotDeleted   = remaining => { if (remaining == 0) OnLoadMenuNewGame(); };
+        savePanel.Build(loadMenuCardContainer);
     }
 
     static void StyleButton(Button btn, Color bg, Color fg)
@@ -2222,8 +2197,9 @@ public class ButtonClicker : MonoBehaviour
 
     // ── Screenshot thumbnail ─────────────────────────────────────────────────
 
-    static string ThumbPath(string slotId) =>
-        System.IO.Path.Combine(SaveManager.SavesRoot, slotId, "thumb.png");
+    // Path lives on SaveSelectPanel, which is the thing that reads these; this is the writer.
+    // One definition so the writer and the reader cannot disagree about where thumbs go.
+    static string ThumbPath(string slotId) => SaveSelectPanel.ThumbPath(slotId);
 
     IEnumerator TakeScreenshotForSlot(string slotId)
     {
@@ -2277,26 +2253,10 @@ public class ButtonClicker : MonoBehaviour
             Time.timeScale = 1f;
             GameManager.Instance.UpdateGameState(GameManager.Instance.StateForMonth(GameManager.month));
         }
-    }
-
-    void OnLoadMenuCardDelete(string slotId, Button delBtn, VisualElement card)
-    {
-        if (pendingDeleteSlotId == slotId)
-        {
-            // Second click — confirmed.
-            SaveManager.DeleteSlot(slotId);
-            loadMenuCardContainer?.Remove(card);
-            pendingDeleteSlotId = null;
-            // If no saves left, go straight to new game.
-            if (!SaveManager.HasAnySave())
-                OnLoadMenuNewGame();
-        }
         else
         {
-            // First click — arm delete.
-            pendingDeleteSlotId = slotId;
-            delBtn.text = "SURE?";
-            delBtn.style.backgroundColor = new StyleColor(new Color(0.7f, 0.15f, 0.15f));
+            // Stay in the load menu so another slot can be picked.
+            ShowLoadErrorToast("Couldn't load that save.");
         }
     }
 
@@ -2361,7 +2321,9 @@ public class ButtonClicker : MonoBehaviour
         bool ok = SaveManager.LoadOriginal(skeleton, leafMgr);
         if (saveStatusLabel != null)
         {
-            saveStatusLabel.text = ok ? $"Original tree restored  ({System.DateTime.Now:HH:mm:ss})" : "No original backup found.";
+            saveStatusLabel.text = ok
+                ? $"Original tree restored  ({System.DateTime.Now:HH:mm:ss})"
+                : (SaveManager.LastLoadError ?? "No original backup found.");
             saveStatusClearTime  = Time.realtimeSinceStartup + 4f;
         }
         if (ok)
@@ -2665,37 +2627,286 @@ public class ButtonClicker : MonoBehaviour
         b.style.paddingLeft = b.style.paddingRight = 14;
     }
 
-    void SetupQuickStart(VisualElement root)
-    {
-        quickStartPanel = new QuickStartPanel(root);
+    // ── Unified settings (2026-10-13) ────────────────────────────────────────
 
-        // Inject a "⚡ Quick-Start" button next to the species Confirm button, so the new-game
-        // flow can fast-grow a developed tree of the chosen species instead of starting from seed.
-        if (speciesConfirmButton != null && quickStartButton == null)
+    /// <summary>
+    /// Builds the one settings-and-game panel and hands it the existing UI it absorbs:
+    /// <list type="bullet">
+    ///   <item><b>Game</b> (pause only) — the old pause menu's Save / Load / Browse / Load Original
+    ///         buttons, plus Open Log Folder and Quit to Main Menu.</item>
+    ///   <item><b>Play Modes</b> and <b>Speed</b> — the calendar's Modes and Speed tabs, which no
+    ///         longer appear in the calendar. The old Time tab's Time Scale row joins Speed.</item>
+    ///   <item><b>Controls</b> — gains the old Time tab's tool Selection Radius row.</item>
+    ///   <item><b>Growth / Ishitsuki / Debug</b> — the old developer tabs, development builds only.</item>
+    /// </list>
+    /// The old Time tab's Quick Winter and Anti-Aliasing rows are deliberately NOT moved: Settings
+    /// already has persisted versions of both (Gameplay ▸ Fast winter, Display ▸ Anti-aliasing),
+    /// and two controls for one value is how they drift.
+    /// </summary>
+    void SetupUnifiedSettings(VisualElement root)
+    {
+        var th = UiTheme.Current;
+
+        // ── Game tab ──
+        var game = new VisualElement();
+        game.Add(SettingsHeader("Game", th));
+        void Move(VisualElement e)
         {
-            quickStartButton = new Button { text = "⚡ Quick-Start" };
-            StyleSpeciesRowButton(quickStartButton);
-            quickStartButton.RegisterCallback<ClickEvent>(_ => OpenQuickStart());
-            (speciesButtonRow ?? speciesConfirmButton.parent ?? root).Add(quickStartButton);
+            if (e == null) return;
+            e.RemoveFromHierarchy();
+            e.style.marginBottom = 6;
+            game.Add(e);
         }
+        Move(saveButton);
+        Move(loadButton);
+        Move(root.Q("BrowseSavesButton"));
+        Move(loadOriginalButton);
+        Move(saveStatusLabel);
+
+        var logBtn = new Button(CrashLogger.OpenLogFolder) { text = "OPEN LOG FOLDER" };
+        logBtn.style.marginTop = 14;
+        logBtn.style.marginBottom = 6;
+        game.Add(logBtn);
+
+        var quitBtn = new Button(QuitToMainMenu) { text = "QUIT TO MAIN MENU" };
+        quitBtn.style.marginBottom = 4;
+        game.Add(quitBtn);
+        var quitNote = new Label { text = "Your tree is saved first." };
+        quitNote.style.fontSize = 10;
+        quitNote.style.color = new StyleColor(th.locked);
+        game.Add(quitNote);
+
+        settingsPanel.AdoptTab("game", "Game", game, onShow: null, devOnly: false,
+                               SettingsPanel.Context.Pause);
+
+        // ── Play Modes + Speed, out of the calendar ──
+        if (calModesTab != null)
+            settingsPanel.AdoptTab("modes", "Play Modes", calModesTab, RefreshModesTab, false,
+                                   SettingsPanel.Context.Pause, SettingsPanel.Context.PreStart);
+
+        var timeRow = sliderTimescale?.parent;
+        if (calSpeedTab != null && timeRow != null)
+        {
+            timeRow.RemoveFromHierarchy();
+            calSpeedTab.Insert(0, timeRow);
+        }
+        if (calSpeedTab != null)
+            settingsPanel.AdoptTab("speed", "Speed", calSpeedTab,
+                                   () => { RefreshSpeedTab(); SyncSlidersFromGame(); }, false,
+                                   SettingsPanel.Context.Pause, SettingsPanel.Context.PreStart);
+
+        if (calModesTab != null || calSpeedTab != null)
+        {
+            calModesAndSpeedMoved = true;
+            if (calTabModes != null) calTabModes.style.display = DisplayStyle.None;
+            if (calTabSpeed != null) calTabSpeed.style.display = DisplayStyle.None;
+        }
+
+        // ── Controls: tool selection radius ──
+        settingsPanel.AttachToTab("controls", root.Q("SelectionRadiusSlider")?.parent);
+
+        // ── Developer tabs (hidden in a release build by SettingsPanel) ──
+        settingsPanel.AdoptTab("growth",    "Growth",    tabContentGrowth,    SyncSlidersFromGame, true,
+                               SettingsPanel.Context.Pause);
+        settingsPanel.AdoptTab("ishitsuki", "Ishitsuki", tabContentIshitsuki, SyncSlidersFromGame, true,
+                               SettingsPanel.Context.Pause);
+        settingsPanel.AdoptTab("debug",     "Debug",     tabContentDebug,     null,                true,
+                               SettingsPanel.Context.Pause);
+
+        settingsPanel.OnClose = OnSettingsPrimary;
+        settingsPanel.Build(root, withScrim: true);
+        settingsPanel.SetVisible(false);
     }
 
-    void OpenQuickStart()
+    static Label SettingsHeader(string text, UiTheme th)
     {
-        if (selectedSpecies == null)
-        {
-            GameManager.Instance?.ShowTooltip("Pick a species first",
-                "Select a species card, then press Quick-Start to fast-grow a developed tree.");
-            return;
-        }
+        var l = new Label { text = text.ToUpperInvariant() };
+        l.style.fontSize = 14;
+        l.style.color    = new StyleColor(th.accent);
+        l.style.unityFontStyleAndWeight = FontStyle.Bold;
+        l.style.marginBottom = 12;
+        return l;
+    }
+
+    /// <summary>The panel's footer button: RESUME in game, START before a new game begins.</summary>
+    void OnSettingsPrimary()
+    {
+        if (settingsPanel.CurrentContext == SettingsPanel.Context.PreStart)
+            OnPreStartConfirm();
+        else if (settingsPanel.IsOpen)
+            TogglePauseMenu();
+    }
+
+    /// <summary>
+    /// Leaves for the main menu, saving first so nothing is lost.
+    /// <para>The AudioManager must be destroyed by hand: it is DontDestroyOnLoad, and in Game001 it
+    /// shares its GameObject with GameManager and seven other managers — so without this, the whole
+    /// simulation would follow the player into the menu scene.</para>
+    /// </summary>
+    void QuitToMainMenu()
+    {
+        if (skeleton != null && skeleton.root != null)
+            SaveManager.AutoSave(skeleton, skeleton.GetComponent<LeafManager>());
+
+        settingsPanel.SetVisible(false);
+        Time.timeScale = 1f;
+        SaveManager.PendingLaunch = PendingLaunchAction.None;
+
+        if (AudioManager.Instance != null) AudioManager.Instance.DestroyAudioManager();
+        UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+    }
+
+    // ── Pre-start (new game) ──
+
+    /// <summary>
+    /// After a species is chosen: open Settings on Play Modes, with START in the footer and the
+    /// Quick Start section at the top. Nothing is planted until START.
+    /// </summary>
+    void BeginPreStart()
+    {
+        if (speciesSelectOverlay != null) speciesSelectOverlay.style.display = DisplayStyle.None;
+
+        qsEnabled = false;
+        qsSection?.RemoveFromHierarchy();
+        qsSection = BuildQuickStartSection();
+        var modes = settingsPanel.AdoptedElement("modes");
+        if (qsSection != null && modes != null) modes.Insert(0, qsSection);
+
+        settingsPanel.Open(SettingsPanel.Context.PreStart, "modes");
+    }
+
+    void OnPreStartConfirm()
+    {
+        // The Quick Start section only exists before the game starts.
+        qsSection?.RemoveFromHierarchy();
+        qsSection = null;
+        settingsPanel.SetVisible(false);
+
         var qsm = QuickStartManager.Instance;
-        if (qsm == null)
+        if (qsEnabled && qsStyle != null && qsm != null && selectedSpecies != null)
         {
-            Debug.LogWarning("[QuickStart] No QuickStartManager in the scene — add the component to enable Quick-Start.");
+            // Plants the species, applies the style, fast-forwards growth, hands back control.
+            qsm.Generate(selectedSpecies, qsStyle, qsAge);
             return;
         }
-        // QuickStartManager.Generate plants the species, applies the style, fast-forwards growth.
-        quickStartPanel.Open(qsm.Styles, 10, (style, age) => qsm.Generate(selectedSpecies, style, age));
+
+        string speciesName = selectedSpecies?.speciesName ?? "your tree";
+        GameManager.Instance.ShowTooltip(
+            $"Your {speciesName} is planted.",
+            "Use the tool buttons on the left to water, trim, and train your tree as the seasons pass.\n\n" +
+            "Time auto-slows in January — your pruning window. Use ▶▶/▶ in the corner to control speed.\n\n" +
+            "Press the ◉ button to hide the tools or view health stats.");
+    }
+
+    /// <summary>
+    /// The collapsible Quick Start block for the pre-start Play Modes screen: opt in, pick a target
+    /// style and an age, and START grows a developed tree instead of a seed. Picking a style or an
+    /// age ticks the opt-in, since that is plainly what the player meant. Returns null when there
+    /// is no QuickStartManager or it has no styles.
+    /// </summary>
+    VisualElement BuildQuickStartSection()
+    {
+        var qsm = QuickStartManager.Instance;
+        if (qsm == null || qsm.Styles == null || qsm.Styles.Count == 0) return null;
+
+        var th = UiTheme.Current;
+        if (qsStyle == null) qsStyle = qsm.Styles[0];
+
+        var box = new VisualElement();
+        box.style.backgroundColor = new StyleColor(th.cardBg);
+        box.style.borderTopLeftRadius = box.style.borderTopRightRadius =
+        box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 6;
+        box.style.paddingTop = box.style.paddingBottom = 8;
+        box.style.paddingLeft = box.style.paddingRight = 12;
+        box.style.marginBottom = 16;
+
+        var body = new VisualElement { style = { display = DisplayStyle.None, marginTop = 8 } };
+
+        var header = new Button { text = "▸  QUICK START — begin with a developed tree" };
+        header.style.backgroundColor = new StyleColor(Color.clear);
+        header.style.color = new StyleColor(th.accent);
+        header.style.unityFontStyleAndWeight = FontStyle.Bold;
+        header.style.unityTextAlign = TextAnchor.MiddleLeft;
+        header.style.borderTopWidth = header.style.borderBottomWidth =
+        header.style.borderLeftWidth = header.style.borderRightWidth = 0;
+        header.style.paddingLeft = 0;
+        header.RegisterCallback<ClickEvent>(_ =>
+        {
+            bool open = body.style.display != DisplayStyle.Flex;
+            body.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+            header.text = (open ? "▾" : "▸") + "  QUICK START — begin with a developed tree";
+        });
+        box.Add(header);
+        box.Add(body);
+
+        var enable = new Toggle("Quick-start this tree") { value = qsEnabled };
+        enable.style.color = new StyleColor(th.textMain);
+        enable.RegisterValueChangedCallback(e => qsEnabled = e.newValue);
+        body.Add(enable);
+
+        var note = new Label
+        {
+            text = "Skips the seedling years: the tree is grown to the chosen age and shaped toward " +
+                   "the style, then handed to you. Uses the species you just picked."
+        };
+        note.style.fontSize = 10;
+        note.style.color = new StyleColor(th.locked);
+        note.style.whiteSpace = WhiteSpace.Normal;
+        note.style.marginBottom = 8;
+        body.Add(note);
+
+        // Style chips
+        var styleRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginBottom = 8 } };
+        var styleChips = new List<(Button b, StyleDefinition s)>();
+        void PaintStyles()
+        {
+            foreach (var (b, sd) in styleChips)
+            {
+                bool sel = sd == qsStyle;
+                b.style.backgroundColor = new StyleColor(sel ? th.accent : th.panelBg);
+                b.style.color = new StyleColor(sel ? th.ink : th.textMain);
+            }
+        }
+        foreach (var sd in qsm.Styles)
+        {
+            var styleDef = sd;
+            var b = new Button { text = string.IsNullOrWhiteSpace(sd.styleName) ? sd.name : sd.styleName };
+            b.style.marginRight = 4;
+            b.style.marginBottom = 4;
+            b.RegisterCallback<ClickEvent>(_ => { qsStyle = styleDef; enable.value = true; PaintStyles(); });
+            styleChips.Add((b, sd));
+            styleRow.Add(b);
+        }
+        body.Add(new Label { text = "Target style", style = { fontSize = 11, color = new StyleColor(th.textSub), marginBottom = 4 } });
+        body.Add(styleRow);
+        PaintStyles();
+
+        // Age chips
+        var ageRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
+        var ageChips = new List<(Button b, int y)>();
+        void PaintAges()
+        {
+            foreach (var (b, y) in ageChips)
+            {
+                bool sel = y == qsAge;
+                b.style.backgroundColor = new StyleColor(sel ? th.accent : th.panelBg);
+                b.style.color = new StyleColor(sel ? th.ink : th.textMain);
+            }
+        }
+        foreach (var y in QuickStartAges)
+        {
+            int years = y;
+            var b = new Button { text = $"{y} yrs" };
+            b.style.marginRight = 4;
+            b.RegisterCallback<ClickEvent>(_ => { qsAge = years; enable.value = true; PaintAges(); });
+            ageChips.Add((b, y));
+            ageRow.Add(b);
+        }
+        body.Add(new Label { text = "Age", style = { fontSize = 11, color = new StyleColor(th.textSub), marginBottom = 4 } });
+        body.Add(ageRow);
+        PaintAges();
+
+        return box;
     }
 
     // ── Progression mode (Career / Sandbox) ───────────────────────────────────
@@ -2855,15 +3066,22 @@ public class ButtonClicker : MonoBehaviour
 
     void OnDeadLoadClick()
     {
-        Time.timeScale = 1f;
         var leafMgr = skeleton != null ? skeleton.GetComponent<LeafManager>() : null;
         bool ok = SaveManager.Load(skeleton, leafMgr);
         if (ok)
         {
+            Time.timeScale = 1f;
             skeleton?.GetComponent<TreeMeshBuilder>()?.SetDeadTint(false);
             skeleton.treeInDanger = false;
             skeleton.consecutiveCriticalSeasons = 0;
             GameManager.Instance.UpdateGameState(GameManager.Instance.StateForMonth(GameManager.month));
+        }
+        else
+        {
+            // Don't unfreeze time on a failed load — the tree is still dead and the overlay is
+            // still up, so resuming would just keep killing it behind the dialog. Tell the player
+            // why and leave them on the death screen, where Restart is still available.
+            ShowLoadErrorToast("No save to load — start a new tree instead.");
         }
     }
 
@@ -3540,12 +3758,8 @@ public class ButtonClicker : MonoBehaviour
             skeleton.treeOrigin = TreeOrigin.Seedling;
             skeleton.ApplySpecies();
         }
-        string speciesName = selectedSpecies?.speciesName ?? "your tree";
-        GameManager.Instance.ShowTooltip(
-            $"Your {speciesName} is planted.",
-            "Use the tool buttons on the left to water, trim, and train your tree as the seasons pass.\n\n" +
-            "Time auto-slows in January — your pruning window. Use ▶▶/▶ in the corner to control speed.\n\n" +
-            "Press the ◉ button to hide the tools or view health stats.");
+        // New game: choose how to play (and optionally Quick Start) before anything is planted.
+        BeginPreStart();
     }
 
     const float TIMESCALE_MAX = 400f;
@@ -3626,9 +3840,16 @@ public class ButtonClicker : MonoBehaviour
 
     void SwitchCalTab(int tab)
     {
+        // Modes and Speed now live in Settings; the calendar is the schedule only, and must not
+        // touch those elements' visibility while Settings owns them.
+        if (calModesAndSpeedMoved) tab = 0;
+
         if (calScheduleTab != null) calScheduleTab.style.display = tab == 0 ? DisplayStyle.Flex : DisplayStyle.None;
-        if (calModesTab    != null) calModesTab.style.display    = tab == 1 ? DisplayStyle.Flex : DisplayStyle.None;
-        if (calSpeedTab    != null) calSpeedTab.style.display    = tab == 2 ? DisplayStyle.Flex : DisplayStyle.None;
+        if (!calModesAndSpeedMoved)
+        {
+            if (calModesTab != null) calModesTab.style.display = tab == 1 ? DisplayStyle.Flex : DisplayStyle.None;
+            if (calSpeedTab != null) calSpeedTab.style.display = tab == 2 ? DisplayStyle.Flex : DisplayStyle.None;
+        }
 
         SetCalTabActive(calTabSchedule, tab == 0);
         SetCalTabActive(calTabModes,    tab == 1);
@@ -3656,6 +3877,38 @@ public class ButtonClicker : MonoBehaviour
 
     // ── Modes tab ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Adds "Auto-style" to the Play Modes row that holds Auto-water / Auto-fertilize, matching the
+    /// UXML's toggle-then-label pattern. Controls whether the AutoStyler may shape the tree in the
+    /// active mode (PlayModeManager applies it).
+    /// </summary>
+    void SetupAutoStyleToggle()
+    {
+        var row = calModeAutoFert?.parent;
+        if (row == null || calModeAutoStyle != null) return;
+
+        // Space after the existing "Auto-fertilize" label, like the gap after "Auto-water".
+        int fertIdx = row.IndexOf(calModeAutoFert);
+        if (fertIdx + 1 < row.childCount) row.ElementAt(fertIdx + 1).style.marginRight = 16;
+
+        calModeAutoStyle = new Toggle();
+        calModeAutoStyle.style.marginRight = 6;
+        row.Add(calModeAutoStyle);
+
+        var label = new UnityEngine.UIElements.Label("Auto-style");
+        label.style.color    = new StyleColor(new Color(180f / 255f, 180f / 255f, 180f / 255f));
+        label.style.fontSize = 11;
+        row.Add(label);
+
+        calModeAutoStyle.RegisterValueChangedCallback(evt =>
+        {
+            var m = PlayModeManager.Instance?.ActiveMode;
+            if (m == null) return;
+            m.autoStyle = evt.newValue;
+            PlayModeManager.Instance.SaveModes();
+        });
+    }
+
     void RefreshModesTab()
     {
         var pm = PlayModeManager.Instance;
@@ -3665,6 +3918,7 @@ public class ButtonClicker : MonoBehaviour
             Debug.LogWarning("[UI] PlayModeManager.Instance is null — add PlayModeManager to the scene.");
             if (calModeAutoWater != null) calModeAutoWater.SetValueWithoutNotify(true);
             if (calModeAutoFert  != null) calModeAutoFert.SetValueWithoutNotify(true);
+            if (calModeAutoStyle != null) calModeAutoStyle.SetValueWithoutNotify(false);
             return;
         }
 
@@ -3700,6 +3954,7 @@ public class ButtonClicker : MonoBehaviour
 
         if (calModeAutoWater  != null) calModeAutoWater.SetValueWithoutNotify(m.autoWater);
         if (calModeAutoFert   != null) calModeAutoFert.SetValueWithoutNotify(m.autoFertilize);
+        if (calModeAutoStyle  != null) calModeAutoStyle.SetValueWithoutNotify(m.autoStyle);
         if (calModeIdleOrbit  != null) calModeIdleOrbit.SetValueWithoutNotify(m.idleOrbit);
         if (calModeOrbitDelay != null) calModeOrbitDelay.SetValueWithoutNotify((int)m.idleOrbitDelaySecs);
 

@@ -1046,7 +1046,8 @@ public class AutoStyler : MonoBehaviour
 
     void OnRenderObject()
     {
-        if (!showTargetShape || style == null || skeleton == null || glMat == null) return;
+        if (!showTargetShape || !BonsaiDebug.Enabled) return;
+        if (style == null || skeleton == null || glMat == null) return;
         if (skeleton.root == null) return;
 
         float soilY = SoilWorldY();

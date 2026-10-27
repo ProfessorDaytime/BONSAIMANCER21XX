@@ -850,7 +850,7 @@ public class PotSoil : MonoBehaviour
 
     void OnRenderObject()
     {
-        if (!debugDrawHoles) return;
+        if (!debugDrawHoles || !BonsaiDebug.Enabled) return;
         EnsureHoles();
         var rootArea = GetComponent<TreeSkeleton>()?.GetRootAreaTransform();
         if (rootArea == null || drainageHoles.Count == 0) return;

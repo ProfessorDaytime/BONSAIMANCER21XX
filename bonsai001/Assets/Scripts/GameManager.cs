@@ -246,9 +246,42 @@ public class GameManager : MonoBehaviour
         year  = 2026;
         hour  = 12f;
         LoadTimescalePrefs();
-        QualitySettings.antiAliasing = PlayerPrefs.GetInt("antiAliasing", 1) > 0 ? 4 : 0;
-        // If any named saves exist, show the load menu; otherwise go straight to species pick.
-        UpdateGameState(SaveManager.HasAnySave() ? GameState.LoadMenu : GameState.SpeciesSelect);
+        // Anti-aliasing and the rest of the player options are applied by GameSettings, which
+        // installs itself before the first scene loads (PLAN R2). Speed comes from the active
+        // play mode (PlayModeManager), not from a global default.
+        UpdateGameState(ResolveEntryState());
+    }
+
+    /// <summary>
+    /// Picks the state this scene opens in (PLAN "Release Prep" R1).
+    ///
+    /// <para>The main menu now decides, and this obeys. When nothing decided — which is the case
+    /// whenever Game001 is opened directly in the editor — it falls back to the original
+    /// behaviour, so that workflow is unchanged.</para>
+    ///
+    /// <para>A requested slot load resolves to <see cref="GameState.LoadMenu"/> rather than being
+    /// loaded here: at Awake time the TreeSkeleton has not necessarily initialised, so the actual
+    /// load is done by buttonClicker once its references are wired. That also means a failed load
+    /// leaves the player sitting in the save list with an error, which is the right fallback.</para>
+    /// </summary>
+    GameState ResolveEntryState()
+    {
+        switch (SaveManager.PendingLaunch)
+        {
+            case PendingLaunchAction.LoadSlot:
+                // Only honour it if there is actually a slot to load.
+                if (!string.IsNullOrEmpty(SaveManager.ActiveSlotId)) return GameState.LoadMenu;
+                SaveManager.PendingLaunch = PendingLaunchAction.None;
+                return GameState.SpeciesSelect;
+
+            case PendingLaunchAction.NewTree:
+                SaveManager.PendingLaunch = PendingLaunchAction.None;
+                return GameState.SpeciesSelect;
+
+            default:
+                // Entered without going through the menu (editor play). Original behaviour.
+                return SaveManager.HasAnySave() ? GameState.LoadMenu : GameState.SpeciesSelect;
+        }
     }
 
     void Start(){
@@ -347,9 +380,13 @@ public class GameManager : MonoBehaviour
         int h = Mathf.FloorToInt(hour) % 24;
         int m = Mathf.FloorToInt((hour % 1f) * 60f);
         string toolName = ActiveToolLabel();
+        // Settings ▸ Gameplay ▸ Date display.
+        string date = GameSettings.DateDisplay == GameSettings.DateFormat.Numeric
+            ? $"{year:D4}-{month:D2}-{day:D2}"
+            : $"{monthName} {day}, {year}";
         calendar.text = string.IsNullOrEmpty(toolName)
-            ? $"{monthName} {day}, {year}  {h:D2}:{m:D2}"
-            : $"{monthName} {day}, {year}  {h:D2}:{m:D2}  ·  {toolName}";
+            ? $"{date}  {h:D2}:{m:D2}"
+            : $"{date}  {h:D2}:{m:D2}  ·  {toolName}";
     }
 
     static string ActiveToolLabel()

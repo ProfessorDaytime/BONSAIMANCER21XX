@@ -57,17 +57,101 @@ public class TreeInteraction : MonoBehaviour
     HighlightMode   highlightMode = HighlightMode.None;
     List<TreeNode>  highlightedRun = new List<TreeNode>();
 
-    static readonly Color ColTrim       = new Color(0.9f, 0.1f, 0.1f);   // red
-    static readonly Color ColWire       = new Color(0.9f, 0.65f, 0.1f);  // gold
-    static readonly Color ColRemoveWire = new Color(0.1f, 0.8f, 0.3f);   // green (single node)
-    static readonly Color ColWireRun    = new Color(0.0f, 1.0f, 0.55f);  // bright green (full run)
-    static readonly Color ColPaste      = new Color(0.2f, 0.8f, 0.9f);   // cyan (wound with paste)
-    static readonly Color ColAirLayer   = new Color(0.0f, 0.85f, 0.85f); // teal (air layer placement)
-    static readonly Color ColRootWork   = new Color(0.9f, 0.45f, 0.1f);  // orange (root work)
-    static readonly Color ColPinch      = new Color(0.55f, 1.0f, 0.15f); // lime-green (pinch tip)
-    static readonly Color ColDefoliate  = new Color(1.0f,  0.75f, 0.0f); // amber (defoliate)
-    static readonly Color ColGraft      = new Color(0.55f, 1.0f,  0.45f); // pale green (graft source)
-    static readonly Color ColGraftTgt   = new Color(1.0f,  0.9f,  0.3f);  // gold (graft target)
+    // ── Tool highlight palette ─────────────────────────────────────────
+    //
+    // NOT readonly: Settings ▸ Accessibility repalettes these through
+    // ApplyHighlightPalette (PLAN R2). They are private to this file, so making them
+    // assignable is contained.
+    //
+    // The defaults below are the original hand-picked set. Note the problem they have:
+    // trim / wire / unwire are red / gold / green, which is the least distinguishable
+    // possible triad under deuteranopia and protanopia — on the three most
+    // consequential actions in the game. Hence the alternative palettes.
+
+    static Color ColTrim       = new Color(0.9f, 0.1f, 0.1f);   // red
+    static Color ColWire       = new Color(0.9f, 0.65f, 0.1f);  // gold
+    static Color ColRemoveWire = new Color(0.1f, 0.8f, 0.3f);   // green (single node)
+    static Color ColWireRun    = new Color(0.0f, 1.0f, 0.55f);  // bright green (full run)
+    static Color ColPaste      = new Color(0.2f, 0.8f, 0.9f);   // cyan (wound with paste)
+    static Color ColAirLayer   = new Color(0.0f, 0.85f, 0.85f); // teal (air layer placement)
+    static Color ColRootWork   = new Color(0.9f, 0.45f, 0.1f);  // orange (root work)
+    static Color ColPinch      = new Color(0.55f, 1.0f, 0.15f); // lime-green (pinch tip)
+    static Color ColDefoliate  = new Color(1.0f,  0.75f, 0.0f); // amber (defoliate)
+    static Color ColGraft      = new Color(0.55f, 1.0f,  0.45f); // pale green (graft source)
+    static Color ColGraftTgt   = new Color(1.0f,  0.9f,  0.3f);  // gold (graft target)
+
+    /// <summary>
+    /// Repalettes the hover highlights for a colour-vision mode. Called by
+    /// <see cref="GameSettings.Colorblind"/>, including once at startup.
+    ///
+    /// <para>The alternative palettes are built from the <b>Okabe–Ito</b> set, which is designed
+    /// so every pair stays distinguishable under the common dichromacies. Within each palette the
+    /// three critical actions — trim, wire, unwire — are separated along the axis that mode can
+    /// still see: blue–yellow for the red–green deficiencies, red–green for tritanopia.</para>
+    ///
+    /// <para>Colour is not the only cue being relied on here — trim highlights a whole subtree
+    /// while wire highlights a single node or a run — but it is the fastest one, and these are
+    /// destructive operations.</para>
+    /// </summary>
+    public static void ApplyHighlightPalette(GameSettings.ColorblindMode mode)
+    {
+        // Okabe–Ito reference values.
+        var orange       = new Color(0.902f, 0.624f, 0.000f);
+        var skyBlue      = new Color(0.337f, 0.706f, 0.914f);
+        var bluishGreen  = new Color(0.000f, 0.620f, 0.451f);
+        var yellow       = new Color(0.941f, 0.894f, 0.259f);
+        var blue         = new Color(0.000f, 0.447f, 0.698f);
+        var vermillion   = new Color(0.835f, 0.369f, 0.000f);
+        var purple       = new Color(0.800f, 0.475f, 0.655f);
+
+        switch (mode)
+        {
+            case GameSettings.ColorblindMode.Deuteranopia:
+            case GameSettings.ColorblindMode.Protanopia:
+                // Red and green collapse together; separate along blue–yellow instead.
+                ColTrim       = vermillion;
+                ColWire       = blue;
+                ColRemoveWire = skyBlue;
+                ColWireRun    = yellow;
+                ColPaste      = purple;
+                ColAirLayer   = skyBlue;
+                ColRootWork   = orange;
+                ColPinch      = yellow;
+                ColDefoliate  = orange;
+                ColGraft      = purple;
+                ColGraftTgt   = yellow;
+                break;
+
+            case GameSettings.ColorblindMode.Tritanopia:
+                // Blue and yellow collapse; red–green separation is available again.
+                ColTrim       = vermillion;
+                ColRemoveWire = bluishGreen;
+                ColWire       = purple;
+                ColWireRun    = bluishGreen;
+                ColPaste      = skyBlue;
+                ColAirLayer   = bluishGreen;
+                ColRootWork   = vermillion;
+                ColPinch      = bluishGreen;
+                ColDefoliate  = purple;
+                ColGraft      = bluishGreen;
+                ColGraftTgt   = purple;
+                break;
+
+            default:
+                ColTrim       = new Color(0.9f, 0.1f, 0.1f);
+                ColWire       = new Color(0.9f, 0.65f, 0.1f);
+                ColRemoveWire = new Color(0.1f, 0.8f, 0.3f);
+                ColWireRun    = new Color(0.0f, 1.0f, 0.55f);
+                ColPaste      = new Color(0.2f, 0.8f, 0.9f);
+                ColAirLayer   = new Color(0.0f, 0.85f, 0.85f);
+                ColRootWork   = new Color(0.9f, 0.45f, 0.1f);
+                ColPinch      = new Color(0.55f, 1.0f, 0.15f);
+                ColDefoliate  = new Color(1.0f,  0.75f, 0.0f);
+                ColGraft      = new Color(0.55f, 1.0f,  0.45f);
+                ColGraftTgt   = new Color(1.0f,  0.9f,  0.3f);
+                break;
+        }
+    }
 
     // ── Wire aim / animation state ────────────────────────────────────────────
 
@@ -935,7 +1019,12 @@ public class TreeInteraction : MonoBehaviour
     void HandleWireHover()
     {
         Ray      ray  = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        TreeNode node = PickNode(ray, out _, n => n != skeleton.root && (!n.isRoot || n.isAirLayerRoot) && !n.hasWire);
+        // The trunk's first segment (skeleton.root) IS wireable. It used to be excluded because a
+        // bend rotated every descendant, and the underground roots hang off the root node — wiring
+        // it would have swung the root system out of the soil. RotateAndPropagateDescendants now
+        // skips ground-anchored roots (since 2026-06-11), so the exclusion was a leftover guard and
+        // blocked shaping the base of the trunk (removed 2026-10-27). Buried roots stay unwireable.
+        TreeNode node = PickNode(ray, out _, n => (!n.isRoot || n.isAirLayerRoot) && !n.hasWire);
         if (node != null)
         {
             SetHighlight(node, HighlightMode.SingleGold);

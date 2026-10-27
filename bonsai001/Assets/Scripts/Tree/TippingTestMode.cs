@@ -76,7 +76,7 @@ public class TippingTestMode : MonoBehaviour
 
     void Update()
     {
-        if (!active || skeleton == null) return;
+        if (!active || !BonsaiDebug.Enabled || skeleton == null) return;
 
         // Hold the soil dry. Done every frame because the auto-water pass can fire at any time and
         // would otherwise refill the pot — wet soil is ~1.5× the ballast of dry.

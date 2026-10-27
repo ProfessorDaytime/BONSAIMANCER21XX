@@ -131,6 +131,7 @@ public partial class TreeSkeleton : MonoBehaviour
         }
 
         CareLog.Add("Plant", $"Planted a new {SpeciesName} seed");
+        GetComponent<WeedManager>()?.OnTreePlanted();   // weed-free first month
         Debug.Log($"[Tree] InitTree (seed) year={GameManager.year} | trunk growing | initialRoots={roots}");
 
         RecalculateRadii(root);

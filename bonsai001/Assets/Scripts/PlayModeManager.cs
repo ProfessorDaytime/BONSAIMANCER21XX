@@ -24,7 +24,12 @@ public class SpeedRule
     public float            idleResumeRealSeconds;
     public float            idleResumeInGameDays;
 
-    [NonSerialized] public bool suppressed;     // re-armed after idle expires
+    // Runtime edge-detection state (2026-10-13). Rules are EDGE-triggered: they fire once when
+    // their condition becomes true, then leave the player free to change speed until the
+    // condition goes false and becomes true again (next January, the next gold wire, ...).
+    [NonSerialized] public bool  initialized;        // first evaluation only records the state
+    [NonSerialized] public bool  conditionWasTrue;
+    [NonSerialized] public float lastFiredRealTime = -1f;
 }
 
 [Serializable]
@@ -37,6 +42,11 @@ public class PlayMode
     public bool   autoFertilize;
     public bool   autoHerbicide;
     public bool   autoFungicide;
+    // Whether the AutoStyler may shape the tree (trim / pinch / wire / repot) in this mode.
+    // PlayModeManager owns AutoStyler.autoStyleEnabled from this flag, except while Quick Start is
+    // generating. Added 2026-10-27: before this, the AutoStyler ran in every mode whenever its
+    // component was enabled, including Active Play.
+    public bool   autoStyle;
     public bool   idleOrbit;
     public float  idleOrbitDelaySecs;
     public List<SpeedRule> rules = new List<SpeedRule>();
@@ -61,13 +71,31 @@ public class PlayModeManager : MonoBehaviour
     float lastInputRealTime;
     float lastInputInGameDay;
     bool  wireGoldFired;
+    bool  defaultApplied;   // the active mode's starting speed has been applied
 
     // Auto-creates the manager if it wasn't placed in the scene.
+    //
+    // RuntimeInitializeOnLoadMethod runs ONCE per play session, against whichever scene loads
+    // first — since R1 that is the main menu, which then got a stray PlayModeManager. This now
+    // only creates one in a gameplay scene (one with a GameManager), and re-checks on every scene
+    // load. Game001 normally has its own (on the same GameObject as GameManager), so in practice
+    // the scene-load path is a fallback.
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void EnsureExists()
     {
+        CreateIfNeeded();
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnSceneLoaded;
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene,
+                              UnityEngine.SceneManagement.LoadSceneMode mode) => CreateIfNeeded();
+
+    static void CreateIfNeeded()
+    {
         if (Instance != null) return;
         if (FindAnyObjectByType<PlayModeManager>() != null) return;
+        if (FindAnyObjectByType<GameManager>() == null) return;   // not a gameplay scene
         var go = new GameObject("PlayModeManager [auto]");
         go.AddComponent<PlayModeManager>();
         Debug.Log("[PlayMode] Auto-created PlayModeManager — add it to your scene to avoid this.");
@@ -130,32 +158,65 @@ public class PlayModeManager : MonoBehaviour
         float realNow    = Time.unscaledTime;
         float inGameNow  = CurrentInGameDay();
 
-        // Un-suppress rules whose idle threshold has elapsed
-        foreach (var rule in mode.rules)
-        {
-            if (!rule.enabled || !rule.suppressed || !rule.idleResumeEnabled) continue;
-            bool idleReal   = rule.idleResumeRealSeconds > 0 &&
-                              (realNow - lastInputRealTime) >= rule.idleResumeRealSeconds;
-            bool idleIngame = rule.idleResumeInGameDays  > 0 &&
-                              (inGameNow - lastInputInGameDay) >= rule.idleResumeInGameDays;
-            if (idleReal || idleIngame) rule.suppressed = false;
-        }
-
-        // Lowest speed wins
         var gm = GameManager.Instance;
         if (gm == null) return;
 
-        GameManager.SpeedMode resolved = mode.defaultSpeed;
-        foreach (var rule in mode.rules)
+        // The mode's speed is a STARTING speed, applied when the mode becomes active — not
+        // re-asserted every frame. Re-asserting it every frame is what used to override the
+        // player's own speed choice, and what undid every rule one frame after it fired.
+        if (!defaultApplied)
         {
-            if (!rule.enabled || rule.suppressed) continue;
-            if (!IsTriggerActive(rule)) continue;
-            if ((int)rule.targetSpeed < (int)resolved)
-                resolved = rule.targetSpeed;
+            defaultApplied = true;
+            if (GameManager.CurrentSpeed != mode.defaultSpeed) gm.SetSpeedMode(mode.defaultSpeed);
         }
 
-        if (GameManager.CurrentSpeed != resolved)
-            gm.SetSpeedMode(resolved);
+        // Speed rules are EDGE-triggered (2026-10-13). A rule fires once at the moment its
+        // condition becomes true — January 1st arrives, a wire turns gold — and sets the speed.
+        // After that the player can change speed freely; the rule stays quiet until its condition
+        // goes false and becomes true again.
+        //
+        // Previously every rule was re-applied every frame while its condition held, so
+        // "Month = January → Slow" locked the game at Slow for the whole month, and the
+        // one-frame "wire set gold" pulse slowed the game for exactly one frame. A `suppressed`
+        // flag existed for player overrides but nothing ever set it.
+        //
+        // Idle resume keeps its meaning: if the condition is still true and the player has
+        // interacted since the rule last fired and then gone idle for the configured time, the
+        // rule re-applies once. When several rules fire on the same frame, the slowest wins.
+        bool fired = false;
+        var  target = GameManager.SpeedMode.Fast;
+        foreach (var rule in mode.rules)
+        {
+            if (!rule.enabled) { rule.initialized = false; continue; }
+
+            bool now = IsTriggerActive(rule);
+
+            // First look at a rule (load, mode switch, new or re-enabled rule): record its state
+            // without firing, so a condition that is already true doesn't count as "becoming" true.
+            if (!rule.initialized)
+            {
+                rule.initialized      = true;
+                rule.conditionWasTrue = now;
+                continue;
+            }
+
+            bool risingEdge = now && !rule.conditionWasTrue;
+            bool idleRefire = now && !risingEdge && rule.idleResumeEnabled &&
+                              lastInputRealTime > rule.lastFiredRealTime &&
+                              IdleLongEnough(rule, realNow, inGameNow);
+
+            if (risingEdge || idleRefire)
+            {
+                rule.lastFiredRealTime = realNow;
+                if (!fired || (int)rule.targetSpeed < (int)target) target = rule.targetSpeed;
+                fired = true;
+            }
+
+            rule.conditionWasTrue = now;
+        }
+
+        if (fired && GameManager.CurrentSpeed != target)
+            gm.SetSpeedMode(target);
 
         // Sync auto-care flags to skeleton; late-bind skeleton reference if not set in Inspector
         var sk = skeleton != null ? skeleton : FindAnyObjectByType<TreeSkeleton>();
@@ -168,6 +229,14 @@ public class PlayModeManager : MonoBehaviour
             sk.autoFungicideEnabled  = mode.autoFungicide;
         }
 
+        // Auto-style follows the play mode. Quick Start turns the styler on for its fast-forward
+        // and never turned it back off, so a Quick-Started tree kept being styled afterwards;
+        // leave it alone only while Quick Start is actually generating.
+        var styler = AutoStyler.Instance;
+        bool quickStarting = QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating;
+        if (styler != null && !quickStarting && styler.autoStyleEnabled != mode.autoStyle)
+            styler.autoStyleEnabled = mode.autoStyle;
+
         // Idle orbit
         if (mode.idleOrbit && mode.idleOrbitDelaySecs > 0)
             IdleOrbitActive = (realNow - lastInputRealTime) >= mode.idleOrbitDelaySecs;
@@ -179,6 +248,15 @@ public class PlayModeManager : MonoBehaviour
     }
 
     // ── Trigger evaluation ────────────────────────────────────────────────────
+
+    bool IdleLongEnough(SpeedRule rule, float realNow, float inGameNow)
+    {
+        bool idleReal   = rule.idleResumeRealSeconds > 0 &&
+                          (realNow - lastInputRealTime) >= rule.idleResumeRealSeconds;
+        bool idleIngame = rule.idleResumeInGameDays  > 0 &&
+                          (inGameNow - lastInputInGameDay) >= rule.idleResumeInGameDays;
+        return idleReal || idleIngame;
+    }
 
     bool IsTriggerActive(SpeedRule rule)
     {
@@ -234,6 +312,12 @@ public class PlayModeManager : MonoBehaviour
     {
         activeModeIndex = Mathf.Clamp(index, 0, modes.Count - 1);
         wireGoldFired   = false;
+
+        // A newly chosen mode applies its starting speed, and its rules start from the current
+        // conditions without firing.
+        defaultApplied = false;
+        foreach (var r in modes[activeModeIndex].rules) r.initialized = false;
+
         SaveModes();
     }
 
@@ -246,6 +330,20 @@ public class PlayModeManager : MonoBehaviour
         SaveModes();
     }
 
+    /// <summary>Copies the fields a player can edit in the Play Modes tab.</summary>
+    static void CopyPlayerEdits(PlayMode from, PlayMode to)
+    {
+        to.defaultSpeed       = from.defaultSpeed;
+        to.autoWater          = from.autoWater;
+        to.autoFertilize      = from.autoFertilize;
+        to.autoHerbicide      = from.autoHerbicide;
+        to.autoFungicide      = from.autoFungicide;
+        to.autoStyle          = from.autoStyle;
+        to.idleOrbit          = from.idleOrbit;
+        to.idleOrbitDelaySecs = from.idleOrbitDelaySecs;
+        if (from.rules != null) to.rules = from.rules;
+    }
+
     public void SaveModes()
     {
         PlayerPrefs.SetString("playModes", JsonUtility.ToJson(new PlayModeList { modes = modes }));
@@ -256,7 +354,7 @@ public class PlayModeManager : MonoBehaviour
     // ── Persistence ───────────────────────────────────────────────────────────
 
     // Bump this when CreateDefaultModes() changes so saved prefs auto-reset.
-    const int DEFAULTS_VERSION = 4;
+    const int DEFAULTS_VERSION = 5;   // 5: autoStyle per mode; player edits to built-ins persist
 
     void LoadOrCreateDefaultModes()
     {
@@ -265,6 +363,7 @@ public class PlayModeManager : MonoBehaviour
         CreateDefaultModes();
 
         string json = PlayerPrefs.GetString("playModes", "");
+        int savedVersion = PlayerPrefs.GetInt("playModesVersion", 0);
         if (!string.IsNullOrEmpty(json))
         {
             try
@@ -273,7 +372,18 @@ public class PlayModeManager : MonoBehaviour
                 if (saved?.modes != null)
                 {
                     foreach (var m in saved.modes)
-                        if (!m.isBuiltIn) modes.Add(m);
+                    {
+                        if (!m.isBuiltIn) { modes.Add(m); continue; }
+
+                        // Built-in modes are defined in code, but the PLAYER's edits to them
+                        // (unticking auto-water in Active Play, toggling a rule) are kept, as long
+                        // as the code defaults haven't changed since they were saved. Previously
+                        // every built-in was rebuilt from code on each launch, so those edits were
+                        // silently thrown away next session.
+                        if (savedVersion != DEFAULTS_VERSION) continue;
+                        var live = modes.Find(x => x.isBuiltIn && x.name == m.name);
+                        if (live != null) CopyPlayerEdits(m, live);
+                    }
                 }
             }
             catch (Exception e)
@@ -294,7 +404,7 @@ public class PlayModeManager : MonoBehaviour
 
         modes.Add(new PlayMode
         {
-            name = "Screensaver", isBuiltIn = true,
+            name = "Screensaver", isBuiltIn = true, autoStyle = true,
             defaultSpeed = GameManager.SpeedMode.Fast,
             autoWater = true, autoFertilize = true, autoHerbicide = true, autoFungicide = true,
             idleOrbit = true, idleOrbitDelaySecs = 30f,
@@ -308,7 +418,7 @@ public class PlayModeManager : MonoBehaviour
 
         modes.Add(new PlayMode
         {
-            name = "Active Play", isBuiltIn = true,
+            name = "Active Play", isBuiltIn = true, autoStyle = false,
             defaultSpeed = GameManager.SpeedMode.Med,
             autoWater = true, autoFertilize = true, autoHerbicide = true, autoFungicide = true,
             idleOrbit = false, idleOrbitDelaySecs = 0f,
@@ -322,7 +432,7 @@ public class PlayModeManager : MonoBehaviour
 
         modes.Add(new PlayMode
         {
-            name = "Hands-Off", isBuiltIn = true,
+            name = "Hands-Off", isBuiltIn = true, autoStyle = true,
             defaultSpeed = GameManager.SpeedMode.Fast,
             autoWater = true, autoFertilize = true, autoHerbicide = true, autoFungicide = true,
             idleOrbit = false, idleOrbitDelaySecs = 0f,
@@ -334,7 +444,7 @@ public class PlayModeManager : MonoBehaviour
 
         modes.Add(new PlayMode
         {
-            name = "Focused", isBuiltIn = true,
+            name = "Focused", isBuiltIn = true, autoStyle = false,
             defaultSpeed = GameManager.SpeedMode.Slow,
             autoWater = true, autoFertilize = true, autoHerbicide = false, autoFungicide = false,
             idleOrbit = false, idleOrbitDelaySecs = 0f,

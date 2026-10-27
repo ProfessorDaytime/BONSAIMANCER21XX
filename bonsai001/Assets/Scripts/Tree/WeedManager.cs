@@ -62,6 +62,28 @@ public class WeedManager : MonoBehaviour
 
     public static event System.Action OnFirstWeedSpawned;
 
+    // ── New-tree grace ──
+
+    [Header("New-tree grace")]
+    [Tooltip("In-game days after planting before weeds can appear. A spring roll that lands " +
+             "inside this window is DEFERRED to the end of it, not skipped — weeds roll once per " +
+             "spring, so skipping would delay the first weed by a whole year.")]
+    [SerializeField] float plantingGraceDays = 30f;
+
+    float plantedDay = -1f;   // session-only; set by TreeSkeleton.InitTree. Loaded trees get no grace.
+    bool  rollDeferred;
+
+    static float InGameDay() => GameManager.dayOfYear + GameManager.year * 366f;
+
+    bool InPlantingGrace() => plantedDay >= 0f && InGameDay() - plantedDay < plantingGraceDays;
+
+    /// <summary>Called by TreeSkeleton.InitTree when a new tree is planted (2026-10-27).</summary>
+    public void OnTreePlanted()
+    {
+        plantedDay   = InGameDay();
+        rollDeferred = false;
+    }
+
     // ── Properties ────────────────────────────────────────────────────────────
 
     public int  ActiveWeedCount         => activeWeeds.Count;
@@ -127,8 +149,34 @@ public class WeedManager : MonoBehaviour
         // generated tree (logged 254 networks nuked in one run), and the first-weed
         // tutorial prompt fired mid-fast-grow (2026-07-02).
         bool quickStarting = QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating;
+
+        // A newly planted tree gets a weed-free first month. The first spring roll happens the
+        // moment the tree is planted, so it is held back and rolled once the grace period ends.
+        if (InPlantingGrace())
+        {
+            rollDeferred = !quickStarting;
+            if (verboseLog) Debug.Log("[Weeds] Spring roll deferred — new tree's weed-free first month.");
+            return;
+        }
+
+        TrySeasonSpawn(quickStarting);
+    }
+
+    void TrySeasonSpawn(bool quickStarting)
+    {
         if (!quickStarting && activeWeeds.Count < maxWeeds && Random.value < spawnChancePerSeason)
             SpawnWeed();
+    }
+
+    void Update()
+    {
+        if (!rollDeferred || InPlantingGrace()) return;
+        rollDeferred = false;
+
+        // Quick Start allows no weeds while it runs; a roll that comes due mid-generation is
+        // dropped rather than fired the moment the player is handed the tree.
+        bool quickStarting = QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating;
+        TrySeasonSpawn(quickStarting);
     }
 
     // ── Removal ───────────────────────────────────────────────────────────────

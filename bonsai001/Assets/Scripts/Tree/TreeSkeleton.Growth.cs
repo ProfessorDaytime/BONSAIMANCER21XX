@@ -493,7 +493,10 @@ public partial class TreeSkeleton : MonoBehaviour
             LogSeasonNarrative();
 
             // Auto-save at the end of each growing season (after bud set).
-            SaveManager.AutoSave(this, GetComponent<LeafManager>());
+            // Opt-out lives in Settings ▸ Gameplay (PLAN R2); on by default, because the save
+            // system was built so a session is never silently lost.
+            if (GameSettings.Autosave)
+                SaveManager.AutoSave(this, GetComponent<LeafManager>());
         }
 
         // TreeOrient lowers the tree so you orient at working height, not suspended in the air.

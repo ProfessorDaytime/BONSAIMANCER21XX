@@ -1294,7 +1294,7 @@ public class TreeMeshBuilder : MonoBehaviour
         GL.MultMatrix(transform.localToWorldMatrix);
         GL.Begin(GL.LINES);
 
-        if (debugHealthRings)
+        if (debugHealthRings && BonsaiDebug.Enabled)
         {
             foreach (var node in skeleton.allNodes)
             {
