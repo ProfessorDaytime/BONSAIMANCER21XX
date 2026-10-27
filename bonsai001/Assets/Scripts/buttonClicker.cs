@@ -136,6 +136,7 @@ public class ButtonClicker : MonoBehaviour
     VisualElement calRepeatOptions;
     Toggle        calRepeatToggle;
     Label         calRepeatNLabel;
+    Label         calRepeatHeader;
     Button        calRepeatNDec, calRepeatNInc;
     VisualElement calFertTypeRow;
     Button        calDayBackButton, calEventBackButton;
@@ -147,7 +148,8 @@ public class ButtonClicker : MonoBehaviour
     ScheduledEventAmount calEditAmount = ScheduledEventAmount.Light;
     int           calEditFertType = 0;
     TimeOfDay     calEditTimeOfDay = TimeOfDay.Morning;
-    Season        calEditSeason = Season.AllYear;
+    int           calEditSeasonMask;          // GameManager.SeasonBit flags; at least one set
+    int           calEditMoisturePct = 40;    // threshold for RepeatMode.WhenMoistureBelow
     RepeatMode    calEditRepeat = RepeatMode.Once;
     int           calEditRepeatN = 1;
 
@@ -425,6 +427,7 @@ public class ButtonClicker : MonoBehaviour
         calRepeatToggle     = root.Q("CalRepeatToggle")     as Toggle;
         calRepeatOptions    = root.Q("CalRepeatOptions");
         calRepeatNLabel     = root.Q("CalRepeatNLabel")     as Label;
+        calRepeatHeader     = root.Q("CalRepeatHeader")     as Label;
         calRepeatNDec       = root.Q("CalRepeatNDec")       as Button;
         calRepeatNInc       = root.Q("CalRepeatNInc")       as Button;
         calFertTypeRow          = root.Q("CalFertTypeRow");
@@ -4250,8 +4253,9 @@ public class ButtonClicker : MonoBehaviour
                 gm.UpdateGameState(gm.StateForMonth(GameManager.month));
             // Always restore — CalendarOpen froze time and nothing else restores it.
             Time.timeScale = 1f;
-            // Return to medium speed; PlayModeManager will re-evaluate rules next frame.
-            gm.SetSpeedMode(GameManager.SpeedMode.Med);
+            // Closing a menu always drops to Slow. The state change above usually did this already;
+            // repeat it for the drifted-state case where no change happened.
+            gm.SlowAfterMenu();
         }
     }
 
@@ -4363,7 +4367,12 @@ public class ButtonClicker : MonoBehaviour
         if (calDayEventList == null) return;
         calDayEventList.Clear();
 
-        var events = GameManager.schedule.FindAll(e => e.month == calViewMonth && e.day == calSelectedDay);
+        // Same rule as the month grid's dots. This used to match only each event's anchor date, so
+        // a repeating event showed a dot on every day it fired but was listed (and deletable) only
+        // on the day it was created.
+        var events = GameManager.schedule.FindAll(e =>
+            e.repeat == RepeatMode.WhenMoistureBelow ||
+            GameManager.EventMatchesDate(e, calViewMonth, calSelectedDay, calViewYear));
         if (events.Count == 0)
         {
             var empty = new Label("No events scheduled.");
@@ -4383,13 +4392,22 @@ public class ButtonClicker : MonoBehaviour
             row.style.marginBottom  = 4;
 
             string icon   = ev.type == ScheduledEventType.Water ? "💧" : "🌿";
-            string repeat = ev.repeat == RepeatMode.Once ? "Once"
-                : ev.repeat == RepeatMode.EveryNDays  ? $"Every {ev.repeatInterval}d"
-                : $"Every {ev.repeatInterval}w";
-            string season = ev.season == Season.AllYear ? "" : $" · {ev.season}";
-            string tod    = ev.timeOfDay.ToString();
+            bool   series = ev.repeat != RepeatMode.Once;
+            string repeat = ev.repeat switch
+            {
+                RepeatMode.Once              => "Once",
+                RepeatMode.EveryNDays        => $"Every {ev.repeatInterval}d",
+                RepeatMode.EveryNWeeks       => $"Every {ev.repeatInterval}w",
+                _                            => $"When soil < {Mathf.RoundToInt(ev.moistureThreshold * 100f)}%",
+            };
+            string season = series ? $" · {SeasonsLabel(ev)}" : "";
+            string detail = ev.repeat == RepeatMode.WhenMoistureBelow
+                ? repeat
+                : $"{ev.amount} · {ev.timeOfDay} · {repeat}";
+            if (series && ev.repeat != RepeatMode.WhenMoistureBelow)
+                detail += $" (from {MonthNames[ev.month].Substring(0, 3)} {ev.day})";
 
-            var lbl = new Label($"{icon} {ev.type} · {ev.amount} · {tod} · {repeat}{season}");
+            var lbl = new Label($"{icon} {ev.type} · {detail}{season}");
             lbl.style.flexGrow   = 1;
             lbl.style.fontSize   = 11;
             lbl.style.color      = new StyleColor(new Color(0.75f, 0.85f, 0.75f));
@@ -4399,7 +4417,14 @@ public class ButtonClicker : MonoBehaviour
             toggle.value = ev.enabled;
             toggle.RegisterValueChangedCallback(e => { evCopy.enabled = e.newValue; });
 
-            var del = new Button(() => { GameManager.schedule.Remove(evCopy); RebuildDayEventList(); BuildCalendarGrid(); });
+            // ✕ removes the whole event. For a repeating series that's every occurrence, so it takes
+            // a second click to confirm.
+            Button del = null;
+            del = new Button(() =>
+            {
+                if (series && del.text == "✕") { del.text = "Delete all?"; del.style.width = 76; return; }
+                GameManager.schedule.Remove(evCopy); RebuildDayEventList(); BuildCalendarGrid();
+            });
             del.text = "✕";
             del.style.width           = 24;
             del.style.height          = 24;
@@ -4422,14 +4447,38 @@ public class ButtonClicker : MonoBehaviour
         }
     }
 
+    /// <summary>"All year", or the seasons a repeating event is active in.</summary>
+    static string SeasonsLabel(ScheduledEvent ev)
+    {
+        int mask = ev.seasonMask != 0 ? ev.seasonMask
+                 : ev.season == Season.AllYear ? GameManager.AllSeasonsMask
+                 : GameManager.SeasonBit(ev.season);
+        if (mask == GameManager.AllSeasonsMask) return "All year";
+        var names = new List<string>();
+        foreach (Season s in new[] { Season.Spring, Season.Summer, Season.Autumn, Season.Winter })
+            if ((mask & GameManager.SeasonBit(s)) != 0) names.Add(s.ToString());
+        return string.Join(", ", names);
+    }
+
+    /// <summary>Season chips are multi-select; the last selected one can't be turned off.</summary>
+    void ToggleEditSeason(Season s)
+    {
+        int bit = GameManager.SeasonBit(s);
+        if (calEditSeasonMask == bit) return;
+        calEditSeasonMask ^= bit;
+        RefreshCalendarChips();
+    }
+
     void OpenEventDetail(ScheduledEventType type)
     {
         calEditType     = type;
         calEditAmount   = ScheduledEventAmount.Light;
         calEditFertType = 0;
         calEditTimeOfDay = TimeOfDay.Morning;
-        calEditSeason   = Season.AllYear;
-        calEditRepeat   = RepeatMode.Once;
+        calEditSeasonMask = GameManager.SeasonBit(GameManager.SeasonOf(calViewMonth));
+        // A cadence must be selected for "Repeating" to mean anything; with Once here, ticking
+        // Repeating and confirming silently saved a one-off.
+        calEditRepeat   = RepeatMode.EveryNDays;
         calEditRepeatN  = 2;
 
         if (calEventTitleLabel != null)
@@ -4441,7 +4490,13 @@ public class ButtonClicker : MonoBehaviour
         if (calRepeatToggle != null) calRepeatToggle.value = false;
         if (calRepeatOptions != null) calRepeatOptions.style.display = DisplayStyle.None;
         calEditRepeatN = 1;
-        if (calRepeatNLabel != null) calRepeatNLabel.text = "1";
+        calEditMoisturePct = 40;
+
+        // "Water when the soil gets dry" only makes sense for watering.
+        var moistChip = buttonDocument?.rootVisualElement.Q("CalCadenceMoisture");
+        if (moistChip != null)
+            moistChip.style.display = type == ScheduledEventType.Water && GameManager.MoistureSchedulingUnlocked
+                ? DisplayStyle.Flex : DisplayStyle.None;
 
         RefreshCalendarChips();
         CalShowView(calEventView);
@@ -4459,21 +4514,24 @@ public class ButtonClicker : MonoBehaviour
         WireChip("CalTimeMorning",   () => { calEditTimeOfDay = TimeOfDay.Morning; RefreshCalendarChips(); });
         WireChip("CalTimeMidday",    () => { calEditTimeOfDay = TimeOfDay.Midday;  RefreshCalendarChips(); });
         WireChip("CalTimeNight",     () => { calEditTimeOfDay = TimeOfDay.Night;   RefreshCalendarChips(); });
-        WireChip("CalSeasonAll",     () => { calEditSeason = Season.AllYear; RefreshCalendarChips(); });
-        WireChip("CalSeasonSpring",  () => { calEditSeason = Season.Spring;  RefreshCalendarChips(); });
-        WireChip("CalSeasonSummer",  () => { calEditSeason = Season.Summer;  RefreshCalendarChips(); });
-        WireChip("CalSeasonAutumn",  () => { calEditSeason = Season.Autumn;  RefreshCalendarChips(); });
-        WireChip("CalSeasonWinter",  () => { calEditSeason = Season.Winter;  RefreshCalendarChips(); });
-        WireChip("CalCadenceDays",   () => { calEditRepeat = RepeatMode.EveryNDays;  RefreshCalendarChips(); });
-        WireChip("CalCadenceWeeks",  () => { calEditRepeat = RepeatMode.EveryNWeeks; RefreshCalendarChips(); });
+        WireChip("CalSeasonSpring",  () => ToggleEditSeason(Season.Spring));
+        WireChip("CalSeasonSummer",  () => ToggleEditSeason(Season.Summer));
+        WireChip("CalSeasonAutumn",  () => ToggleEditSeason(Season.Autumn));
+        WireChip("CalSeasonWinter",  () => ToggleEditSeason(Season.Winter));
+        WireChip("CalCadenceDays",     () => { calEditRepeat = RepeatMode.EveryNDays;        RefreshCalendarChips(); });
+        WireChip("CalCadenceWeeks",    () => { calEditRepeat = RepeatMode.EveryNWeeks;       RefreshCalendarChips(); });
+        WireChip("CalCadenceMoisture", () => { calEditRepeat = RepeatMode.WhenMoistureBelow; RefreshCalendarChips(); });
 
+        // The stepper counts days/weeks, or the moisture threshold in 5% steps.
         calRepeatNDec?.RegisterCallback<ClickEvent>(_ => {
-            calEditRepeatN = Mathf.Max(1, calEditRepeatN - 1);
-            if (calRepeatNLabel != null) calRepeatNLabel.text = calEditRepeatN.ToString();
+            if (calEditRepeat == RepeatMode.WhenMoistureBelow) calEditMoisturePct = Mathf.Max(10, calEditMoisturePct - 5);
+            else calEditRepeatN = Mathf.Max(1, calEditRepeatN - 1);
+            RefreshCalendarChips();
         });
         calRepeatNInc?.RegisterCallback<ClickEvent>(_ => {
-            calEditRepeatN = Mathf.Min(99, calEditRepeatN + 1);
-            if (calRepeatNLabel != null) calRepeatNLabel.text = calEditRepeatN.ToString();
+            if (calEditRepeat == RepeatMode.WhenMoistureBelow) calEditMoisturePct = Mathf.Min(90, calEditMoisturePct + 5);
+            else calEditRepeatN = Mathf.Min(99, calEditRepeatN + 1);
+            RefreshCalendarChips();
         });
     }
 
@@ -4495,15 +4553,23 @@ public class ButtonClicker : MonoBehaviour
         SetChipActive("CalTimeMorning",  calEditTimeOfDay == TimeOfDay.Morning);
         SetChipActive("CalTimeMidday",   calEditTimeOfDay == TimeOfDay.Midday);
         SetChipActive("CalTimeNight",    calEditTimeOfDay == TimeOfDay.Night);
-        SetChipActive("CalSeasonAll",    calEditSeason == Season.AllYear);
-        SetChipActive("CalSeasonSpring", calEditSeason == Season.Spring);
-        SetChipActive("CalSeasonSummer", calEditSeason == Season.Summer);
-        SetChipActive("CalSeasonAutumn", calEditSeason == Season.Autumn);
-        SetChipActive("CalSeasonWinter", calEditSeason == Season.Winter);
+        SetChipActive("CalSeasonSpring", (calEditSeasonMask & GameManager.SeasonBit(Season.Spring)) != 0);
+        SetChipActive("CalSeasonSummer", (calEditSeasonMask & GameManager.SeasonBit(Season.Summer)) != 0);
+        SetChipActive("CalSeasonAutumn", (calEditSeasonMask & GameManager.SeasonBit(Season.Autumn)) != 0);
+        SetChipActive("CalSeasonWinter", (calEditSeasonMask & GameManager.SeasonBit(Season.Winter)) != 0);
 
         bool repeating = calRepeatToggle?.value ?? false;
-        SetChipActive("CalCadenceDays",  repeating && calEditRepeat == RepeatMode.EveryNDays);
-        SetChipActive("CalCadenceWeeks", repeating && calEditRepeat == RepeatMode.EveryNWeeks);
+        bool moisture  = calEditRepeat == RepeatMode.WhenMoistureBelow;
+        SetChipActive("CalCadenceDays",     repeating && calEditRepeat == RepeatMode.EveryNDays);
+        SetChipActive("CalCadenceWeeks",    repeating && calEditRepeat == RepeatMode.EveryNWeeks);
+        SetChipActive("CalCadenceMoisture", repeating && moisture);
+
+        if (calRepeatHeader != null) calRepeatHeader.text = moisture ? "WATER WHEN SOIL MOISTURE IS BELOW" : "REPEAT EVERY";
+        if (calRepeatNLabel != null)
+        {
+            calRepeatNLabel.text = moisture ? $"{calEditMoisturePct}%" : calEditRepeatN.ToString();
+            calRepeatNLabel.style.width = moisture ? 48 : 36;
+        }
     }
 
     void SetChipActive(string name, bool active)
@@ -4531,7 +4597,9 @@ public class ButtonClicker : MonoBehaviour
             day            = calSelectedDay,
             repeat         = repeating ? calEditRepeat : RepeatMode.Once,
             repeatInterval = calEditRepeatN,
-            season         = repeating ? calEditSeason : Season.AllYear,
+            season         = Season.AllYear,   // legacy field; seasonMask decides
+            seasonMask     = repeating ? calEditSeasonMask : 0,
+            moistureThreshold = calEditMoisturePct / 100f,
             timeOfDay      = calEditTimeOfDay,
             enabled        = true,
         };

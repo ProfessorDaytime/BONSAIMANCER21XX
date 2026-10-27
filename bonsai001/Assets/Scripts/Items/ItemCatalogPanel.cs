@@ -316,6 +316,7 @@ public class ItemCatalogPanel
 
     public void Close()
     {
+        if (overlay != null) GameManager.Instance?.SlowAfterMenu();
         if (overlay != null && overlay.parent != null) overlay.parent.Remove(overlay);
         overlay = null; listContainer = null; confirmButton = null; selectedCard = null;
     }

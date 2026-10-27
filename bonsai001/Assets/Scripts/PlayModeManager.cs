@@ -308,6 +308,10 @@ public class PlayModeManager : MonoBehaviour
 
     // ── Mode management ───────────────────────────────────────────────────────
 
+    /// <summary>Stops the active mode's starting speed from being applied (the player just left a
+    /// menu, which sets Slow — see <see cref="GameManager.SlowAfterMenu"/>).</summary>
+    public void MarkStartingSpeedApplied() => defaultApplied = true;
+
     public void SetActiveMode(int index)
     {
         activeModeIndex = Mathf.Clamp(index, 0, modes.Count - 1);

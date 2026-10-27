@@ -2264,6 +2264,15 @@ static int DaysInCurrentMonth(int month, int year) =>
 
 ### Part 2 — Scheduled Event Data Model
 
+> **Update 2026-10-27 (play-test fixes).**
+> - **Day view matches the dots.** The day list used to match only an event's *anchor* date, so a repeating watering showed a dot on Oct 2 but Oct 2 said "No events scheduled". It now uses `GameManager.EventMatchesDate` (same rule as the grid, ignoring `enabled` so a paused series can be found and re-enabled). Rows show the series' start date and seasons.
+> - **Removing a repeating series.** ✕ on any occurrence deletes the whole series, and needs a second click ("Delete all?"). *Open:* "skip just this occurrence" would need a per-event exception list.
+> - **No "All Year" chip.** Season chips are now **multi-select** (`ScheduledEvent.seasonMask`, bit per `Season`); default is the selected day's season; at least one stays on. Year-round = tick all four. Old saves (mask 0) still use the single `season` field, so `Season.AllYear` stays in the enum.
+> - **Moisture-triggered watering.** New cadence chip *Moisture* (watering only): `RepeatMode.WhenMoistureBelow` + `moistureThreshold` (10–90 %, 5 % steps, default 40 %), matching the in-game advice ("water when the soil is ~40 % dry"). Checked every frame in `GameManager.CheckMoistureEvents` (soil can dry within one in-game day at high speed); `Water()` refills to 100 % so it can't double-fire. Listed on every day of the day view. **Planned unlock:** gate on `GameManager.MoistureSchedulingUnlocked` (currently always `true`) once progression decides when the player earns a moisture meter/sensor.
+> - **Repeating + no cadence bug.** The editor defaulted cadence to `Once`, so ticking Repeating without touching Days/Weeks saved a one-off. Default is now Every N Days.
+>
+> **Slow after any menu (2026-10-27).** Leaving a menu/dialog for gameplay always sets **Slow**: `GameManager.UpdateGameState` calls `SlowAfterMenu()` on any transition out of GamePause / CalendarOpen / TipPause / LoadMenu / AirLayerSever; the journal, item catalog and customize overlays (which don't pause) call it from their `Close`. Skipped during Quick Start generation. It also marks the play mode's starting speed as applied, so a mode picked in Settings no longer overrides this on the next frame — a mode's *default speed* therefore only matters if no menu was closed since it became active (i.e. rarely). Revisit if the per-mode default should win.
+
 ```csharp
 public enum ScheduledEventType { Water, Fertilize }
 

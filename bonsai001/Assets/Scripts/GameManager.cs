@@ -172,9 +172,32 @@ public class GameManager : MonoBehaviour
         _              => true,
     };
 
+    public static Season SeasonOf(int m) =>
+        IsInSeason(Season.Spring, m) ? Season.Spring :
+        IsInSeason(Season.Summer, m) ? Season.Summer :
+        IsInSeason(Season.Autumn, m) ? Season.Autumn : Season.Winter;
+
+    public static int SeasonBit(Season s) => 1 << (int)s;
+    public const  int AllSeasonsMask = 0b1111;   // Spring | Summer | Autumn | Winter
+
+    /// <summary>
+    /// Whether a repeating event is active in month <paramref name="m"/>. Events made since
+    /// 2026-10-27 carry a <see cref="ScheduledEvent.seasonMask"/> (any combination of seasons);
+    /// older saves have mask 0 and fall back to the single <see cref="ScheduledEvent.season"/>.
+    /// </summary>
+    public static bool InEventSeasons(ScheduledEvent ev, int m)
+    {
+        if (ev.seasonMask != 0) return (ev.seasonMask & SeasonBit(SeasonOf(m))) != 0;
+        return ev.season == Season.AllYear || IsInSeason(ev.season, m);
+    }
+
+    // Moisture-triggered watering is meant to become an in-game unlock; until progression gates
+    // it, it is always available.
+    public static bool MoistureSchedulingUnlocked = true;
+
     static bool EventFiresToday(ScheduledEvent ev, int m, int d, int y, int doy)
     {
-        if (ev.repeat != RepeatMode.Once && ev.season != Season.AllYear && !IsInSeason(ev.season, m))
+        if (ev.repeat != RepeatMode.Once && !InEventSeasons(ev, m))
             return false;
 
         int originDoy = 0;
@@ -202,9 +225,16 @@ public class GameManager : MonoBehaviour
     }
 
     /// <summary>Returns true if the given event fires on the specified calendar date.</summary>
-    public static bool EventFiresOnDate(ScheduledEvent ev, int m, int d, int y)
+    public static bool EventFiresOnDate(ScheduledEvent ev, int m, int d, int y) =>
+        ev.enabled && EventMatchesDate(ev, m, d, y);
+
+    /// <summary>
+    /// Whether the event's date rule lands on this date, enabled or not, so the calendar's day
+    /// view can list (and re-enable or delete) a paused repeating series.
+    /// Moisture-triggered events have no dates and never match.
+    /// </summary>
+    public static bool EventMatchesDate(ScheduledEvent ev, int m, int d, int y)
     {
-        if (!ev.enabled) return false;
         int doy = 0;
         for (int i = 1; i < m; i++) doy += DaysInMonth(i, y);
         doy += d;
@@ -227,6 +257,32 @@ public class GameManager : MonoBehaviour
                 case ScheduledEventType.Water:      sk?.Water(); break;
                 case ScheduledEventType.Fertilize:  sk?.Fertilize(); break;
             }
+        }
+    }
+
+    static TreeSkeleton moistureSkeleton;
+
+    /// <summary>
+    /// Fires "water when soil moisture drops below X" schedules. Checked every frame rather than
+    /// once a day: at high speed the soil can go from wet to dry within a single in-game day.
+    /// Watering refills the soil, so a rule can't fire twice in a row.
+    /// </summary>
+    void CheckMoistureEvents()
+    {
+        bool any = false;
+        foreach (var ev in schedule)
+            if (ev.enabled && ev.repeat == RepeatMode.WhenMoistureBelow) { any = true; break; }
+        if (!any) return;
+
+        if (moistureSkeleton == null) moistureSkeleton = FindAnyObjectByType<TreeSkeleton>();
+        var sk = moistureSkeleton;
+        if (sk == null) return;
+
+        foreach (var ev in schedule)
+        {
+            if (!ev.enabled || ev.repeat != RepeatMode.WhenMoistureBelow || ev.type != ScheduledEventType.Water) continue;
+            if (!InEventSeasons(ev, month)) continue;
+            if (sk.soilMoisture < ev.moistureThreshold) { sk.Water(); break; }
         }
     }
 
@@ -352,6 +408,8 @@ public class GameManager : MonoBehaviour
 
 
 
+        CheckMoistureEvents();
+
         // Advance whole days. The loop CATCHES UP multiple days per frame at high timescale, so the
         // calendar stays in lock-step with growth (which advances by dt*TIMESCALE, uncapped) and no
         // day / month / year event is skipped — Quick-Start can run very fast without the AutoStyler
@@ -464,6 +522,7 @@ public class GameManager : MonoBehaviour
     public void UpdateGameState(GameState newState){
         if (state == newState) return;   // already in this state; don't re-fire listeners
 
+        GameState prevState = state;
         state = newState;
 
         // Root interaction is active in RootPrune and its sub-states.
@@ -532,6 +591,12 @@ public class GameManager : MonoBehaviour
             default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
         }
+
+        // Leaving a menu or dialog for gameplay always drops to Slow (2026-10-27), so the player
+        // never comes out of a menu into a fast-forwarding tree.
+        if (IsOverlayState(prevState) && !IsOverlayState(newState) &&
+            newState != GameState.SpeciesSelect && newState != GameState.Menu && newState != GameState.TreeDead)
+            SlowAfterMenu();
 
         OnGameStateChanged?.Invoke(newState);
     }
@@ -623,6 +688,24 @@ public class GameManager : MonoBehaviour
             _              => TIMESCALE_FAST,
         };
         Debug.Log($"[Time] Speed → {mode} TIMESCALE={TIMESCALE} | year={year} month={month}");
+    }
+
+    /// <summary>States that are a menu or dialog over the paused game.</summary>
+    static bool IsOverlayState(GameState s) =>
+        s == GameState.GamePause || s == GameState.CalendarOpen || s == GameState.TipPause ||
+        s == GameState.LoadMenu  || s == GameState.AirLayerSever;
+
+    /// <summary>
+    /// Drops to the lowest speed when the player closes a menu or dialog. State-based menus get
+    /// this from <see cref="UpdateGameState"/>; overlays that don't pause (journal, item catalog,
+    /// customize) call it from their Close. Quick Start's fast-forward is left alone.
+    /// </summary>
+    public void SlowAfterMenu()
+    {
+        if (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating) return;
+        SetSpeedMode(SpeedMode.Slow);
+        // Otherwise a play mode picked in Settings would apply its own starting speed next frame.
+        PlayModeManager.Instance?.MarkStartingSpeedApplied();
     }
 
     public void TogglePause()
@@ -738,7 +821,7 @@ public enum GameState {
 
 public enum ScheduledEventType { Water, Fertilize }
 public enum ScheduledEventAmount { Light, Medium, Heavy }
-public enum RepeatMode { Once, EveryNDays, EveryNWeeks }
+public enum RepeatMode { Once, EveryNDays, EveryNWeeks, WhenMoistureBelow }   // append only: saved as ints
 public enum Season { Spring, Summer, Autumn, Winter, AllYear }
 public enum TimeOfDay { Morning, Midday, Night }
 
@@ -753,7 +836,9 @@ public class ScheduledEvent
     public int                  day;         // anchor day
     public RepeatMode           repeat;
     public int                  repeatInterval;  // N for EveryNDays / EveryNWeeks
-    public Season               season;
+    public Season               season;          // legacy single season; used when seasonMask == 0
+    public int                  seasonMask;      // GameManager.SeasonBit flags; 0 = pre-2026-10-27 event
+    public float                moistureThreshold;   // 0–1, for RepeatMode.WhenMoistureBelow
     public TimeOfDay            timeOfDay;
     public bool                 enabled = true;
 }

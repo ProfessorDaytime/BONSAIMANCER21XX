@@ -59,6 +59,7 @@ public class CustomizeManager : MonoBehaviour
 
     void CloseMenu()
     {
+        if (menu != null) GameManager.Instance?.SlowAfterMenu();
         if (menu != null && menu.parent != null) menu.parent.Remove(menu);
         menu = null;
     }

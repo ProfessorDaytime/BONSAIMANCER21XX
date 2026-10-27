@@ -410,13 +410,12 @@
                     <ui:VisualElement name="CalRepeatOptions" style="display: none; flex-direction: column; margin-bottom: 12px; padding: 10px; background-color: rgba(30,40,30,0.7); border-radius: 6px;">
                         <ui:Label text="SEASON" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
                         <ui:VisualElement name="CalSeasonChips" style="flex-direction: row; margin-bottom: 10px;">
-                            <ui:Button name="CalSeasonAll"    text="All Year" style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
                             <ui:Button name="CalSeasonSpring" text="Spring"   style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
                             <ui:Button name="CalSeasonSummer" text="Summer"   style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
                             <ui:Button name="CalSeasonAutumn" text="Autumn"   style="flex: 1; height: 28px; margin-right: 3px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
                             <ui:Button name="CalSeasonWinter" text="Winter"   style="flex: 1; height: 28px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 11px; border-width: 0; border-radius: 4px; cursor: initial;" />
                         </ui:VisualElement>
-                        <ui:Label text="REPEAT EVERY" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
+                        <ui:Label name="CalRepeatHeader" text="REPEAT EVERY" style="color: rgb(120,140,120); font-size: 10px; -unity-font-style: bold; margin-bottom: 4px;" />
                         <ui:VisualElement style="flex-direction: row; align-items: center;">
                             <ui:VisualElement style="flex-direction: row; align-items: center; margin-right: 8px;">
                                 <ui:Button name="CalRepeatNDec" text="−" style="width: 28px; height: 30px; font-size: 16px; background-color: rgba(40,60,40,0.9); color: rgb(200,200,200); border-width: 0; border-radius: 4px; cursor: initial; padding: 0;" />
@@ -424,7 +423,8 @@
                                 <ui:Button name="CalRepeatNInc" text="+" style="width: 28px; height: 30px; font-size: 16px; background-color: rgba(40,60,40,0.9); color: rgb(200,200,200); border-width: 0; border-radius: 4px; cursor: initial; padding: 0;" />
                             </ui:VisualElement>
                             <ui:Button name="CalCadenceDays"  text="Days"  style="flex: 1; height: 30px; margin-right: 4px; background-color: rgb(229,179,16); color: rgb(10,10,10); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
-                            <ui:Button name="CalCadenceWeeks" text="Weeks" style="flex: 1; height: 30px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalCadenceWeeks" text="Weeks" style="flex: 1; height: 30px; margin-right: 4px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
+                            <ui:Button name="CalCadenceMoisture" text="Moisture" style="flex: 1; height: 30px; background-color: rgb(40,40,40); color: rgb(160,160,160); font-size: 12px; border-width: 0; border-radius: 4px; cursor: initial;" />
                         </ui:VisualElement>
                     </ui:VisualElement>
                     <ui:VisualElement style="flex-direction: row; margin-top: 4px;">
