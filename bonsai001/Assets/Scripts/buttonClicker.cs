@@ -757,6 +757,7 @@ public class ButtonClicker : MonoBehaviour
         tabContentDebug     = root.Q("TabContentDebug");
         SetupTrainingToggle();
         SetupMenuTreeBakeButton();
+        SetupStoreArtButton();
         HideDevTabsInRelease();
 
         toggleScaleCubes    = root.Q("ToggleScaleCubes")    as Toggle;
@@ -939,6 +940,7 @@ public class ButtonClicker : MonoBehaviour
         SaveManager.OnSaved              += ShowSaveToast;
         ProgressionManager.OnToolUnlocked += OnToolUnlockedRefresh;
         UiTheme.OnThemeChanged           += RefreshThemeAll;
+        ScreenshotTool.OnSaved           += ShowScreenshotToast;
 
         SetupUnifiedSettings(root);
 
@@ -995,7 +997,11 @@ public class ButtonClicker : MonoBehaviour
         SaveManager.OnSaved              -= ShowSaveToast;
         ProgressionManager.OnToolUnlocked -= OnToolUnlockedRefresh;
         UiTheme.OnThemeChanged           -= RefreshThemeAll;
+        ScreenshotTool.OnSaved           -= ShowScreenshotToast;
     }
+
+    void ShowScreenshotToast(string path) =>
+        ShowToast($"Screenshot saved \u2014 {System.IO.Path.GetFileName(path)}", UiTheme.Current.accent, TOAST_HOLD, wrap: false);
 
     void Update()
     {
@@ -1640,6 +1646,16 @@ public class ButtonClicker : MonoBehaviour
     /// <summary>Adds "Bake as Menu Tree" to Settings → Debug (PLAN R3): saves the current tree,
     /// camera and lighting as the main menu's showcase. Editor only — the baker is an editor tool,
     /// so the button doesn't exist in a build.</summary>
+    /// <summary>Adds "Store art set" to Settings → Debug: renders the current view at every
+    /// Steam store / library size (ScreenshotTool.StoreSizes) and opens the folder.</summary>
+    void SetupStoreArtButton()
+    {
+        if (tabContentDebug == null) return;
+        var b = new Button(() => ScreenshotTool.Instance?.CaptureStoreSet()) { text = "Store art set (all Steam sizes)" };
+        b.style.marginTop = 6;
+        tabContentDebug.Add(b);
+    }
+
     void SetupMenuTreeBakeButton()
     {
         if (tabContentDebug == null || !MenuTreeShowcase.CanBake) return;

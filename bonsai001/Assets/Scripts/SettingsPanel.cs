@@ -515,6 +515,7 @@ public class SettingsPanel
         AddBind("Middle / left drag", "Orbit the camera", th);
         AddBind("Mouse wheel",        "Zoom", th);
         AddBind("Esc",                "Settings and pause, or back out of a menu", th);
+        AddBind("F12",                "Screenshot, without the interface (saved to Pictures/Bonsaimancer)", th);
 
         if (BonsaiDebug.Enabled)
             AddBind("F1", "Show the game-state readout (development builds only)", th);

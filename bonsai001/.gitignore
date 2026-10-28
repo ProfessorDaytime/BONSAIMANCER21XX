@@ -68,3 +68,6 @@ crashlytics-build.properties
 
 # Debug log export (Debug → Copy Console → CurrentLogs.txt)
 Docs/CurrentLogs.txt
+
+# Store art renders (ScreenshotTool) — large PNGs; keep the picks somewhere deliberate
+/[Ss]tore[Aa]rt/

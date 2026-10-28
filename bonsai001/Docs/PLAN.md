@@ -769,6 +769,20 @@ gets refined in place.
 Trailer and capsule are the two highest-leverage items; everything else can be rough at Coming Soon
 launch.
 
+**✅ Capture tool built and verified 2026-10-27 (`Scripts/ScreenshotTool.cs`).**
+- **F12** (all builds — also covers the backlog's player screenshot feature): 3840×2160, no UI, to
+  `Pictures/Bonsaimancer`. Toast confirms. F12 is reserved from key rebinding.
+- **Settings ▸ Debug ▸ Store art set**: renders the current view at every Steam size — 4K screenshot,
+  header 920×430, small 462×174, main 1232×706, vertical 748×896, page background 1438×810, library
+  capsule 600×900, library hero 3840×1240 — into `StoreArt/<timestamp>/` beside the project
+  (gitignored) and opens the folder.
+- Each size is a fresh render of the main camera at that exact resolution (8× MSAA; URP
+  `SubmitRenderRequest`), not a scaled screen grab; vertical FOV is kept, so tall formats crop the
+  sides. Canvases and the held tool's highlight/selection circle are hidden for the capture; the
+  CRT/post stack is included because it's part of the camera.
+- **Still manual:** capsules need the logo composited (Steam rejects text-free capsules); the library
+  logo (transparent PNG) isn't rendered; pick the 5+ store screenshots from the 4K captures.
+
 ---
 
 ### R7. Marketing & growth assets

@@ -19,7 +19,7 @@ public enum BindAction
 /// Call sites ask <see cref="Pressed"/> / <see cref="Held"/> instead of naming a key.</para>
 ///
 /// <para>Not rebindable, deliberately: Esc (the way back out of every menu, including this one),
-/// the mouse, and the development-only F1 / digit / F keys. Undo keeps its Ctrl modifier; only the
+/// F12 (screenshot), the mouse, and the development-only F1 / digit / F keys. Undo keeps its Ctrl modifier; only the
 /// key that goes with Ctrl is rebound.</para>
 /// </summary>
 public static class KeyBindings
@@ -41,7 +41,7 @@ public static class KeyBindings
     /// <summary>Keys a binding may never take: they already mean something fixed.</summary>
     static readonly HashSet<Key> Reserved = new HashSet<Key>
     {
-        Key.Escape, Key.F1, Key.LeftCtrl, Key.RightCtrl, Key.LeftMeta, Key.RightMeta,
+        Key.Escape, Key.F1, Key.F12, Key.LeftCtrl, Key.RightCtrl, Key.LeftMeta, Key.RightMeta,
         Key.Digit1, Key.Digit2, Key.Digit3, Key.Digit4, Key.Digit5,
         Key.Digit6, Key.Digit7, Key.Digit8, Key.Digit9,
     };
