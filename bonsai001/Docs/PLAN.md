@@ -26,6 +26,7 @@ Pending work in recommended priority order. Detailed specs are under "Pending �
 | 3 | **Weather — wind load, rain, and the stability loop** | 🔧 **core built 2026-08-24** — `WeatherManager` (singleton): 5 states (Clear/Overcast/Rain/Storm/Heat) rolled on **seasonally weighted** odds (summer = heat + thunderstorms, autumn/winter = wet and gales, spring changeable), spells averaging ~4 in-game days, advanced on day boundaries so it keeps pace at any timescale. Drives **existing** systems rather than parallel ones: settles `WindManager.strength` toward a per-state level (Clear 0.18 → Storm 1.0), which the stability system already reads as wind **load**; scales soil drying via `DryingMultiplier` (heat 2.2×, rain 0.25×, **plus a wind term** — wind strips a pot faster than sun and is a classic bonsai killer); and `ApplyRain` waters the tree for free, riding the **same fixed-step clock** as the drain it opposes so the two cannot desync at speed. Prolonged rain on poor drainage raises `saturationLevel`, giving the soil mix and drainage holes a weather cost they never had. **Setup: add a `WeatherManager` component.** **Remaining:** visuals (rain particles, sky/light per state), frost/freeze dieback for tender species, snow load as static branch weight, a forecast UI tell so the player can water before a storm, and shelter as a counter-move. *Original spec below.* 🆕 raised 2026-08-24. Feeds the same physics as **Tipping** above; build them together. Wind already exists **visually** (`WindManager`, F6 — gust Perlin, wandering direction, canopy sway) but exerts no force and nothing else reacts to sky conditions. **Wind load:** the canopy is a sail — lateral force ∝ gust² × canopy frontal area (derivable from the leaf census / mesh bounds, and dropping in winter for deciduous species) applied as an extra overturning moment at the canopy's centre of mass, added to the static branch-weight moment. A gust is what actually tips a top-heavy tree; the static case alone rarely does. **The loop that makes this interesting:** a storm brings wind (tipping force) *and* rain (soil soaks → up to ~1.5× dry weight → more righting moment), so weather both threatens and stabilises — and the danger case is the **dry pot in high wind**, which is exactly what growers guard against. Deciduous trees also shed their sail in autumn, so a winter storm is survivable where a summer one is not. **Weather states:** Clear / Overcast / Rain / Storm / Heat, seasonally weighted, driving: rain → `moisture` + `saturationLevel` (free watering, and waterlogging risk if drainage is poor — ties into `HoleDrainageFactor`); sun + heat + wind → faster drying and transpiration (wind dries a pot much faster than still air, a classic bonsai killer); frost/freeze → dieback risk for tender species; optional snow load as extra static weight on branches. **Player counters:** water before a storm, move to a heavier/wider pot, anchor wire through the drainage holes, or shelter the tree. **Thigmomorphogenesis — the tree fights back** *(raised 2026-08-24)*: real trees respond to repeated mechanical stress by growing reaction wood and extra root mass on the loaded side, thickening the trunk base, and staying shorter — it is why sheltered, staked nursery stock blows over when planted out, and why growers deliberately flex saplings. Today root direction is purely `growDirection·inertia + radial·rootRadialWeight + down·rootGravityWeight + noise` with **no stress term at all** (verified 2026-08-24; the only special cases are air-layer roots and Ishitsuki). Add a wind-history bias so roots preferentially extend along the prevailing wind axis and loaded nodes thicken faster. That feeds straight back into `PotSoil.FootprintRadius` and the stability balance, so a wind-exposed tree **anchors itself and grows genuinely harder to tip over seasons** — a real feedback loop, and it gives a sheltered tree a hidden fragility the player can be caught out by. **Scope:** new `WeatherManager` (state machine + seasonal weighting) driving `WindManager` gust strength; force hookup in the stability system; `PotSoil` moisture/saturation input. **Files:** new `WeatherManager.cs`, `WindManager.cs`, `Tree/PotSoil.cs`, stability system, `Tree/LeafManager.cs` (frontal area). |
 | 1 | **Release Prep — R0 Build identity** | 🔧 **mostly done 2026-10-12** — identity complete (`WZRDHAU5` / `Bonsaimancer` / `0.1.0` / `com.wzrdhau5.bonsaimancer`), `resizableWindow` enabled for R2's Windowed mode, and the dead files deleted (`_Recovery/` + 4 unreferenced scripts, ~1.3 MB). **Two small items left**: the pixel-art icon needs to go on Default Icon with Point filtering (not new art), and the Unity splash is still enabled. |
 | ✅ | **Release Prep — R5 test-build hygiene** | 🔧 **4 of 7 built 2026-10-12** — save `schemaVersion` + migration ladder + load-failure reasons surfaced at all 4 call sites; onboarding tooltips back on as a persisted setting with a replay button; `BonsaiDebug` single dev-surface switch (F1 readout, dev pause tabs, GL gizmos, tipping harness, per-click logs); `CrashLogger` session logs + "Open Log Folder". Compile-verified, 0 errors. Remaining 3 are hands-on: death-loop walkthrough, perf floor, build on another machine. |
+| 1 | **Release Prep — R5b Windows, focus and platforms** | 🆕 raised 2026-10-28. Must run on a **second monitor**, survive **losing and regaining focus**, and work on **Windows, macOS and Linux**. See R5b under Release Prep. |
 | ✅ | **Release Prep — R1 Main Menu + launch flow** | ✅ **built 2026-10-12** — `MainMenuUI` (themed UI Toolkit menu: Play / New Tree / Settings / Credits / Quit + version), `SaveSelectPanel` (one card implementation, now used by *both* the menu and the in-game pause menu — 168 lines of duplicate removed from `buttonClicker`), `SaveManager.PendingLaunch` handoff, `LoadingScreen` with real `AsyncOperation.progress`, music fade instead of destroying the AudioManager. One Unity step left: run **Bonsai ▸ Set Up Main Menu Scene**. |
 | ✅ | **Release Prep — R2 Settings Menu** | ✅ **built 2026-10-12** — `GameSettings` (single owner of the `set.*` keys, applies on load + every scene load) + `SettingsPanel` (5 tabs, hosted from **both** the main menu and the pause menu). Colour-blind highlight palettes (Okabe–Ito), reduced motion, real display/quality/audio controls, read-only key reference. `FullscreenPrompt` retired. Remaining: UI/text scale, high-contrast, key rebinding, an AudioMixer. |
 | 1 | **Release Prep — R3 Menu showcase tree** | 🆕 raised 2026-10-12. Author a tree in-game, bake it to a static prefab via an editor tool, display it non-interactable behind the main menu. Gotcha: wind flex is derived from object-space position, so combine in the tree root's local space. |
@@ -745,6 +746,54 @@ buttons, so one button gets a tester to their logs *and* their saves.
 **Note on `profile.json`.** Left as-is: `ProgressionProfile` is global rather than per-slot and has no
 version field. It's lower-stakes than the tree saves (losing it costs unlocks, not a tree) but it has
 the same latent problem, so it wants the same treatment before strangers have one.
+
+### R5b. Second monitor, focus, and Windows / macOS / Linux
+
+🆕 **Raised 2026-10-28 — requirement, not polish.** The game is meant to be left running beside
+other work, so it has to behave on a second monitor and when it isn't the focused window, on all
+three desktop platforms.
+
+**Already in place:** `runInBackground`, `visibleInBackground` and `resizableWindow` are on in
+Player Settings. The default mode is borderless full-screen window (`fullscreenMode: 1`). Settings ▸
+Display switches Fullscreen / Borderless / Windowed (`GameSettings`). `CursorManager` re-applies the
+tool cursor in `OnApplicationFocus`.
+
+**Second monitor**
+- A **Monitor** choice in Settings ▸ Display (`Screen.GetDisplayLayout` + `Screen.MoveMainWindowTo`),
+  remembered between runs. Today the game always opens on the primary display.
+- Windowed mode should remember its size and position.
+- Survive the monitor being unplugged or the resolution changing while running (fall back to the
+  primary display, re-fit the UI).
+- Check the camera, UI scale and cursor art on monitors with different DPI / scaling.
+
+**Losing and regaining focus**
+- Nothing must stay "held" when focus is lost mid-action: watering-can pour, saw stroke, camera
+  orbit drag, held A/D keys. On focus loss, end every in-progress drag and treat the mouse button as
+  released.
+- The click that re-focuses the window must **not** act on the tree (no accidental trim or pour).
+  Swallow the first click after focus returns.
+- Options in Settings: **mute when unfocused** and **pause when unfocused**, both off by default
+  (the game's idle play pattern wants it running).
+- Optionally a lower frame rate while unfocused (`Application.targetFrameRate`) to keep
+  background CPU and GPU use down.
+- Exclusive fullscreen loses the display on Alt-Tab on Windows. Borderless is the safe default and
+  should stay so.
+
+**Windows, macOS, Linux**
+- Build and smoke-test all three. macOS: Apple silicon + Intel (universal build), code signing and
+  notarisation, or Gatekeeper blocks it. Linux: Vulkan with OpenGL fallback, and test the Steam Deck
+  (Proton and native).
+- macOS has no exclusive fullscreen. Its fullscreen mode is a separate Space, so test the
+  focus/monitor behaviour there separately.
+- Keyboard: Cmd vs Ctrl in default bindings and display names (`KeyBindings`).
+- Save and log locations differ per platform (`persistentDataPath`). Check that "Open Log Folder"
+  opens the right place on each.
+- Shaders: the custom bark and CRT passes must compile for Metal and Vulkan.
+- Steam: one depot per platform (R8).
+
+**Done when:** on each platform, the game opens on the chosen monitor, can be dragged between
+monitors, and can be Alt/Cmd-Tabbed away from and back to mid-pour and mid-orbit without stuck input,
+an accidental action, or a frozen frame.
 
 ---
 
@@ -2323,6 +2372,69 @@ useful but too short."* **This must not be true of Bonsaimancer.**
 - **Something trippy that is secret and random.** No notes beyond that, deliberately. Candidate
   hooks that already exist: the species/seed RNG, the `CRTRendererFeature` post-processing stack, the
   cyberpunk cityscape backgrounds, and the `_soilDbg` GL overlay path that is currently dead code.
+
+</details>
+
+<details>
+<summary><strong>Ideas raised 2026-10-28, unscheduled</strong> — time-lapse, sound, moss, pruning feedback, shari, cuttings, wildlife, 3D weather, tree sharing. Notes per item on what already exists. The source list skipped a #5.</summary>
+
+- **Time-lapse exporter ("decades in 15 seconds").** Replay years of growth, wiring and seasonal
+  colour in a short orbiting clip, exportable as video/GIF. Strong marketing material (R7).
+  ⚠ The pitch says yearly snapshots are already recorded. **They aren't.** `SaveManager` keeps
+  only the current state. `TrainingRecorder` writes per-action node snapshots, but it's off by
+  default and meant for auto-style training data. `CareLog` records actions, not geometry. This
+  needs a new lightweight history: a node-graph snapshot per season, stored with the save. Replay
+  rebuilds the mesh from each snapshot and sweeps through the seasonal colours. The screenshot tool
+  (F12, `ScreenshotTool`) is the capture starting point.
+- **Tactile sound overhaul.** Replace UI-style clicks with real tool sounds:
+  - cutter snip;
+  - root-rake crunch through akadama;
+  - wire sliding around bark;
+  - a mister hiss;
+  - the ring of a ceramic pot.
+
+  Today there are only four SFX clips (Boop, Start, Trim, Water). There's no root-rake sound and
+  **no mister tool**. Do this alongside the `AudioMixer` work (R2), so the new sounds route through
+  it.
+- **Living soil surface: moss and lichen.** Moss spreads over the soil when moisture stays healthy
+  and browns or recedes in drought. Lichen appears on old bark. Drive it from a moisture history in
+  `PotSoil` (`soilMoisture`, `saturationLevel`; the new `DailyTick` is the natural place). It gives a
+  visible signal of good watering habits. Note: moss already exists as a *cosmetic* GroundCover
+  decoration, and a weeds tooltip already recommends moss. Decide whether grown moss replaces it or
+  sits beside it.
+- **Pruning debris and feedback.** Cut wood currently vanishes when the mesh rebuilds. Instead,
+  spawn the cut piece as a temporary physics body (or a puff of leaves and twigs) that tumbles off
+  and fades. Show a little sap or a pale wound face until paste goes on; the `WoundSystem` already
+  tracks wounds and paste. Leaves on a cut branch already fall.
+- **Shari (trunk deadwood) carving.** A chisel tool that strips a bark channel along the trunk
+  between two nodes, leaving bleached deadwood beside living lifelines. Builds on what exists:
+  `isJin` / `isDeadwood` on nodes, and the **Jin** tool, which is in the A/D cycle but has no button
+  yet. Needs per-circumference bark masking in `TreeMeshBuilder` (vertex colour) and a cambium-flow
+  rule so the live vein keeps feeding the branches above it.
+- **Cuttings and a nursery tray.** Snip a healthy soft shoot in June → "Take Cutting" → it goes
+  into a propagation tray on the bench. About 1 in 3 root and become new seedlings descended from
+  the parent tree. The data model already anticipates it: `TreeOrigin.Cutting` exists as a
+  "future feature hook". Air layering and the multi-tree shelf cover the rest of the lifecycle.
+- **Ambient wildlife.** Visitors that appear only when the tree is calm and healthy:
+  - bees around blossoms during bloom (`FlowerManager`);
+  - a white-eye perching on a scaffold branch;
+  - a snail crossing the pot rim in wet weather;
+  - a dewy spider web in autumn.
+
+  These overlap the **Birds** and **Bugs** entries above, so build them as one system. Their
+  "only when healthy" rule gives them the same role as the recovery banner: a reward for good care.
+- **3D weather effects.**
+  - Blossom or fluff particles drifting on the `WindManager` wind.
+  - Rain rings on the soil surface and condensation.
+  - Warm rim light, fireflies and dust motes at dusk.
+
+  Extends the existing rain video layers (`RainVisual`) and the open snow item under **Rain and
+  snow** above. The weather forecast queue makes it possible to show these a day ahead.
+- **Tree passport and Steam Workshop.** Export a tree as a short code or `.bonsai` file to share,
+  gift a cutting, or browse a Workshop catalogue of collected trees. `SaveData` is already JSON
+  (`JsonUtility`) and versioned (`schemaVersion` + migration ladder), so an import path exists:
+  compress the JSON and Base64 it. Imports must refuse newer schemas exactly as loads do. Workshop
+  needs Steamworks (R8). Decide whether imported trees count towards achievements and AP.
 
 </details>
 
