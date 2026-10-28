@@ -44,6 +44,7 @@ public static class GameSettings
 
     const string K_COLORBLIND    = "set.colorblind";
     const string K_REDUCED_MOTION = "set.reducedMotion";
+    const string K_CUSTOM_CURSORS = "set.customCursors";
 
     // Legacy key this panel took over.
     const string K_LEGACY_AA     = "antiAliasing";
@@ -335,6 +336,13 @@ public static class GameSettings
             TreeInteraction.ApplyHighlightPalette(value);
             Notify();
         }
+    }
+
+    /// <summary>Per-tool cursors (trimmer, watering can). Off = the system arrow everywhere.</summary>
+    public static bool CustomCursors
+    {
+        get => PlayerPrefs.GetInt(K_CUSTOM_CURSORS, 1) != 0;
+        set { PlayerPrefs.SetInt(K_CUSTOM_CURSORS, value ? 1 : 0); Save(); Notify(); }
     }
 
     /// <summary>Stops the idle camera orbit and the wind sway. For motion sensitivity, and it

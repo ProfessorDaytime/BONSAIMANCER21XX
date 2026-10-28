@@ -307,6 +307,7 @@ public class PotSoil : MonoBehaviour
     Material potCeramicMat, potSoilMat;
 
     Transform soilVisual;   // runtime-built soil surface for authored (open-shell) pot meshes
+    float     soilRadX, soilRadZ;   // its half-extents, for RaycastSoil
 
     /// <summary>Builds/updates the soil surface sitting inside an authored pot mesh. The pot is a
     /// round tapered frustum, so the disc radius is the pot's interior radius AT the soil line,
@@ -333,6 +334,8 @@ public class PotSoil : MonoBehaviour
         float radX   = Mathf.Lerp(rTopX * taper, rTopX, tSoil) * wallFrac;
         float radZ   = Mathf.Lerp(rTopZ * taper, rTopZ, tSoil) * wallFrac;
 
+        soilRadX = radX;
+        soilRadZ = radZ;
         var mf = soilVisual.GetComponent<MeshFilter>();
         mf.sharedMesh = ProceduralPot.BuildSoilSurface(radX, radZ, h * 0.10f);
         CeramicMaterial();                                       // ensures potSoilMat exists
@@ -344,6 +347,23 @@ public class PotSoil : MonoBehaviour
                                             rootAreaTransform.position.z);
         soilVisual.rotation   = Quaternion.identity;
         soilVisual.localScale = Vector3.one;
+    }
+
+    /// <summary>
+    /// Where a ray meets the soil surface inside the pot, if it does (the watering can's target).
+    /// The surface is the elliptical disc UpdateSoilVisual builds; a little extra radius lets a
+    /// click on the rim count, since nobody aims a watering can at the pot wall.
+    /// </summary>
+    public bool RaycastSoil(Ray ray, out Vector3 point)
+    {
+        point = default;
+        if (soilVisual == null || soilRadX <= 0f || soilRadZ <= 0f) return false;
+        var plane = new Plane(Vector3.up, soilVisual.position);
+        if (!plane.Raycast(ray, out float t)) return false;
+        point = ray.GetPoint(t);
+        Vector3 d  = point - soilVisual.position;
+        float   ex = d.x / (soilRadX * 1.1f), ez = d.z / (soilRadZ * 1.1f);
+        return ex * ex + ez * ez <= 1f;
     }
 
     // ── Tipping visuals ───────────────────────────────────────────────────────

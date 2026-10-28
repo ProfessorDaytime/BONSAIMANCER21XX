@@ -34,6 +34,7 @@ public class GameManager : MonoBehaviour
     public static bool canGraft         = false;
     public static bool canPromote       = false;
     public static bool canJin           = false;
+    public static bool canWater         = false;   // watering can held: click the soil to water
     public static float selectionRadius = 0.5f;
 
     [Tooltip("Log game-state transitions, time events, and speed changes. Off by default.")]
@@ -463,6 +464,7 @@ public class GameManager : MonoBehaviour
             ToolType.Pinch         => "Pinch",
             ToolType.Defoliate     => "Defoliate",
             ToolType.Graft         => "Graft",
+            ToolType.WateringCan   => "Watering Can",
             _                      => string.Empty,
         };
     }

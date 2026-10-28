@@ -324,7 +324,9 @@ public partial class TreeSkeleton : MonoBehaviour
 
             bool atRisk = (node.hasWound && !node.pasteApplied)
                        || (node.isRoot && soilMoisture > 0.9f)
-                       || (node.health < 0.5f);
+                       || (node.health < 0.5f)
+                       || (node.foliageWettings >= foliageWetRiskCount);   // watered over the leaves
+            node.foliageWettings = 0;
 
             if (atRisk)
             {
@@ -364,6 +366,18 @@ public partial class TreeSkeleton : MonoBehaviour
 
         if (verboseLog && infectedCount > 0)
             Debug.Log($"[Fungal] {infectedCount} node(s) took fungal damage | year={GameManager.year}");
+    }
+
+    /// <summary>
+    /// Records that a watering soaked these branches' leaves instead of going to the soil.
+    /// Wet foliage is what fungal spores need; enough soakings in a season put the branch at risk
+    /// at the next <see cref="UpdateFungalInfection"/> (see <c>foliageWetRiskCount</c>).
+    /// </summary>
+    public void WetFoliage(IEnumerable<TreeNode> nodes)
+    {
+        int n = 0;
+        foreach (var node in nodes) { node.foliageWettings++; n++; }
+        if (n > 0) CareLog.Add("Water", $"Watered over the leaves — {n} branch(es) soaked; wet foliage invites fungus");
     }
 
     /// <summary>

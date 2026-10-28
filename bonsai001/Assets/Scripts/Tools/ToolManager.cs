@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire, Paste, AirLayer, Pinch, Defoliate, Graft, Promote, Jin }
+public enum ToolType { None, Shears, SmallClippers, BigClippers, Saw, Wire, RemoveWire, Paste, AirLayer, Pinch, Defoliate, Graft, Promote, Jin, WateringCan }
 
 public class ToolManager : MonoBehaviour
 {
@@ -76,6 +76,7 @@ public class ToolManager : MonoBehaviour
         GameManager.canGraft      = tool == ToolType.Graft;
         GameManager.canPromote    = tool == ToolType.Promote;
         GameManager.canJin        = tool == ToolType.Jin;
+        GameManager.canWater      = tool == ToolType.WateringCan;
         if (BonsaiDebug.Enabled)
             Debug.Log($"[Tool] SelectTool={tool} | canTrim={GameManager.canTrim} canWire={GameManager.canWire} canRemoveWire={GameManager.canRemoveWire} canPaste={GameManager.canPaste} | gameState={GameManager.Instance?.state}");
     }
@@ -94,6 +95,7 @@ public class ToolManager : MonoBehaviour
         GameManager.canGraft      = false;
         GameManager.canPromote    = false;
         GameManager.canJin        = false;
+        GameManager.canWater      = false;
         if (BonsaiDebug.Enabled)
             Debug.Log($"[Tool] ClearTool | gameState={GameManager.Instance?.state}");
     }

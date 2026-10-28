@@ -186,6 +186,7 @@ public class TreeNode
     // ── Fungal ────────────────────────────────────────────────────────────────
 
     public float fungalLoad;          // 0–1 infection severity; drains health above ~0.4
+    public int   foliageWettings;     // transient: waterings that soaked this node's leaves since the last fungal check (not saved)
     public bool  isMycorrhizal;       // beneficial fungi network on this root node
     public int   healthySeasonsCount; // seasons at health>0.75 and fungalLoad<0.1 (mycorrhizal unlock)
 

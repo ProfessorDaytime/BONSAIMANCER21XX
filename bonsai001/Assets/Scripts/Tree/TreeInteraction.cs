@@ -568,6 +568,8 @@ public class TreeInteraction : MonoBehaviour
             HandleGraftHover();
         else if (GameManager.canPromote)
             HandlePromoteHover();
+        else if (GameManager.canWater)
+            HandleWaterHover();
         else if (GameManager.canJin)
             HandleJinHover();
         else
@@ -824,12 +826,59 @@ public class TreeInteraction : MonoBehaviour
                 else
                 {
                     SetHighlight(null, HighlightMode.None);
+                    CursorManager.PlayUse();
                     skeleton.TrimNode(node);
                 }
             }
             return;
         }
         SetHighlight(null, HighlightMode.None);
+    }
+
+    // ── Watering can ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The watering can (R4, 2026-10-27): click the soil to water. Water poured over the canopy
+    /// still reaches the soil, but every branch whose leaves sit between the can and the soil gets
+    /// soaked, which raises its fungal risk (<see cref="TreeSkeleton.WetFoliage"/>). A click that
+    /// misses both the soil and the tree does nothing.
+    /// </summary>
+    void HandleWaterHover()
+    {
+        SetHighlight(null, HighlightMode.None);
+        if (!Mouse.current.leftButton.wasPressedThisFrame || CursorManager.PointerOverUI()) return;
+
+        var s = GameManager.Instance.state;
+        if (s != GameState.Idle     && s != GameState.BranchGrow && s != GameState.TimeGo &&
+            s != GameState.LeafGrow && s != GameState.LeafFall) return;
+
+        Ray   ray      = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        var   pot      = skeleton.GetComponent<PotSoil>();
+        Vector3 soilPoint = default;
+        bool  hitSoil  = pot != null && pot.RaycastSoil(ray, out soilPoint);
+        float soilDist = hitSoil ? Vector3.Distance(ray.origin, soilPoint) : float.MaxValue;
+
+        // Leaves in front of the soil (or anywhere on the ray, if the soil was missed) catch it.
+        var soaked = new HashSet<TreeNode>();
+        foreach (var leaf in GetComponentsInChildren<Leaf>())
+        {
+            if (leaf.ownerNode == null) continue;
+            var r = leaf.GetComponentInChildren<Renderer>();
+            if (r != null && r.bounds.IntersectRay(ray, out float d) && d < soilDist)
+                soaked.Add(leaf.ownerNode);
+        }
+
+        if (!hitSoil && soaked.Count == 0) return;
+
+        AudioManager.Instance?.PlaySFX("Water");
+        CursorManager.PlayUse();
+        skeleton.Water();   // over the leaves or not, the water ends up in the pot
+
+        if (soaked.Count > 0)
+        {
+            skeleton.WetFoliage(soaked);
+            FindAnyObjectByType<ButtonClicker>()?.ShowFoliageWateringTip();
+        }
     }
 
     // ── Jin (strip a branch to deadwood) ──────────────────────────────────────

@@ -455,6 +455,10 @@ public partial class TreeSkeleton : MonoBehaviour
     [Tooltip("fungalLoad reduced per season when a node is no longer at risk.")]
     [SerializeField] float fungalRecoveryRate = 0.10f;
 
+    [Tooltip("Waterings that soak a branch's leaves (watering can aimed at the foliage instead of " +
+             "the soil) before that branch counts as at-risk at the next fungal check.")]
+    [SerializeField] int foliageWetRiskCount = 3;
+
     [Tooltip("How much fungicide reduces each node's fungalLoad per application.")]
     [SerializeField] float fungicideReduceAmount = 0.60f;
 

@@ -560,6 +560,10 @@ public class SettingsPanel
         content.Add(Check("Reduced motion", GameSettings.ReducedMotion, v => GameSettings.ReducedMotion = v, th));
         content.Add(Note("Stops the wind sway and the idle camera drift. Also helps frame rate.", th));
 
+        content.Add(Check("Tool cursors", GameSettings.CustomCursors, v => GameSettings.CustomCursors = v, th));
+        content.Add(Note("Shows the tool you're holding as the mouse cursor. Turn off for the " +
+                         "standard arrow everywhere.", th));
+
         content.Add(Note("Text size and a high-contrast mode are still to come.", th));
     }
 

@@ -622,6 +622,29 @@ cursor, ideally reflecting rip risk), the `RootRake` mini-game, `RockPlace` / `T
 **Acceptance:** every tool shows a distinct cursor, the cursor changes on hover over a valid target,
 UI always shows the arrow, and alt-tabbing away and back doesn't lose the cursor.
 
+### 🟡 R4 — first pass built 2026-10-27 (compile-checked; not yet play-tested)
+
+**Cursors.** `CursorManager` (self-installs in any scene with a GameManager) reads
+`ToolManager.ActiveTool` each frame. Art: 48×48 frames in `Assets/Resources/Cursors/`, cut from the
+5×-scale sheets `Trimmer.png` (4 frames) and `watering_can.png` (8) — native 48-px art, so the cut is
+exact. `Assets/Editor/CursorImportSettings.cs` imports that folder as Cursor / point / uncompressed.
+Frame 0 = idle; `CursorManager.PlayUse()` plays the rest once (snip on a trim, pour on a watering).
+Hotspots: between the open trimmer blades (24,6), can spout (3,22). Trimmer frames are reordered from the sheet (2,3,0,1) so idle is open and a snip closes then reopens. Arrow over UI Toolkit elements (panel pick,
+ignoring full-screen containers), in menus/dialogs, and when Settings ▸ Accessibility ▸ **Tool
+cursors** is off (`GameSettings.CustomCursors`, default on). Re-applied on window focus.
+- Trimmer covers Shears / Small / Big Clippers; every other tool keeps the arrow until it has art.
+- *Not yet:* valid/invalid hover states, large-cursor option, a cursor for weed-pull / rake / orbit.
+
+**Watering is now a tool.** The Water button picks up the can (`ToolType.WateringCan`, appended to
+the enum; press again to put it down); the very first watering that plants the seed is still instant.
+Click the soil (`PotSoil.RaycastSoil` — the soil disc + 10 %) to water. Water poured over the canopy
+still reaches the soil, but every branch whose leaf renderer sits on the ray in front of the soil is
+soaked (`TreeNode.foliageWettings`, transient); a branch soaked `foliageWetRiskCount` (3) times
+before the yearly fungal check counts as at-risk there. First soaking shows a "Wet Leaves" tip and
+logs to the CareLog. Watering is now allowed in LeafGrow/LeafFall too (the old button silently did
+nothing in October). Auto-water, scheduled and moisture-triggered watering still water the soil
+directly.
+
 ---
 
 ### R5. Test-build hygiene — what else stands between here and a build a stranger can run

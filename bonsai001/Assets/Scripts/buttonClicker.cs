@@ -3149,12 +3149,28 @@ public class ButtonClicker : MonoBehaviour
             return;
         }
 
-        var s = GameManager.Instance.state;
-        if (s == GameState.Idle || s == GameState.BranchGrow || s == GameState.TimeGo)
-            skeleton?.Water();
+        // After planting, the button picks up the watering can (R4, 2026-10-27): the player waters
+        // by clicking the soil. Pressing it again puts the can down.
+        if (ToolManager.Instance.ActiveTool == ToolType.WateringCan)
+        {
+            ToolManager.Instance.ClearTool();
+            return;
+        }
+        ToolManager.Instance.SelectTool(ToolType.WateringCan);
         MaybeShowTooltip("water",
             "Watering",
-            "Keep soil moisture in the healthy range (shown on the moisture bar). Too dry and the tree stresses; too wet and roots rot.\n\nTip: water less in winter when the tree is dormant — cold wet soil encourages root rot.");
+            "Click the soil to water. Aim for the soil, not the leaves: water poured over the foliage still reaches the pot, but leaves that stay wet invite fungus.\n\n" +
+            "Keep soil moisture in the healthy range (shown on the moisture bar). Too dry and the tree stresses; too wet and roots rot.\n\n" +
+            "Tip: water less in winter when the tree is dormant — cold wet soil encourages root rot.");
+    }
+
+    /// <summary>First time the can is emptied over the canopy instead of the soil.</summary>
+    public void ShowFoliageWateringTip()
+    {
+        MaybeShowTooltip("water_foliage",
+            "Wet Leaves",
+            "That water went over the leaves before it reached the soil. The tree still got its drink, but foliage that stays wet is where fungus takes hold — soak the same branches often and they'll be at risk of infection.\n\n" +
+            "Aim below the canopy, at the soil around the trunk.");
     }
 
     void OnFirstWeedSpawned()
