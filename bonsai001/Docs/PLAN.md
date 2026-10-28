@@ -536,6 +536,40 @@ standing in the main menu — looking alive but entirely non-interactable.
 **Acceptance:** grow a tree, bake it, exit Play mode, open `MainMenu.unity`, see it — with the sim
 entirely absent from that scene's component list.
 
+### ✅ R3 — built and verified 2026-10-27 (first bake: 1,035 renderers → 21 meshes, 78k verts)
+
+**Use:** in Play mode, frame the shot you want, then **Settings ▸ Debug ▸ Bake as Menu Tree** (or
+**Bonsai ▸ Bake Menu Tree**). Writes `Assets/Resources/MenuTree/` (prefab + `Meshes/` + `Materials/`);
+re-baking replaces it; **Bonsai ▸ Clear Menu Tree** removes it. No scene wiring — `MainMenu.Awake`
+calls `MenuTreeShowcase.SpawnIfBaked()`, which does nothing until a bake exists. Commit the baked
+assets: they are shipped art.
+
+- **`Assets/Editor/MenuTreeBaker.cs`** — collects every enabled `MeshRenderer` under the tree root
+  (bark, leaves, flowers, pot, soil, table) plus an active `RockPlacer` and the `Decoration_*` object;
+  skips weeds and the `_TreeHighlight` / `_WireAimPreview` / `_SawGroove` helpers. Combines per material
+  in the **root's local space** (UInt32 indices). Leaves are snapped to rest first (`Leaf.SnapToRest`).
+- **Leaf colour** is per-leaf via `MaterialPropertyBlock`, which a combined mesh can't carry, so each
+  material's leaf colours are k-means-reduced to ≤16 and each cluster gets a material copy. Runtime
+  materials are saved as copies; project materials are referenced as-is.
+- **`Assets/Scripts/MenuTreeShowcase.cs`** (on the prefab root) — holds the bake-time camera pose, FOV,
+  clear colour / skybox, ambient and directional lights; replaces the menu scene's directional lights
+  with them; slides the camera so the tree sits at `screenX` 0.64 (right of the menu column); drifts
+  ±10° around the tree over 70 s (off under Reduced Motion). All tunable on the prefab.
+- **Still / no wind:** the menu has no `WindManager`, so the bark shader's wind globals are zero.
+- **Not baked:** wires (LineRenderers — a displayed bonsai is normally unwired, and a camera-facing
+  line baked from one angle looks wrong from others), the `BackgroundManager` scenery prefab, falling
+  leaves (unparented). Add wires later if wanted (`LineRenderer.BakeMesh`).
+- **Fixed on first test:** (1) the menu was black — the screen-targeted PanelSettings copy still had
+  `clearColor` on, wiping the camera image; now off in `MainMenu.ScreenTargetCopy`. (2) Leaves, pot and
+  table models are imported without Read/Write, so `CombineMeshes` failed on them; the baker now copies
+  each such model to a temp folder, imports the copy readable and clones the mesh out (project import
+  settings untouched — enabling Read/Write on the leaf FBX would switch on `Leaf`'s per-leaf deformation
+  in-game). (3) Pot, soil surface and table are separate scene objects, now collected by name.
+- **Repo size:** a bake is ~9 MB of text-serialized meshes; re-baking rewrites it, so each committed re-bake
+  adds roughly that to history. Bake deliberately.
+- **Original first-bake checklist:** leaves on their twigs; colour variety looks right; no console errors about
+  unreadable meshes from `CombineMeshes` (imported pot FBX); menu framing/lighting matches the shot.
+
 ---
 
 ### R4. Tool Cursors — per-tool cursor art

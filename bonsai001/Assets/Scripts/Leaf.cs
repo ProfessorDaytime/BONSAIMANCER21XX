@@ -287,6 +287,18 @@ public class Leaf : MonoBehaviour
         leafRenderer.SetPropertyBlock(propBlock);
     }
 
+    /// <summary>
+    /// Puts the leaf at its windless rest pose. Used by the menu-tree bake, which captures the bark
+    /// at rest (its sway is in the shader, not the mesh), so the leaves must be at rest too. The
+    /// next Update re-applies the wind.
+    /// </summary>
+    public void SnapToRest()
+    {
+        if (isFalling || ownerNode == null || propBlock == null) return;   // propBlock: Start has run
+        transform.localPosition = ownerNode.tipPosition + tipOffset;
+        transform.localRotation = baseLocalRotation;
+    }
+
     /// <summary>Force a colour refresh — called by LeafManager after updating fungalSeverity.</summary>
     public void ForceRefreshColor() => UpdateLeafColor();
 

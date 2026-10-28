@@ -1,0 +1,162 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: MenuTree_00_mat_Brown
+  m_Shader: {fileID: 4800000, guid: 5f837b0834b9e57479a067e1a0ad34de, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - _DETAIL_MULX2
+  - _EMISSION
+  - _NORMALMAP
+  - _PARALLAXMAP
+  m_InvalidKeywords: []
+  m_LightmapFlags: 2
+  m_EnableInstancingVariants: 1
+  m_DoubleSidedGI: 1
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BarkBump:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkEmissionMap:
+        m_Texture: {fileID: 2800000, guid: ab74471e0dae3ad489ba098dcc9871d4, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkOcclusionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkTex:
+        m_Texture: {fileID: 2800000, guid: ab74471e0dae3ad489ba098dcc9871d4, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkTexA:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BarkTexB:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BumpMap:
+        m_Texture: {fileID: 2800000, guid: fbdc3ace3f7f2514a950913c138deb19, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailAlbedoMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailMask:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailNormalMap:
+        m_Texture: {fileID: 2800000, guid: dac0ae49523f4b94d88e6d40a39ab14b, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissionMap:
+        m_Texture: {fileID: 2800000, guid: 303fb5165cf7c5e4cac2f0369daf88b5, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MainTex:
+        m_Texture: {fileID: 2800000, guid: 303fb5165cf7c5e4cac2f0369daf88b5, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MetallicGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NGBump:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NGEmissionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NGOcclusionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NGTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _OcclusionMap:
+        m_Texture: {fileID: 2800000, guid: 87200b80e4c1b8042b73b6ced17b3404, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ParallaxMap:
+        m_Texture: {fileID: 2800000, guid: 7695b7255455bd44e925066681da5e92, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _BarkGlossiness: 0.01
+    - _BarkGrooveDepth: 0.157
+    - _BarkMetallic: 0
+    - _BarkNoiseMode: 0
+    - _BarkOcclusionStr: 1
+    - _BarkPatternScale: 4
+    - _BarkRoughness: 0.99
+    - _BarkType: 1
+    - _BudScarStrength: 1
+    - _BumpScale: 0
+    - _Cutoff: 0.5
+    - _DetailNormalMapScale: 1
+    - _DstBlend: 0
+    - _ForceMatureBark: 0
+    - _GlossMapScale: 1
+    - _Glossiness: 0.009
+    - _GlossyReflections: 1
+    - _Metallic: 0
+    - _MidThreshold: 0.654
+    - _Mode: 0
+    - _NGGlossiness: 0.1
+    - _NGMetallic: 0
+    - _NGOcclusionStr: 1
+    - _NGRoughness: 0.9
+    - _OcclusionStrength: 0
+    - _OutlineWidth: 0.018
+    - _Parallax: 0.005
+    - _ScarDebug: 0
+    - _ShadowThreshold: 0.035
+    - _SmoothnessTextureChannel: 0
+    - _SpecularHighlights: 1
+    - _SrcBlend: 1
+    - _TexelRes: 64
+    - _UVSec: 0
+    - _UseTextures: 0
+    - _WoundScarStrength: 1
+    - _ZWrite: 1
+    m_Colors:
+    - _BarkColor: {r: 0.48, g: 0.45, b: 0.38, a: 1}
+    - _BarkEmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _Color: {r: 0.3679245, g: 0.2883135, b: 0.24470451, a: 1}
+    - _EmissionColor: {r: 0.014443844, g: 0.014443844, b: 0.014443844, a: 1}
+    - _MidTint: {r: 0.6037736, g: 0.5870654, b: 0.5724457, a: 1}
+    - _NGColor: {r: 0.52, g: 0.55, b: 0.4, a: 1}
+    - _NGEmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _NGRootColor: {r: 0.82, g: 0.75, b: 0.6, a: 1}
+    - _OutlineColor: {r: 0.1, g: 0.08, b: 0.06, a: 1}
+    - _PasteColor: {r: 0.21960784, g: 0.2, b: 0.18039216, a: 1}
+    - _ScarColor: {r: 0.3, g: 0.2, b: 0.14, a: 1}
+    - _ShadowTint: {r: 0.118147016, g: 0.09144712, b: 0.14150941, a: 1}
+    - _WoundCallusColor: {r: 0.3, g: 0.19, b: 0.11, a: 1}
+    - _WoundCambiumColor: {r: 0.55, g: 0.72, b: 0.3, a: 1}
+    - _WoundHeartColor: {r: 0.82, g: 0.68, b: 0.48, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

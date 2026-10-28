@@ -35,6 +35,9 @@ public class MainMenu : MonoBehaviour
         HideLegacyCanvas();
         UpgradeLegacyInputModule();
 
+        // The player-grown showcase tree (R3), if one has been baked. Static set dressing only.
+        MenuTreeShowcase.SpawnIfBaked();
+
         var doc = GetComponent<UIDocument>();
         if (doc == null) doc = gameObject.AddComponent<UIDocument>();
 
@@ -139,6 +142,10 @@ public class MainMenu : MonoBehaviour
         var copy = Instantiate(source);
         copy.name = source.name + " (menu, screen)";
         copy.targetTexture = null;
+        // The shared asset clears its render texture to transparent black before drawing, which is
+        // right for a texture. Drawing to the screen, that clear wipes out everything the camera
+        // just rendered — the R3 showcase tree included — leaving a black backdrop.
+        copy.clearColor = false;
         return copy;
     }
 

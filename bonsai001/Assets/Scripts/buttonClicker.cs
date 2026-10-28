@@ -756,6 +756,7 @@ public class ButtonClicker : MonoBehaviour
         tabContentIshitsuki = root.Q("TabContentIshitsuki");
         tabContentDebug     = root.Q("TabContentDebug");
         SetupTrainingToggle();
+        SetupMenuTreeBakeButton();
         HideDevTabsInRelease();
 
         toggleScaleCubes    = root.Q("ToggleScaleCubes")    as Toggle;
@@ -1633,6 +1634,19 @@ public class ButtonClicker : MonoBehaviour
             if (TrainingRecorder.Instance != null) TrainingRecorder.Instance.Recording = e.newValue;
         });
         tabContentDebug.Add(t);
+    }
+
+    /// <summary>Adds "Bake as Menu Tree" to Settings → Debug (PLAN R3): saves the current tree,
+    /// camera and lighting as the main menu's showcase. Editor only — the baker is an editor tool,
+    /// so the button doesn't exist in a build.</summary>
+    void SetupMenuTreeBakeButton()
+    {
+        if (tabContentDebug == null || !MenuTreeShowcase.CanBake) return;
+        var b = new Button(MenuTreeShowcase.RequestBake) { text = "Bake as Menu Tree" };
+        b.style.marginTop = 6;
+        b.tooltip = "Saves this tree, the current camera angle and the lighting as the main menu's " +
+                    "showcase tree. Frame the shot before opening this menu.";
+        tabContentDebug.Add(b);
     }
 
     /// <summary>
