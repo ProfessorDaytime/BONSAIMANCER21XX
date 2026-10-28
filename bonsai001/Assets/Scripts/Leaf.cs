@@ -395,5 +395,13 @@ public class Leaf : MonoBehaviour
         if (wind != null && wind.strength > 0f)
             driftVelocity += wind.SampleSway(transform.position, windPhase) * 12f;
         rotSpeed = Random.Range(-60f, 60f);
+
+        // Reduced motion: leaves still fall, so autumn still reads, but drop straight down
+        // without the drift and spin.
+        if (GameSettings.ReducedMotion)
+        {
+            driftVelocity = new Vector3(0f, -0.1f, 0f);
+            rotSpeed      = 0f;
+        }
     }
 }

@@ -315,7 +315,7 @@ public class CameraOrbit : MonoBehaviour
         }
 
         // Cinematic mode — C key toggles; runs independently of all other input
-        if (Keyboard.current != null && Keyboard.current.cKey.wasPressedThisFrame)
+        if (KeyBindings.Pressed(BindAction.CinematicCamera))
             SetCinematicMode(!cinematicActive);
 
         if (cinematicActive)

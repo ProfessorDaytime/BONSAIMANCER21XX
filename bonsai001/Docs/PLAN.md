@@ -459,7 +459,31 @@ refilling looked like phantom auto-watering. A log of the reported run showed th
 and zero `Water()` calls. Note also that **every built-in play mode ships with auto-water and
 auto-fertilise on**, including Active Play and Focused. That is a design default worth revisiting.
 
-#### ⚠ Deliberately left out
+#### ✅ R2 finished 2026-10-27 (compile-checked; not yet play-tested)
+
+The four items below were the R2 remainder; all are now built.
+
+- **Key rebinding** — smaller than the note below assumed: only eight player actions were keyboard
+  reads (prev/next tool, put tool away, slow/speed time, undo, cinematic camera, skip wire
+  animation). New `KeyBindings` (static): one `Key` per `BindAction` in `set.key.<Action>`, read via
+  `KeyBindings.Pressed/Held` at the old call sites. Settings ▸ Controls shows a button per action:
+  click, press a key; Esc cancels (`KeyBindings.Capturing` makes the Esc handlers in buttonClicker
+  and MainMenu stand down); taking a used key swaps the two. Esc, F1, Ctrl and the debug digits are
+  reserved. Undo keeps Ctrl; the undo HUD label shows the live binding. No actions asset needed.
+- **Interface size** — Accessibility ▸ Interface size, 80–150%. `GameSettings.ApplyUiScale` gives
+  each distinct PanelSettings in the scene one runtime copy (documents that shared it keep sharing,
+  so layering is unchanged) and scales the copy; the asset is never touched. At 100% nothing is
+  copied. Re-applied on scene load.
+- **High contrast** — `UiTheme.SetHighContrast` swaps in a black / white / yellow palette (AAA
+  contrast) over the equipped shop theme, which comes back when it's turned off. Everything that
+  already listens to `OnThemeChanged` repaints.
+- **Reduced motion, wider** — now also hides the rain overlay, drops falling leaves straight down
+  with no spin, and skips the wire spring animation (in addition to wind sway, idle orbit and the
+  menu tree's drift).
+- Also fixed: Reset to Defaults didn't clear R4's *Tool cursors* setting; it now clears that, the new
+  settings, and every key binding.
+
+#### ⚠ Deliberately left out (original notes — superseded by the section above)
 
 - **UI / text scale.** Needs its own `PanelSettings` first: the menu and the in-game HUD currently
   share `MainPanelSettings`, and mutating `PanelSettings.scale` at runtime writes to that shared

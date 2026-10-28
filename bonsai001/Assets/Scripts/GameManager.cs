@@ -347,8 +347,8 @@ public class GameManager : MonoBehaviour
     }
     
     void Update(){
-        if (Keyboard.current != null && Keyboard.current.rightArrowKey.isPressed) TIMESCALE = Mathf.Min(TIMESCALE + 50f * Time.deltaTime, 400f);
-        if (Keyboard.current != null && Keyboard.current.leftArrowKey.isPressed)  TIMESCALE = Mathf.Max(TIMESCALE - 50f * Time.deltaTime, TIMESCALE_MIN);
+        if (KeyBindings.Held(BindAction.SpeedUp))  TIMESCALE = Mathf.Min(TIMESCALE + 50f * Time.deltaTime, 400f);
+        if (KeyBindings.Held(BindAction.SlowDown)) TIMESCALE = Mathf.Max(TIMESCALE - 50f * Time.deltaTime, TIMESCALE_MIN);
 
         if(state == GameState.BranchGrow || state == GameState.LeafGrow || state == GameState.LeafFall || state == GameState.TimeGo){
             CalculateTime();

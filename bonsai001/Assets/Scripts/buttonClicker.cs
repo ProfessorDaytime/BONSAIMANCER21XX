@@ -1012,7 +1012,8 @@ public class ButtonClicker : MonoBehaviour
                 debugStateLabel.text = GameManager.Instance != null ? GameManager.Instance.state.ToString() : "—";
         }
 
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        // While Settings waits for a key to rebind, Esc cancels that instead of closing the menu.
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame && !KeyBindings.Capturing)
         {
             var s = GameManager.Instance?.state ?? GameState.Idle;
             // Settings sits above everything, so it consumes Esc first. In pre-start it is the
@@ -1237,10 +1238,10 @@ public class ButtonClicker : MonoBehaviour
             {
                 undoLabel.style.display = canUndo ? DisplayStyle.Flex : DisplayStyle.None;
                 if (canUndo)
-                    undoLabel.text = $"<< UNDO  Ctrl+Z  ({skeleton.UndoTimeRemaining:F0}s)";
+                    undoLabel.text = $"<< UNDO  {KeyBindings.Display(BindAction.UndoTrim)}  ({skeleton.UndoTimeRemaining:F0}s)";
             }
 
-            if (canUndo && Keyboard.current != null && Keyboard.current.leftCtrlKey.isPressed && Keyboard.current.zKey.wasPressedThisFrame)
+            if (canUndo && Keyboard.current != null && Keyboard.current.ctrlKey.isPressed && KeyBindings.Pressed(BindAction.UndoTrim))
                 skeleton.UndoLastTrim();
         }
     }

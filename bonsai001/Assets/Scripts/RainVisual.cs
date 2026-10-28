@@ -298,7 +298,9 @@ public class RainVisual : MonoBehaviour
         bool raining = weather != null && weather.IsRaining;
         bool storm   = weather != null && weather.state == WeatherState.Storm;
 
-        float target = raining ? (storm ? stormStrength : 1f) : 0f;
+        // Reduced motion hides the rain layers: full-screen moving video is exactly the kind of
+        // motion the setting is for. Rain still waters the tree.
+        float target = raining && !GameSettings.ReducedMotion ? (storm ? stormStrength : 1f) : 0f;
         float step   = fadeSeconds > 0f ? Time.unscaledDeltaTime / fadeSeconds : 1f;
         fade = Mathf.MoveTowards(fade, target, step * Mathf.Max(1f, target));
 

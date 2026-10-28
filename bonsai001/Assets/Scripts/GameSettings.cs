@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 /// <summary>
 /// Every player-facing setting: the single owner of the <c>set.*</c> PlayerPrefs keys, and the
@@ -45,6 +46,8 @@ public static class GameSettings
     const string K_COLORBLIND    = "set.colorblind";
     const string K_REDUCED_MOTION = "set.reducedMotion";
     const string K_CUSTOM_CURSORS = "set.customCursors";
+    const string K_UI_SCALE       = "set.uiScale";
+    const string K_HIGH_CONTRAST  = "set.highContrast";
 
     // Legacy key this panel took over.
     const string K_LEGACY_AA     = "antiAliasing";
@@ -80,8 +83,9 @@ public static class GameSettings
     {
         ApplyDisplay();
         ApplyQuality();
-        ApplySceneBound();   // applies audio too
+        ApplySceneBound();   // applies audio and interface size too
         TreeInteraction.ApplyHighlightPalette(Colorblind);
+        UiTheme.SetHighContrast(HighContrast);
     }
 
     static void MigrateLegacyKeys()
@@ -338,6 +342,58 @@ public static class GameSettings
         }
     }
 
+    /// <summary>Overrides the equipped UI theme with a black / white / yellow palette.</summary>
+    public static bool HighContrast
+    {
+        get => PlayerPrefs.GetInt(K_HIGH_CONTRAST, 0) != 0;
+        set { PlayerPrefs.SetInt(K_HIGH_CONTRAST, value ? 1 : 0); Save(); UiTheme.SetHighContrast(value); Notify(); }
+    }
+
+    public static readonly float[] UiScaleOptions = { 0.8f, 0.9f, 1f, 1.1f, 1.25f, 1.5f };
+
+    /// <summary>Interface size, as a multiplier on every UI panel's scale.</summary>
+    public static float UiScale
+    {
+        get => PlayerPrefs.GetFloat(K_UI_SCALE, 1f);
+        set { PlayerPrefs.SetFloat(K_UI_SCALE, value); Save(); ApplyUiScale(); Notify(); }
+    }
+
+    // Runtime copies of the PanelSettings in use, keyed by the original, with each copy's own
+    // base scale. The originals are assets: changing PanelSettings.scale on an asset at runtime
+    // writes into the project in the editor, and would also scale every other scene using it.
+    static readonly Dictionary<PanelSettings, PanelSettings> scaledCopyOf = new Dictionary<PanelSettings, PanelSettings>();
+    static readonly Dictionary<PanelSettings, float>         copyBaseScale = new Dictionary<PanelSettings, float>();
+
+    /// <summary>
+    /// Applies <see cref="UiScale"/> to every UIDocument in the loaded scenes. Documents that share
+    /// a PanelSettings keep sharing one copy, so they stay one panel and keep their layering.
+    /// At 100% nothing is copied, so the default path is exactly as before.
+    /// </summary>
+    public static void ApplyUiScale()
+    {
+        float k = UiScale;
+        foreach (var doc in UnityEngine.Object.FindObjectsByType<UIDocument>(FindObjectsInactive.Include))
+        {
+            var ps = doc.panelSettings;
+            if (ps == null) continue;
+
+            if (!copyBaseScale.ContainsKey(ps))
+            {
+                if (Mathf.Approximately(k, 1f)) continue;
+                if (!scaledCopyOf.TryGetValue(ps, out var copy) || copy == null)
+                {
+                    copy = UnityEngine.Object.Instantiate(ps);
+                    copy.name = ps.name + " (sized)";
+                    scaledCopyOf[ps]    = copy;
+                    copyBaseScale[copy] = ps.scale;
+                }
+                doc.panelSettings = copy;
+                ps = copy;
+            }
+            ps.scale = copyBaseScale[ps] * k;
+        }
+    }
+
     /// <summary>Per-tool cursors (trimmer, watering can). Off = the system arrow everywhere.</summary>
     public static bool CustomCursors
     {
@@ -371,6 +427,7 @@ public static class GameSettings
 
         GameManager.quickWinter = QuickWinter;
         ApplyAudio();
+        ApplyUiScale();
     }
 
     // Remembers the authored wind strength so Reduced Motion can be switched back off without
@@ -401,8 +458,10 @@ public static class GameSettings
             K_DISPLAY_MODE, K_RES_W, K_RES_H, K_VSYNC, K_FPS_CAP, K_AA, K_QUALITY,
             K_VOL_MASTER, K_VOL_MUSIC, K_VOL_SFX, K_MUTE_MASTER,
             K_QUICK_WINTER, K_AUTOSAVE, K_DATE_FORMAT,
-            K_COLORBLIND, K_REDUCED_MOTION,
+            K_COLORBLIND, K_REDUCED_MOTION, K_CUSTOM_CURSORS, K_UI_SCALE, K_HIGH_CONTRAST,
         })
+            PlayerPrefs.DeleteKey(k);
+        foreach (var k in KeyBindings.PrefKeys())
             PlayerPrefs.DeleteKey(k);
 
         Save();

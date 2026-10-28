@@ -33,6 +33,11 @@ public class UiTheme
     public static UiTheme Current { get; private set; } = Forest();
     public static event Action OnThemeChanged;
 
+    // The equipped (shop) theme, and the accessibility override that beats it. Kept apart so
+    // turning High contrast off restores whatever theme the player had equipped.
+    static UiTheme equipped = Forest();
+    static bool    highContrast;
+
     static Dictionary<string, UiTheme> registry;
 
     public static IEnumerable<UiTheme> All { get { Ensure(); return registry.Values; } }
@@ -48,9 +53,43 @@ public class UiTheme
     public static void Apply(string id)
     {
         Ensure();
-        Current = (!string.IsNullOrEmpty(id) && registry.TryGetValue(id, out var t)) ? t : Forest();
+        equipped = (!string.IsNullOrEmpty(id) && registry.TryGetValue(id, out var t)) ? t : Forest();
+        Refresh();
+    }
+
+    /// <summary>Settings ▸ Accessibility ▸ High contrast. Overrides the equipped theme while on.</summary>
+    public static void SetHighContrast(bool on)
+    {
+        if (highContrast == on) return;
+        highContrast = on;
+        Refresh();
+    }
+
+    static void Refresh()
+    {
+        Current = highContrast ? HighContrast() : equipped;
         OnThemeChanged?.Invoke();
     }
+
+    /// <summary>
+    /// Black panels, white text, a saturated yellow accent and bright edges: every text/background
+    /// pair clears WCAG AAA (7:1). Not a shop theme, so it isn't in the registry.
+    /// </summary>
+    static UiTheme HighContrast() => new UiTheme
+    {
+        id = "highcontrast", displayName = "High contrast",
+        scrim    = new Color(0f, 0f, 0f, 0.85f),
+        panelBg  = new Color(0f, 0f, 0f),
+        cardBg   = new Color(0.10f, 0.10f, 0.10f),
+        cardSel  = new Color(0.25f, 0.25f, 0.25f),
+        accent   = new Color(1f, 0.85f, 0f),
+        edge     = new Color(1f, 1f, 1f),
+        textMain = new Color(1f, 1f, 1f),
+        textSub  = new Color(0.85f, 0.85f, 0.85f),
+        ink      = new Color(0f, 0f, 0f),
+        locked   = new Color(0.70f, 0.70f, 0.70f),
+        negative = new Color(1f, 0.55f, 0.45f),
+    };
 
     static void Ensure()
     {

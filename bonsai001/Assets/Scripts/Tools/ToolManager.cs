@@ -39,9 +39,9 @@ public class ToolManager : MonoBehaviour
             state == GameState.LoadMenu    || state == GameState.TreeDead      ||
             state == GameState.AirLayerSever) return;
 
-        if (Keyboard.current.dKey.wasPressedThisFrame) CycleNext();
-        if (Keyboard.current.aKey.wasPressedThisFrame) CyclePrev();
-        if (Keyboard.current.sKey.wasPressedThisFrame) ClearTool();
+        if (KeyBindings.Pressed(BindAction.NextTool))    CycleNext();
+        if (KeyBindings.Pressed(BindAction.PrevTool))    CyclePrev();
+        if (KeyBindings.Pressed(BindAction.PutToolAway)) ClearTool();
     }
 
     void CycleNext()

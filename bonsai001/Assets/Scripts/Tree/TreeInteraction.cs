@@ -1194,7 +1194,8 @@ public class TreeInteraction : MonoBehaviour
         wireAnimTimer += Time.deltaTime;
 
         bool done = wireAnimTimer >= WIRE_ANIM_DURATION
-                    || Keyboard.current.enterKey.wasPressedThisFrame;
+                    || KeyBindings.Pressed(BindAction.SkipAnimation)
+                    || GameSettings.ReducedMotion;   // reduced motion: the wire just snaps into place
 
         float t      = done ? 1f : Mathf.Clamp01(wireAnimTimer / WIRE_ANIM_DURATION);
         float spring = WireSpringCurve(t);

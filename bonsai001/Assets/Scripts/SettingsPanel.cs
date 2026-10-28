@@ -503,20 +503,73 @@ public class SettingsPanel
     void BuildControls(UiTheme th)
     {
         content.Add(Header("Controls", th));
-        content.Add(Note("Rebinding isn't available yet. These are the current controls.", th));
+        content.Add(Note("Click a key to change it, then press the new key. Esc cancels. Taking a " +
+                         "key another action uses swaps the two.", th));
 
+        foreach (var a in KeyBindings.All)
+            content.Add(RebindRow(a, th));
+
+        content.Add(Header("Fixed", th));
         AddBind("Left mouse",         "Use the selected tool", th);
         AddBind("Right mouse drag",   "Pull weeds", th);
         AddBind("Middle / left drag", "Orbit the camera", th);
         AddBind("Mouse wheel",        "Zoom", th);
-        AddBind("A / D",              "Previous / next tool", th);
-        AddBind("S",                  "Put the tool away", th);
-        AddBind("← / →",              "Slow down / speed up time", th);
-        AddBind("Ctrl+Z",             "Undo a trim (5 second window)", th);
         AddBind("Esc",                "Settings and pause, or back out of a menu", th);
 
         if (BonsaiDebug.Enabled)
             AddBind("F1", "Show the game-state readout (development builds only)", th);
+    }
+
+    /// <summary>
+    /// One rebindable action: its name, and a button showing the key. Clicking the button waits
+    /// for the next key press (polled each frame on the panel's scheduler, which runs after the
+    /// scripts' Update — so the Esc handlers have already seen <see cref="KeyBindings.Capturing"/>
+    /// and left Esc alone).
+    /// </summary>
+    VisualElement RebindRow(BindAction a, UiTheme th)
+    {
+        var row = Row(KeyBindings.Describe(a), th, out var slot);
+
+        var btn = new Button { text = KeyBindings.Display(a) };
+        btn.style.minWidth = 140;
+        btn.style.height   = 26;
+        btn.style.fontSize = 11;
+        btn.style.backgroundColor = new StyleColor(th.cardBg);
+        btn.style.color           = new StyleColor(th.accent);
+        btn.style.borderTopWidth = btn.style.borderBottomWidth =
+        btn.style.borderLeftWidth = btn.style.borderRightWidth = 0;
+        btn.style.borderTopLeftRadius = btn.style.borderTopRightRadius =
+        btn.style.borderBottomLeftRadius = btn.style.borderBottomRightRadius = 4;
+
+        IVisualElementScheduledItem poll = null;
+        void Stop()
+        {
+            poll?.Pause();
+            KeyBindings.Capturing = false;
+        }
+
+        btn.RegisterCallback<ClickEvent>(_ =>
+        {
+            if (KeyBindings.Capturing) return;   // one capture at a time
+            KeyBindings.Capturing = true;
+            btn.text = "Press a key…";
+            bool firstFrame = true;
+            poll = btn.schedule.Execute(() =>
+            {
+                if (firstFrame) { firstFrame = false; return; }   // skip the frame of the click
+                var key = KeyBindings.KeyPressedThisFrame();
+                if (key == UnityEngine.InputSystem.Key.None) return;
+
+                Stop();
+                if (key != UnityEngine.InputSystem.Key.Escape)
+                    KeyBindings.Set(a, key);
+                ShowTab(currentTab);   // a swap may have changed another row too
+            }).Every(0);
+        });
+        btn.RegisterCallback<DetachFromPanelEvent>(_ => { if (poll != null && poll.isActive) Stop(); });
+
+        slot.Add(btn);
+        return row;
     }
 
     void AddBind(string key, string what, UiTheme th)
@@ -558,13 +611,31 @@ public class SettingsPanel
                          "colour blindness — and those are the actions that change your tree most.", th));
 
         content.Add(Check("Reduced motion", GameSettings.ReducedMotion, v => GameSettings.ReducedMotion = v, th));
-        content.Add(Note("Stops the wind sway and the idle camera drift. Also helps frame rate.", th));
+        content.Add(Note("Stops the wind sway, the idle camera drift and the rain overlay; leaves drop " +
+                         "straight down, and wires snap into place without their spring. Also helps frame rate.", th));
+
+        var sizes = new List<string>();
+        int sizeIndex = 2;
+        for (int i = 0; i < GameSettings.UiScaleOptions.Length; i++)
+        {
+            sizes.Add($"{GameSettings.UiScaleOptions[i] * 100f:F0}%");
+            if (Mathf.Approximately(GameSettings.UiScaleOptions[i], GameSettings.UiScale)) sizeIndex = i;
+        }
+        content.Add(Dropdown("Interface size", sizes, sizeIndex,
+            i => GameSettings.UiScale = GameSettings.UiScaleOptions[i], th));
+        content.Add(Note("Scales every menu, panel and the in-game interface.", th));
+
+        content.Add(Check("High contrast", GameSettings.HighContrast, v =>
+        {
+            GameSettings.HighContrast = v;
+            content.schedule.Execute(() => { RebuildNav(); ShowTab(currentTab); });   // repaint in the new palette
+        }, th));
+        content.Add(Note("Black panels, white text and a bright accent, overriding the equipped UI theme.", th));
 
         content.Add(Check("Tool cursors", GameSettings.CustomCursors, v => GameSettings.CustomCursors = v, th));
         content.Add(Note("Shows the tool you're holding as the mouse cursor. Turn off for the " +
                          "standard arrow everywhere.", th));
 
-        content.Add(Note("Text size and a high-contrast mode are still to come.", th));
     }
 
     // ── Control builders ──────────────────────────────────────────────────────
