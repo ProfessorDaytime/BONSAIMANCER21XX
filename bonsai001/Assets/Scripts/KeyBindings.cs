@@ -7,6 +7,7 @@ using UnityEngine.InputSystem.Controls;
 public enum BindAction
 {
     PrevTool, NextTool, PutToolAway, SlowDown, SpeedUp, UndoTrim, CinematicCamera, SkipAnimation,
+    ResetCamera,
 }
 
 /// <summary>
@@ -36,6 +37,7 @@ public static class KeyBindings
         { BindAction.UndoTrim,        Key.Z          },
         { BindAction.CinematicCamera, Key.C          },
         { BindAction.SkipAnimation,   Key.Enter      },
+        { BindAction.ResetCamera,     Key.R          },
     };
 
     /// <summary>Keys a binding may never take: they already mean something fixed.</summary>
@@ -115,6 +117,7 @@ public static class KeyBindings
         BindAction.UndoTrim        => "Undo a trim (5 second window)",
         BindAction.CinematicCamera => "Cinematic camera on / off",
         BindAction.SkipAnimation   => "Skip the wire animation",
+        BindAction.ResetCamera     => "Reset the camera",
         _                          => a.ToString(),
     };
 

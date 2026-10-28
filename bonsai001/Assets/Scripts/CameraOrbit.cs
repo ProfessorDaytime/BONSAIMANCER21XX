@@ -153,12 +153,17 @@ public class CameraOrbit : MonoBehaviour
         if (startRadius > 0f) radius = startRadius;
         if (startPanY   != 0f) panY   = startPanY;
 
+        homeYaw = yaw; homePitch = pitch; homeRadius = radius; homePanY = panY;
+
         // Auto-find skeleton for cinematic auto-zoom if not assigned in Inspector.
         if (skeleton == null)
         {
             skeleton = FindAnyObjectByType<TreeSkeleton>();
             if (skeleton != null)
+            {
                 if (verboseLog) Debug.Log("[CameraOrbit] Auto-found TreeSkeleton for cinematic zoom.");
+            }
+                
             else
                 Debug.LogWarning("[CameraOrbit] No TreeSkeleton found — cinematic auto-zoom disabled. Drag it into the Inspector.");
         }
@@ -317,6 +322,8 @@ public class CameraOrbit : MonoBehaviour
         // Cinematic mode — C key toggles; runs independently of all other input
         if (KeyBindings.Pressed(BindAction.CinematicCamera))
             SetCinematicMode(!cinematicActive);
+        if (KeyBindings.Pressed(BindAction.ResetCamera))
+            ResetView();
 
         if (cinematicActive)
         {
@@ -477,6 +484,31 @@ public class CameraOrbit : MonoBehaviour
             ApplyOrbit();
             if (verboseLog) Debug.Log($"[CameraOrbit] Cinematic OFF — yaw={yaw:F1} pitch={pitch:F1}");
         }
+    }
+
+    // The view the scene opened with, for ResetView.
+    float homeYaw, homePitch, homeRadius, homePanY;
+
+    /// <summary>
+    /// The reset-camera button / key (2026-10-27): back to the angle the game opened with, framed
+    /// for the tree as it is now — a seedling and a 40-year tree need very different distances, so
+    /// the distance comes from the tree's current height, not the opening radius. Leaves cinematic
+    /// mode. Instant, so it works the same under Reduced Motion.
+    /// </summary>
+    public void ResetView()
+    {
+        if (target == null) return;
+        SetCinematicMode(false);
+        yaw   = homeYaw;
+        pitch = homePitch;
+
+        float h = 0f;
+        if (skeleton == null) skeleton = FindAnyObjectByType<TreeSkeleton>();
+        var bark = skeleton != null ? skeleton.GetComponent<MeshRenderer>() : null;
+        if (bark != null && bark.enabled) h = bark.bounds.max.y - target.position.y;
+
+        if (h > 0.05f) ResetViewForTree(h);
+        else { radius = homeRadius; panY = homePanY; ApplyOrbit(); }
     }
 
     /// <summary>

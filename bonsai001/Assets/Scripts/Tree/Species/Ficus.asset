@@ -12,6 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
   m_Name: Ficus
   m_EditorClassIdentifier:
+  stressLeafDrop: 2.0
+  evergreen: 1
   speciesName: Ficus
   scientificName: Ficus retusa
   baseGrowSpeed: 0.30

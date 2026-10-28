@@ -215,7 +215,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
         if (!isGrowing || root == null) return;
 
-        float rate = GameManager.SeasonalGrowthRate;
+        float rate = GameManager.SeasonalGrowthRate * (WeatherManager.Instance?.ShelterLightMult ?? 1f);
         if (rate <= 0f) return;
 
         // Tick down branch activation delays regardless of rate (calendar time, not growth rate)
@@ -236,6 +236,7 @@ public partial class TreeSkeleton : MonoBehaviour
         if (weather != null) soilDrainMult *= weather.DryingMultiplier;
         soilMoisture = Mathf.Max(0f, soilMoisture - drainRatePerDay * soilDrainMult * inGameDays * rate);
         weather?.ApplyRain(this, inGameDays * rate);
+        potSoil?.DailyTick(soilMoisture, inGameDays * rate);
         if (soilMoisture < droughtThreshold)
         {
             if (autoWaterEnabled)

@@ -501,6 +501,7 @@ public class TreeInteraction : MonoBehaviour
         if (skeleton.root == null)
         {
             SetHighlight(null, HighlightMode.None);
+            if (GameManager.canWater) HandlePlantingWater();
             return;
         }
 
@@ -573,7 +574,10 @@ public class TreeInteraction : MonoBehaviour
         else if (GameManager.canJin)
             HandleJinHover();
         else
+        {
             SetHighlight(null, HighlightMode.None);
+            HandleInspect();
+        }
     }
 
     // ── Root work (RootPrune mode) ────────────────────────────────────────────
@@ -837,20 +841,45 @@ public class TreeInteraction : MonoBehaviour
 
     // ── Watering can ────────────────────────────────────────────────────────────
 
+    // Pouring (2026-10-28): a click is a sip, holding keeps pouring, so the player decides how
+    // wet the pot gets. Real seconds, not game time, so it feels the same at any speed.
+    const float PourSip  = 0.08f;   // moisture from a single click
+    const float PourRate = 0.45f;   // moisture per real second while held (empty → full ≈ 2 s)
+    bool  pouring;
+    float pourAnimTimer, pourStartMoisture;
+
+    void EndPour()
+    {
+        if (!pouring) return;
+        pouring = false;
+        Debug.Log($"[Water] Poured {pourStartMoisture:F2} → {skeleton.soilMoisture:F2} | " +
+                  $"year={GameManager.year} month={GameManager.month}");
+    }
+
     /// <summary>
     /// The watering can (R4, 2026-10-27): click the soil to water. Water poured over the canopy
     /// still reaches the soil, but every branch whose leaves sit between the can and the soil gets
     /// soaked, which raises its fungal risk (<see cref="TreeSkeleton.WetFoliage"/>). A click that
-    /// misses both the soil and the tree does nothing.
+    /// misses both the soil and the tree does nothing. Holding the button keeps pouring.
     /// </summary>
     void HandleWaterHover()
     {
         SetHighlight(null, HighlightMode.None);
-        if (!Mouse.current.leftButton.wasPressedThisFrame || CursorManager.PointerOverUI()) return;
 
         var s = GameManager.Instance.state;
-        if (s != GameState.Idle     && s != GameState.BranchGrow && s != GameState.TimeGo &&
-            s != GameState.LeafGrow && s != GameState.LeafFall) return;
+        bool canPour = s == GameState.Idle     || s == GameState.BranchGrow || s == GameState.TimeGo ||
+                       s == GameState.LeafGrow || s == GameState.LeafFall;
+
+        if (pouring)
+        {
+            if (!canPour || !Mouse.current.leftButton.isPressed) { EndPour(); return; }
+            skeleton.AddWater(PourRate * Time.unscaledDeltaTime);
+            pourAnimTimer += Time.unscaledDeltaTime;
+            if (pourAnimTimer >= 0.45f) { pourAnimTimer = 0f; CursorManager.PlayUse(); }
+            return;
+        }
+
+        if (!canPour || !Mouse.current.leftButton.wasPressedThisFrame || CursorManager.PointerOverUI()) return;
 
         Ray   ray      = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
         var   pot      = skeleton.GetComponent<PotSoil>();
@@ -872,13 +901,73 @@ public class TreeInteraction : MonoBehaviour
 
         AudioManager.Instance?.PlaySFX("Water");
         CursorManager.PlayUse();
-        skeleton.Water();   // over the leaves or not, the water ends up in the pot
+        pouring           = true;
+        pourAnimTimer     = 0f;
+        pourStartMoisture = skeleton.soilMoisture;
+        skeleton.AddWater(PourSip);   // over the leaves or not, the water ends up in the pot
 
         if (soaked.Count > 0)
         {
             skeleton.WetFoliage(soaked);
             FindAnyObjectByType<ButtonClicker>()?.ShowFoliageWateringTip();
         }
+    }
+
+    // ── Inspect (no tool) ───────────────────────────────────────────────────────
+
+    // A click (press and release without dragging) with no tool on a leaf or branch shows what is
+    // wrong with that branch (2026-10-28). Press/release rather than press, so orbiting the camera
+    // doesn't pop a card.
+    Vector2 inspectPressPos;
+    bool    inspectPressed;
+    LeafManager inspectLeaves;
+    ButtonClicker inspectUi;
+
+    void HandleInspect()
+    {
+        var mouse = Mouse.current;
+        if (mouse.leftButton.wasPressedThisFrame && !CursorManager.PointerOverUI())
+        {
+            inspectPressed  = true;
+            inspectPressPos = mouse.position.ReadValue();
+            return;
+        }
+        if (!inspectPressed || !mouse.leftButton.wasReleasedThisFrame) return;
+        inspectPressed = false;
+        Vector2 pos = mouse.position.ReadValue();
+        if ((pos - inspectPressPos).sqrMagnitude > 36f) return;   // a drag, not a click
+
+        if (inspectLeaves == null) inspectLeaves = skeleton.GetComponent<LeafManager>();
+        if (inspectUi == null) inspectUi = FindAnyObjectByType<ButtonClicker>();
+        if (inspectLeaves == null || inspectUi == null) return;
+
+        Ray ray = cam.ScreenPointToRay(pos);
+        TreeNode node = null;
+        float best = float.MaxValue;
+        foreach (var leaf in GetComponentsInChildren<Leaf>())
+        {
+            if (leaf.ownerNode == null) continue;
+            var r = leaf.GetComponentInChildren<Renderer>();
+            if (r != null && r.bounds.IntersectRay(ray, out float d) && d < best) { best = d; node = leaf.ownerNode; }
+        }
+        if (node == null) node = PickNode(ray, out _, n => !n.isRoot && !n.isTrimmed);
+
+        inspectUi.ShowInspectCard(node != null ? inspectLeaves.Diagnose(node) : null, pos);
+    }
+
+    /// <summary>Before there is a tree: the first can-on-soil click waters the seed in.</summary>
+    void HandlePlantingWater()
+    {
+        if (!GameManager.AwaitingPlanting) return;
+        if (!Mouse.current.leftButton.wasPressedThisFrame || CursorManager.PointerOverUI()) return;
+
+        var pot = skeleton.GetComponent<PotSoil>();
+        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        if (pot == null || !pot.RaycastSoil(ray, out _)) return;
+
+        AudioManager.Instance?.PlaySFX("Water");
+        CursorManager.PlayUse();
+        GameManager.Instance.PlantSeed();
     }
 
     // ── Jin (strip a branch to deadwood) ──────────────────────────────────────

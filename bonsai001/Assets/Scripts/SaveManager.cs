@@ -155,6 +155,7 @@ public class SaveData
     public int   day;
     public float hour;
     public int   waterings;
+    public bool  sheltered;          // WeatherManager.Sheltered — false in old saves
 
     // TreeSkeleton live state
     public float treeEnergy;
@@ -192,6 +193,7 @@ public class SaveData
 
     // Save identity (written by SaveSlot; blank on old saves)
     public string saveName;
+    public string treeName;     // the tree's own name, separate from the slot name (2026-10-27; blank on old saves)
     public int    treeOrigin;   // TreeOrigin cast to int
     public string speciesName;
     public string saveTimestamp;
@@ -219,6 +221,7 @@ public class SaveMeta
 
     public string slotId;
     public string saveName;
+    public string treeName;     // see SaveData.treeName
     public int    treeOrigin;   // TreeOrigin cast to int
     public string speciesName;
     public int    year;
@@ -236,6 +239,9 @@ public static class SaveManager
 {
     /// <summary>Fired after any successful save. Payload is a short display string, e.g. "Autosaved" or "Saved".</summary>
     public static event System.Action<string> OnSaved;
+
+    /// <summary>Raised after a save has been loaded into the tree.</summary>
+    public static event System.Action OnLoaded;
 
     // ── Schema version ──────────────────────────────────────────────────────────
 
@@ -485,6 +491,7 @@ public static class SaveManager
         data.treeOrigin    = meta.treeOrigin;
         data.speciesName   = meta.speciesName;
         data.saveTimestamp = meta.saveTimestamp;
+        meta.treeName      = skeleton.treeName;   // every save path funnels through here
 
         // Stamp both files here — the one place every save path funnels through. Re-saving a
         // slot loaded from an older format upgrades it on disk, since the loader already
@@ -693,8 +700,11 @@ public static class SaveManager
         skeleton.LoadFromSaveData(data, leafManager);
         skeleton.treeOrigin = (TreeOrigin)data.treeOrigin;
 
+        WeatherManager.Sheltered = data.sheltered;
+
         ActiveSlotId = slotId;
         Debug.Log($"[Save] Loaded slot={slotId} nodes={data.nodes.Count} year={data.year}");
+        OnLoaded?.Invoke();
         return true;
     }
 
@@ -770,7 +780,9 @@ public static class SaveManager
 
         skeleton.LoadFromSaveData(data, leafManager);
         skeleton.treeOrigin = (TreeOrigin)data.treeOrigin;
+        WeatherManager.Sheltered = data.sheltered;
         Debug.Log($"[Save] Original tree restored: {data.nodes.Count} nodes");
+        OnLoaded?.Invoke();
         return true;
     }
 
@@ -809,6 +821,7 @@ public static class SaveManager
             day       = GameManager.day,
             hour      = GameManager.hour,
             waterings = GameManager.waterings,
+            sheltered = WeatherManager.Sheltered,
 
             treeEnergy             = skeleton.treeEnergy,
             soilMoisture           = skeleton.soilMoisture,
@@ -836,6 +849,7 @@ public static class SaveManager
             startMonth      = skeleton.SaveStartMonth,
             lastGrownYear   = skeleton.SaveLastGrownYear,
             isIshitsukiMode = skeleton.isIshitsukiMode,
+            treeName        = skeleton.treeName,
 
             careLog = CareLog.Snapshot(),
 

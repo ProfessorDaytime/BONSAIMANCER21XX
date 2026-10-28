@@ -144,6 +144,13 @@ public partial class TreeSkeleton : MonoBehaviour
     /// <summary>How this tree came into existence. Preserved across saves.</summary>
     public TreeOrigin treeOrigin = TreeOrigin.Seedling;
 
+    [Tooltip("The player's name for this tree (blank = unnamed). Separate from the save slot's " +
+             "name: the slot is a file, this is the tree. Shown on the HUD and the save cards.")]
+    public string treeName = "";
+
+    /// <summary>The tree's name, or null when it hasn't been given one.</summary>
+    public string DisplayName => string.IsNullOrWhiteSpace(treeName) ? null : treeName.Trim();
+
     // Inspector
 
     [Header("Growth Speed")]
@@ -356,6 +363,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
     [Tooltip("Moisture level below which drought stress begins accumulating (0→1).")]
     [SerializeField] [Range(0f, 1f)] float droughtThreshold = 0.3f;
+    public float DroughtThreshold => droughtThreshold;
 
     [Tooltip("Health lost per in-game day spent below the drought threshold. " +
              "Applies to all branch nodes at the start of the next growing season.")]
@@ -881,11 +889,20 @@ public partial class TreeSkeleton : MonoBehaviour
     public int   SaveStartMonth    { get => startMonth;     set => startMonth     = value; }
     public int   SaveLastGrownYear { get => lastGrownYear;  set => lastGrownYear  = value; }
 
-    /// <summary>Fill soil moisture to 1.0. Called by the watering can button.</summary>
+    /// <summary>A full soak: soil moisture to 1.0. Used by auto-water, calendar rules and Quick
+    /// Start — a thorough watering, the way a grower waters on a schedule.</summary>
     public void Water()
     {
         soilMoisture = 1f;
         Debug.Log($"[Water] Watered | moisture restored to 1.0 | year={GameManager.year} month={GameManager.month}");
+    }
+
+    /// <summary>Adds some water, capped at 1.0. The hand-held can pours with this, so the player
+    /// chooses how much: a click is a sip, holding pours more (2026-10-28).</summary>
+    public void AddWater(float amount)
+    {
+        if (amount <= 0f) return;
+        soilMoisture = Mathf.Min(1f, soilMoisture + amount);
     }
 
     /// <summary>
@@ -1004,6 +1021,7 @@ public partial class TreeSkeleton : MonoBehaviour
         lastGrownYear          = data.lastGrownYear;
         isIshitsukiMode        = data.isIshitsukiMode;
         treeOrigin             = (TreeOrigin)data.treeOrigin;
+        treeName               = data.treeName ?? "";
         plantingNormal         = new Vector3(data.planNX, data.planNY, data.planNZ);
         plantingSurfacePoint   = new Vector3(data.planPX, data.planPY, data.planPZ);
         // Migrate saves that stored plantingSurfacePoint at world origin (0,0,0) while

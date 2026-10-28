@@ -8,7 +8,8 @@ using UnityEngine;
 /// Derived properties (waterRetention, drainageRate, aerationScore, nutrientCapacity)
 /// are computed from the mix and applied to the tree's growth and health systems.
 ///
-/// Live state (degradation, saturation) updates each growing season via SeasonTick().
+/// Live state: saturation updates daily via DailyTick(); degradation and root rot each growing
+/// season via SeasonTick().
 /// Repot() resets degradation and applies temporary root stress.
 ///
 /// Requires TreeSkeleton on the same GameObject.
@@ -901,6 +902,37 @@ public class PotSoil : MonoBehaviour
         GL.PopMatrix();
     }
 
+    // Season-long waterlogging exposure for root rot: Σ(severity × days) and Σ(days). Not saved —
+    // a load mid-season falls back to the current saturation at the next SeasonTick.
+    float rotExposure, rotExposureDays;
+
+    /// <summary>
+    /// Day-by-day waterlogging (2026-10-28). Saturation used to move only at the spring SeasonTick
+    /// (+ from one moisture snapshot, −0.10 otherwise) while rain raised it daily, so a rainy spell
+    /// pinned it at 100% for a year and nothing the player did could bring it down short of a
+    /// repot. Now: soil kept soaking wet in a poorly-draining mix builds saturation slowly; soil
+    /// allowed to dry drains it, faster in a free-draining mix — so "let it dry out between
+    /// waterings" is a real, visible fix within a couple of in-game weeks.
+    /// </summary>
+    public void DailyTick(float soilMoisture, float inGameDays)
+    {
+        if (inGameDays <= 0f) return;
+        float drain = EffectiveDrainageRate;
+
+        if (soilMoisture > 0.85f && drain < 0.45f)
+            saturationLevel = Mathf.Min(1f, saturationLevel + (0.45f - drain) * 0.02f * inGameDays);
+        else
+        {
+            // Drier soil drains the pot faster: barely at 85%, fully by 50% (above most species'
+            // drought lines, so the fix for waterlogging never pushes the tree into drought).
+            float dryness = Mathf.InverseLerp(0.85f, 0.5f, soilMoisture);
+            saturationLevel = Mathf.Max(0f, saturationLevel - (0.03f + 0.12f * drain) * dryness * inGameDays);
+        }
+
+        rotExposure     += Mathf.Clamp01((saturationLevel - 0.5f) * 2f) * inGameDays;
+        rotExposureDays += inGameDays;
+    }
+
     /// <summary>
     /// Called once per growing season from TreeSkeleton.StartNewGrowingSeason.
     /// Updates degradation, waterlogging, root rot, and species mismatch penalties.
@@ -918,23 +950,17 @@ public class PotSoil : MonoBehaviour
             degradeThisSeason *= 0.5f;
         soilDegradation = Mathf.Min(1f, soilDegradation + degradeThisSeason * (1f - soilDegradation));
 
-        // Waterlogging — builds when drainage is poor and soil stayed wet
-        float effectiveDrain = EffectiveDrainageRate;
-        if (skeleton.soilMoisture > 0.85f && effectiveDrain < 0.45f)
-        {
-            float satRate = (0.45f - effectiveDrain) * 0.5f;
-            saturationLevel = Mathf.Min(1f, saturationLevel + satRate);
-        }
-        else
-        {
-            // Drain saturation when conditions improve
-            saturationLevel = Mathf.Max(0f, saturationLevel - 0.10f);
-        }
+        // Waterlogging itself is now tracked daily (DailyTick). Root rot is charged on the season's
+        // AVERAGE waterlogging, not on whatever saturation happens to be on the day spring arrives.
+        float rotLevel = rotExposureDays > 0f
+            ? rotExposure / rotExposureDays
+            : Mathf.Clamp01((saturationLevel - 0.5f) * 2f);
+        rotExposure = rotExposureDays = 0f;
 
         // Root rot damage from sustained waterlogging
-        if (saturationLevel > 0.5f)
+        if (rotLevel > 0f)
         {
-            float rotDmg = rootRotDamagePerSeason * (saturationLevel - 0.5f) * 2f;
+            float rotDmg = rootRotDamagePerSeason * rotLevel;
             int rotCount = 0;
             foreach (var node in skeleton.allNodes)
             {

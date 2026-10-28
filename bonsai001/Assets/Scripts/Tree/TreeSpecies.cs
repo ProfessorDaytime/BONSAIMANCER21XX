@@ -267,6 +267,11 @@ public class TreeSpecies : ScriptableObject
              "FALSE for deciduous conifers (dawn redwood, swamp cypress, larch) and all broadleaf.")]
     public bool evergreen = false;
 
+    [Tooltip("How readily this species drops leaves under stress (drought, waterlogging, hunger, a " +
+             "failing branch). 1 = typical broadleaf. Ficus is notorious for dropping at the " +
+             "slightest upset (~2); evergreen conifers brown their needles but hold them (~0.25).")]
+    [Range(0f, 3f)] public float stressLeafDrop = 1f;
+
     [Tooltip("Needles per tuft for needle foliage. One tuft mesh is built per tree and shared by " +
              "every branch tip, so this is the per-tip needle density (ignored for BroadLeaf).")]
     [Range(4, 40)] public int needlesPerTuft = 14;

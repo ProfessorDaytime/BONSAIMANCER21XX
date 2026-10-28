@@ -137,6 +137,8 @@ public partial class TreeSkeleton
         if (!windLoadEnabled || wind == null || wind.strength <= 0f) return 0f;
 
         speed = wind.strength * stormWindSpeed * Mathf.Lerp(0.35f, 1f, wind.GustLevel);
+        var weather = WeatherManager.Instance;
+        if (WeatherManager.Sheltered && weather != null) speed *= weather.shelterWindFactor;
 
         // Frontal area in m². World units → cm (×19.28) → m (÷100).
         float unitToM = Mathf.Pow(PotSoil.WorldToCm3, 1f / 3f) * 0.01f;

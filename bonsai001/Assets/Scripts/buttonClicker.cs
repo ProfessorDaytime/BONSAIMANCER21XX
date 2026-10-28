@@ -481,6 +481,8 @@ public class ButtonClicker : MonoBehaviour
         calSpeedResetButton = root.Q("CalSpeedResetButton") as Button;
 
         calendarButton?.RegisterCallback<ClickEvent>(_ => OpenCalendar());
+        SetupResetCameraButton(root);
+        SetupForecastAndShelter(root);
         calCloseButton?.RegisterCallback<ClickEvent>(_ => CloseCalendar());
         calPrevMonth?.RegisterCallback<ClickEvent>(_ => { calViewMonth--; if (calViewMonth < 1) { calViewMonth = 12; calViewYear--; } BuildCalendarGrid(); });
         calNextMonth?.RegisterCallback<ClickEvent>(_ => { calViewMonth++; if (calViewMonth > 12) { calViewMonth = 1; calViewYear++; } BuildCalendarGrid(); });
@@ -569,6 +571,7 @@ public class ButtonClicker : MonoBehaviour
 
         undoLabel            = root.Q("UndoLabel")          as Label;
         moistureBarFill      = root.Q("MoistureBarFill");
+        BuildMoistureMarkers();
         fertilizeButton      = root.Q("FertilizeButton")    as Button;
         nutrientBarFill      = root.Q("NutrientBarFill");
         herbicideButton      = root.Q("HerbicideButton")    as Button;
@@ -937,6 +940,9 @@ public class ButtonClicker : MonoBehaviour
         GameManager.OnMonthChanged       += OnMonthChanged;
         if (skeleton != null) skeleton.OnWireSetGold += OnWireSetGold;
         WeedManager.OnFirstWeedSpawned   += OnFirstWeedSpawned;
+        LeafManager.OnStressNoticed      += OnLeafStressNoticed;
+        LeafManager.OnRecovered          += OnTreeRecovered;
+        SaveManager.OnLoaded             += ResetStressTips;
         SaveManager.OnSaved              += ShowSaveToast;
         ProgressionManager.OnToolUnlocked += OnToolUnlockedRefresh;
         UiTheme.OnThemeChanged           += RefreshThemeAll;
@@ -994,6 +1000,9 @@ public class ButtonClicker : MonoBehaviour
         GameManager.OnMonthChanged       -= OnMonthChanged;
         if (skeleton != null) skeleton.OnWireSetGold -= OnWireSetGold;
         WeedManager.OnFirstWeedSpawned   -= OnFirstWeedSpawned;
+        LeafManager.OnStressNoticed      -= OnLeafStressNoticed;
+        LeafManager.OnRecovered          -= OnTreeRecovered;
+        SaveManager.OnLoaded             -= ResetStressTips;
         SaveManager.OnSaved              -= ShowSaveToast;
         ProgressionManager.OnToolUnlocked -= OnToolUnlockedRefresh;
         UiTheme.OnThemeChanged           -= RefreshThemeAll;
@@ -1043,6 +1052,27 @@ public class ButtonClicker : MonoBehaviour
                 TogglePauseMenu();
         }
 
+        // Inspect card fade
+        if (inspectCard != null && inspectCardEndTime > 0f)
+        {
+            float t = inspectCardEndTime - Time.realtimeSinceStartup;
+            if (t <= 0f) { inspectCard.style.display = DisplayStyle.None; inspectCardEndTime = 0f; }
+            else if (t < TOAST_FADE) inspectCard.style.opacity = new StyleFloat(t / TOAST_FADE);
+        }
+
+        // Care warning fade
+        if (careWarningLabel != null && careWarningEndTime > 0f)
+        {
+            float t = careWarningEndTime - Time.realtimeSinceStartup;
+            if (t <= 0f)
+            {
+                careWarningLabel.style.display = DisplayStyle.None;
+                careWarningEndTime = 0f;
+            }
+            else if (t < TOAST_FADE)
+                careWarningLabel.style.opacity = new StyleFloat(t / TOAST_FADE);
+        }
+
         // Save toast fade
         if (saveToastLabel != null && saveToastFadeEndTime > 0f)
         {
@@ -1074,14 +1104,30 @@ public class ButtonClicker : MonoBehaviour
 
         if (skeleton != null && moistureBarFill != null)
         {
-            float m = Mathf.Clamp01(skeleton.soilMoisture);
+            float m   = Mathf.Clamp01(skeleton.soilMoisture);
+            float thr = skeleton.DroughtThreshold;
             moistureBarFill.style.width = new StyleLength(new Length(m * 100f, LengthUnit.Percent));
-            // Blue when wet, amber when low, red when dry
-            Color barCol = m > 0.5f
-                ? Color.Lerp(new Color(0.9f, 0.55f, 0.1f), new Color(0.31f, 0.63f, 1f), (m - 0.5f) * 2f)
-                : Color.Lerp(new Color(0.75f, 0.1f, 0.1f), new Color(0.9f, 0.55f, 0.1f), m * 2f);
+            // Coloured against THIS species' drought line (the white tick): red below it, amber
+            // close above it, blue when comfortably watered.
+            Color barCol = m < thr          ? new Color(0.80f, 0.15f, 0.12f)
+                         : m < thr + 0.15f  ? new Color(0.90f, 0.55f, 0.10f)
+                         :                    new Color(0.31f, 0.63f, 1f);
             moistureBarFill.style.backgroundColor = new StyleColor(barCol);
+            if (droughtTick != null)
+                droughtTick.style.left = new StyleLength(new Length(thr * 100f, LengthUnit.Percent));
+
+            var ps = skeleton.GetComponent<PotSoil>();
+            float sat = ps != null ? ps.saturationLevel : 0f;
+            if (saturationFill != null)
+            {
+                saturationFill.style.width = new StyleLength(new Length(sat * 100f, LengthUnit.Percent));
+                // Purple deepens past 50%, where roots start to suffer.
+                saturationFill.style.backgroundColor = new StyleColor(sat > 0.5f
+                    ? new Color(0.62f, 0.25f, 0.85f) : new Color(0.45f, 0.40f, 0.70f));
+            }
         }
+
+        UpdateForecastLabel();
 
         // Nutrient bar: 0–2 maps to 0–100%; green → amber → red as reserves drop, orange-red when over-fertilized
         if (skeleton != null && nutrientBarFill != null)
@@ -1391,6 +1437,8 @@ public class ButtonClicker : MonoBehaviour
     void SetHideableButtonsVisible(bool visible)
     {
         var ds = visible ? DisplayStyle.Flex : DisplayStyle.None;
+        toolsVisibleForForecast = visible;
+        nextForecastRefresh = 0f;
         void Set(VisualElement e) { if (e != null) e.style.display = ds; }
 
         // Left-column tool buttons
@@ -1406,6 +1454,7 @@ public class ButtonClicker : MonoBehaviour
 
         // Moisture and nutrient bars sit beside their buttons — hide together
         var mbar = moistureBarFill?.parent; if (mbar != null) mbar.style.display = ds;
+        if (saturationFill?.parent != null) saturationFill.parent.style.display = ds;
         if (nutrientBarFill != null)
         {
             var nbar = nutrientBarFill.parent;
@@ -2136,6 +2185,251 @@ public class ButtonClicker : MonoBehaviour
         ShowToast(msg, UiTheme.Current.negative, TOAST_ERROR_HOLD, wrap: true);
     }
 
+    Label careWarningLabel;
+    float careWarningEndTime;
+    const float CARE_WARNING_HOLD = 7f;
+
+    /// <summary>
+    /// A care warning ("the soil is waterlogged") in a banner under the AP bar. Deliberately not
+    /// the save toast: that is a 13px line at the bottom centre, underneath the date, and a
+    /// warning there went unseen (play-test 2026-10-28).
+    /// </summary>
+    void ShowCareWarning(string message, bool good = false)
+    {
+        if (careWarningLabel == null)
+        {
+            var root = buttonDocument != null ? buttonDocument.rootVisualElement : null;
+            if (root == null) return;
+            careWarningLabel = new Label { name = "CareWarningLabel", pickingMode = PickingMode.Ignore };
+            var st = careWarningLabel.style;
+            st.position = Position.Absolute;
+            st.top = 96;   // below the forecast line
+            st.left = new Length(50, LengthUnit.Percent);
+            st.translate = new Translate(new Length(-50, LengthUnit.Percent), 0);
+            st.maxWidth = 560;
+            st.fontSize = 16;
+            st.unityTextAlign = TextAnchor.MiddleCenter;
+            st.whiteSpace = WhiteSpace.Normal;
+            st.paddingTop = st.paddingBottom = 8;
+            st.paddingLeft = st.paddingRight = 16;
+            st.borderTopLeftRadius = st.borderTopRightRadius =
+            st.borderBottomLeftRadius = st.borderBottomRightRadius = 8;
+            st.borderTopWidth = st.borderBottomWidth = st.borderLeftWidth = st.borderRightWidth = 1;
+            st.display = DisplayStyle.None;
+            root.Add(careWarningLabel);
+        }
+
+        var th = UiTheme.Current;
+        var s2 = careWarningLabel.style;
+        s2.backgroundColor = new StyleColor(new Color(th.panelBg.r, th.panelBg.g, th.panelBg.b, 0.92f));
+        s2.color           = new StyleColor(th.textMain);
+        s2.borderTopColor  = s2.borderBottomColor = s2.borderLeftColor = s2.borderRightColor =
+            new StyleColor(good ? th.accent : th.negative);
+        careWarningLabel.text = message;
+        careWarningLabel.style.display = DisplayStyle.Flex;
+        careWarningLabel.style.opacity = new StyleFloat(1f);
+        careWarningLabel.BringToFront();
+        careWarningEndTime = Time.realtimeSinceStartup + CARE_WARNING_HOLD + TOAST_FADE;
+    }
+
+    /// <summary>The tree came through a stress the player was warned about.</summary>
+    void OnTreeRecovered()
+    {
+        ProgressionManager.Instance?.Award(RecoveryAward, "Nursed the tree back to health");
+        ShowCareWarning("Your tree has recovered. Bare tips will push fresh leaves if it's still summer.", good: true);
+    }
+    const int RecoveryAward = 15;
+
+    /// <summary>
+    /// The leaf-stress explanations come back with every tree, new or loaded: they explain what
+    /// THIS tree's leaves are doing, not a control to learn once (play-test 2026-10-28). The other
+    /// tips stay once-per-install.
+    /// </summary>
+    void ResetStressTips()
+    {
+        if (shownTooltips != null && shownTooltips.RemoveWhere(id => id.StartsWith("stress_")) > 0)
+            SaveShownTooltips();
+    }
+
+    // ── Moisture bar markers (2026-10-28) ────────────────────────────────────
+
+    VisualElement droughtTick, saturationFill;
+
+    /// <summary>
+    /// The species' drought line as a tick on the moisture bar, and a thin waterlogging bar under
+    /// it. Before, saturation was only in the repot panel and the bar said nothing about where
+    /// THIS species starts to suffer, so a watering rule could be set below the drought line
+    /// without the player being able to tell.
+    /// </summary>
+    void BuildMoistureMarkers()
+    {
+        var bar = moistureBarFill?.parent;
+        if (bar == null || bar.parent == null) return;
+
+        droughtTick = new VisualElement { name = "DroughtTick", pickingMode = PickingMode.Ignore };
+        droughtTick.style.position = Position.Absolute;
+        droughtTick.style.top      = -2;
+        droughtTick.style.width    = 2;
+        droughtTick.style.height   = 9;
+        droughtTick.style.marginLeft = -1;
+        droughtTick.style.backgroundColor = new StyleColor(new Color(1f, 1f, 1f, 0.9f));
+        bar.Add(droughtTick);
+
+        var satBg = new VisualElement { name = "SaturationBarBg", pickingMode = PickingMode.Ignore };
+        satBg.style.width      = 122;
+        satBg.style.height     = 3;
+        satBg.style.marginLeft = 4;
+        satBg.style.marginTop  = 2;
+        satBg.style.backgroundColor = new StyleColor(new Color(20f / 255f, 20f / 255f, 20f / 255f, 0.85f));
+        satBg.style.borderTopLeftRadius = satBg.style.borderTopRightRadius =
+        satBg.style.borderBottomLeftRadius = satBg.style.borderBottomRightRadius = 2;
+        saturationFill = new VisualElement { name = "SaturationBarFill", pickingMode = PickingMode.Ignore };
+        saturationFill.style.height = new StyleLength(new Length(100, LengthUnit.Percent));
+        saturationFill.style.width  = 0;
+        saturationFill.style.borderTopLeftRadius = saturationFill.style.borderTopRightRadius =
+        saturationFill.style.borderBottomLeftRadius = saturationFill.style.borderBottomRightRadius = 2;
+        satBg.Add(saturationFill);
+        bar.parent.Insert(bar.parent.IndexOf(bar) + 1, satBg);
+    }
+
+    // ── Forecast + shelter (2026-10-28) ──────────────────────────────────────
+
+    Label  forecastLabel;
+    Button shelterButton;
+    float  nextForecastRefresh;
+
+    void SetupForecastAndShelter(VisualElement root)
+    {
+        forecastLabel = new Label { name = "ForecastLabel", pickingMode = PickingMode.Ignore };
+        var fs = forecastLabel.style;
+        fs.position  = Position.Absolute;
+        fs.top       = 64;
+        fs.left      = new Length(50, LengthUnit.Percent);
+        fs.translate = new Translate(new Length(-50, LengthUnit.Percent), 0);
+        fs.fontSize  = 13;
+        fs.unityTextAlign = TextAnchor.MiddleCenter;
+        fs.paddingTop = fs.paddingBottom = 2;
+        fs.paddingLeft = fs.paddingRight = 10;
+        fs.borderTopLeftRadius = fs.borderTopRightRadius =
+        fs.borderBottomLeftRadius = fs.borderBottomRightRadius = 6;
+        root.Add(forecastLabel);
+
+        if (calendarButton == null || calendarButton.parent == null) return;
+        shelterButton = new Button(ToggleShelter) { name = "ShelterButton", text = "Shelter" };
+        var b = shelterButton.style;
+        b.position = Position.Absolute;
+        b.right    = 10;
+        b.bottom   = 210;
+        b.width    = 48;
+        b.height   = 32;
+        b.fontSize = 10;
+        b.paddingLeft = b.paddingRight = 0;
+        b.borderTopWidth = b.borderBottomWidth = b.borderLeftWidth = b.borderRightWidth = 1;
+        b.borderTopLeftRadius = b.borderTopRightRadius =
+        b.borderBottomLeftRadius = b.borderBottomRightRadius = 4;
+        calendarButton.parent.Add(shelterButton);
+        RefreshShelterButton();
+    }
+
+    void ToggleShelter()
+    {
+        WeatherManager.Sheltered = !WeatherManager.Sheltered;
+        Debug.Log($"[Weather] Sheltered={WeatherManager.Sheltered} | year={GameManager.year} month={GameManager.month}");
+        RefreshShelterButton();
+        nextForecastRefresh = 0f;
+        MaybeShowTooltip("shelter", "Shelter",
+            "The tree is now under cover. Rain can't reach the pot, and wind and sun dry it more slowly and can't push it over as easily.\n\n" +
+            "The cost is light: a sheltered tree grows more slowly. Move it under cover for a storm or a wet spell when the soil is already soaked, then bring it back out.");
+    }
+
+    void RefreshShelterButton()
+    {
+        if (shelterButton == null) return;
+        bool on = WeatherManager.Sheltered;
+        var b = shelterButton.style;
+        b.backgroundColor = new StyleColor(on ? new Color(0.20f, 0.32f, 0.45f, 0.95f)
+                                              : new Color(20f / 255f, 20f / 255f, 20f / 255f, 0.85f));
+        b.color = new StyleColor(on ? Color.white : new Color(229f / 255f, 162f / 255f, 16f / 255f));
+        b.borderTopColor = b.borderBottomColor = b.borderLeftColor = b.borderRightColor =
+            new StyleColor(on ? new Color(0.45f, 0.65f, 0.85f) : new Color(80f / 255f, 80f / 255f, 80f / 255f));
+        shelterButton.text = on ? "Covered" : "Shelter";
+    }
+
+    void UpdateForecastLabel()
+    {
+        if (forecastLabel == null || Time.unscaledTime < nextForecastRefresh) return;
+        nextForecastRefresh = Time.unscaledTime + 0.5f;
+
+        var wm = WeatherManager.Instance;
+        bool show = wm != null && skeleton != null && skeleton.root != null && toolsVisibleForForecast;
+        forecastLabel.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+        if (shelterButton != null) shelterButton.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+        if (!show) return;
+
+        var days = wm.Forecast(3);
+        string now = WeatherManager.Sheltered ? "Under cover" : WeatherManager.Describe(wm.state);
+        forecastLabel.text = $"{now}   ·   Next 3 days: {WeatherManager.Describe(days[0])}, " +
+                             $"{WeatherManager.Describe(days[1])}, {WeatherManager.Describe(days[2])}";
+        var th = UiTheme.Current;
+        forecastLabel.style.color = new StyleColor(th.textMain);
+        forecastLabel.style.backgroundColor = new StyleColor(new Color(th.panelBg.r, th.panelBg.g, th.panelBg.b, 0.7f));
+        RefreshShelterButton();
+    }
+
+    bool toolsVisibleForForecast = true;
+
+    // ── Inspect card (2026-10-28) ────────────────────────────────────────────
+
+    Label inspectCard;
+    float inspectCardEndTime;
+    const float INSPECT_CARD_HOLD = 8f;
+
+    /// <summary>Shows what is wrong with a clicked branch next to the pointer; null hides it.</summary>
+    public void ShowInspectCard(string text, Vector2 screenPos)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            if (inspectCard != null) inspectCard.style.display = DisplayStyle.None;
+            inspectCardEndTime = 0f;
+            return;
+        }
+
+        var root = buttonDocument != null ? buttonDocument.rootVisualElement : null;
+        if (root == null || root.panel == null) return;
+        if (inspectCard == null)
+        {
+            inspectCard = new Label { name = "InspectCard", pickingMode = PickingMode.Ignore };
+            var st = inspectCard.style;
+            st.position = Position.Absolute;
+            st.maxWidth = 380;
+            st.fontSize = 16;
+            st.whiteSpace = WhiteSpace.Normal;
+            st.paddingTop = st.paddingBottom = 8;
+            st.paddingLeft = st.paddingRight = 12;
+            st.borderTopLeftRadius = st.borderTopRightRadius =
+            st.borderBottomLeftRadius = st.borderBottomRightRadius = 6;
+            st.borderTopWidth = st.borderBottomWidth = st.borderLeftWidth = st.borderRightWidth = 1;
+            root.Add(inspectCard);
+        }
+
+        var th = UiTheme.Current;
+        var s2 = inspectCard.style;
+        s2.backgroundColor = new StyleColor(new Color(th.panelBg.r, th.panelBg.g, th.panelBg.b, 0.94f));
+        s2.color = new StyleColor(th.textMain);
+        s2.borderTopColor = s2.borderBottomColor = s2.borderLeftColor = s2.borderRightColor = new StyleColor(th.edge);
+        inspectCard.text = text;
+
+        // Screen (bottom-up) → panel (top-down), the same mapping CursorManager uses.
+        Vector2 p = RuntimePanelUtils.ScreenToPanel(root.panel, new Vector2(screenPos.x, Screen.height - screenPos.y));
+        Rect area = root.worldBound;
+        s2.left = Mathf.Clamp(p.x + 18f, 4f, Mathf.Max(4f, area.width  - 390f));
+        s2.top  = Mathf.Clamp(p.y + 18f, 4f, Mathf.Max(4f, area.height - 170f));
+        s2.display = DisplayStyle.Flex;
+        s2.opacity = new StyleFloat(1f);
+        inspectCard.BringToFront();
+        inspectCardEndTime = Time.realtimeSinceStartup + INSPECT_CARD_HOLD + TOAST_FADE;
+    }
+
     /// <summary>Paints the shared toast label. Both callers set every property they care about,
     /// since they share one label and must not inherit the other's colour or wrapping.</summary>
     void ShowToast(string message, Color color, float hold, bool wrap)
@@ -2691,6 +2985,8 @@ public class ButtonClicker : MonoBehaviour
             e.style.marginBottom = 6;
             game.Add(e);
         }
+        game.Add(TreeNameField(th));
+
         Move(saveButton);
         Move(loadButton);
         Move(root.Q("BrowseSavesButton"));
@@ -2796,6 +3092,65 @@ public class ButtonClicker : MonoBehaviour
     /// After a species is chosen: open Settings on Play Modes, with START in the footer and the
     /// Quick Start section at the top. Nothing is planted until START.
     /// </summary>
+    /// <summary>
+    /// Reset-camera button (2026-10-27), stacked above the calendar button in the right-hand
+    /// column (pause 10 / ◉ 50 / speed 90 / calendar 130 / this 170) and styled to match it.
+    /// Same as the Reset camera key (R by default).
+    /// </summary>
+    void SetupResetCameraButton(VisualElement root)
+    {
+        if (calendarButton == null || calendarButton.parent == null) return;
+        var b = new Button(() => FindAnyObjectByType<CameraOrbit>()?.ResetView()) { name = "ResetCameraButton", text = "🎥" };
+        b.style.position = Position.Absolute;
+        b.style.right    = 10;
+        b.style.bottom   = 170;
+        b.style.width    = 48;
+        b.style.height   = 32;
+        b.style.fontSize = 16;
+        b.style.backgroundColor = new StyleColor(new Color(20f / 255f, 20f / 255f, 20f / 255f, 0.85f));
+        b.style.color           = new StyleColor(new Color(229f / 255f, 162f / 255f, 16f / 255f));
+        b.style.borderTopColor = b.style.borderBottomColor =
+        b.style.borderLeftColor = b.style.borderRightColor = new StyleColor(new Color(80f / 255f, 80f / 255f, 80f / 255f));
+        b.style.borderTopWidth = b.style.borderBottomWidth = b.style.borderLeftWidth = b.style.borderRightWidth = 1;
+        b.style.borderTopLeftRadius = b.style.borderTopRightRadius =
+        b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 4;
+        calendarButton.parent.Add(b);
+    }
+
+    VisualElement preStartNameField;
+
+    /// <summary>
+    /// "Tree name" text field (2026-10-27): edits <c>TreeSkeleton.treeName</c> live and refreshes
+    /// the HUD date line. Saved with the tree on the next save. Used in Settings ▸ Game and on the
+    /// new-game screen.
+    /// </summary>
+    VisualElement TreeNameField(UiTheme th)
+    {
+        var box = new VisualElement();
+        box.style.marginBottom = 14;
+
+        var label = new Label { text = "TREE NAME" };
+        label.style.fontSize = 10;
+        label.style.color    = new StyleColor(th.textSub);
+        label.style.unityFontStyleAndWeight = FontStyle.Bold;
+        label.style.marginBottom = 3;
+        box.Add(label);
+
+        var field = new TextField { maxLength = 32, value = skeleton != null ? skeleton.treeName : "" };
+        field.textEdition.placeholder = "Unnamed — give your tree a name";
+        field.RegisterValueChangedCallback(e =>
+        {
+            if (skeleton == null) return;
+            skeleton.treeName = e.newValue;
+            GameManager.Instance?.TextCallFunction();
+        });
+        // Refresh from the tree each time the field is shown, so a loaded save's name appears.
+        field.RegisterCallback<AttachToPanelEvent>(_ =>
+            field.SetValueWithoutNotify(skeleton != null ? skeleton.treeName : ""));
+        box.Add(field);
+        return box;
+    }
+
     void BeginPreStart()
     {
         if (speciesSelectOverlay != null) speciesSelectOverlay.style.display = DisplayStyle.None;
@@ -2806,14 +3161,27 @@ public class ButtonClicker : MonoBehaviour
         var modes = settingsPanel.AdoptedElement("modes");
         if (qsSection != null && modes != null) modes.Insert(0, qsSection);
 
+        // A new tree starts unnamed; name it here or later in Settings ▸ Game.
+        if (skeleton != null) skeleton.treeName = "";
+        // Show the new tree's pot from the start, not the last game's until the first watering.
+        if (skeleton != null && skeleton.root == null) skeleton.ResetPotForNewTree();
+
+        ResetStressTips();
+        WeatherManager.Sheltered = false;
+        preStartNameField?.RemoveFromHierarchy();
+        preStartNameField = TreeNameField(UiTheme.Current);
+        if (modes != null) modes.Insert(0, preStartNameField);
+
         settingsPanel.Open(SettingsPanel.Context.PreStart, "modes");
     }
 
     void OnPreStartConfirm()
     {
-        // The Quick Start section only exists before the game starts.
+        // The Quick Start section and the name field only exist before the game starts.
         qsSection?.RemoveFromHierarchy();
         qsSection = null;
+        preStartNameField?.RemoveFromHierarchy();
+        preStartNameField = null;
         settingsPanel.SetVisible(false);
 
         var qsm = QuickStartManager.Instance;
@@ -2826,8 +3194,9 @@ public class ButtonClicker : MonoBehaviour
 
         string speciesName = selectedSpecies?.speciesName ?? "your tree";
         GameManager.Instance.ShowTooltip(
-            $"Your {speciesName} is planted.",
-            "Use the tool buttons on the left to water, trim, and train your tree as the seasons pass.\n\n" +
+            $"Plant your {speciesName}",
+            "Your seed is in the pot. Pick up the watering can (left) and click the soil to water it in. That first watering starts it growing.\n\n" +
+            "After that, use the tool buttons on the left to water, trim, and train your tree as the seasons pass.\n\n" +
             "Time auto-slows in January — your pruning window. Use ▶▶/▶ in the corner to control speed.\n\n" +
             "Press the ◉ button to hide the tools or view health stats.");
     }
@@ -3156,28 +3525,21 @@ public class ButtonClicker : MonoBehaviour
     public void OnWaterButtonClick(ClickEvent evt){
         AudioManager.Instance.PlaySFX("Water");
 
-        if (GameManager.Instance.state == GameState.Idle && GameManager.waterings == -1)
-        {
-            // First time: plant & start growing
-            GameManager.Instance.UpdateGameState(GameState.Water);
-            GameManager.Instance.UpdateGameState(GameState.BranchGrow);
-            GameManager.waterings++;
-            Debug.Log("The tree has been watered");
-            return;
-        }
-
-        // After planting, the button picks up the watering can (R4, 2026-10-27): the player waters
-        // by clicking the soil. Pressing it again puts the can down.
+        // The button picks up the watering can (R4, 2026-10-27): the player waters by clicking the
+        // soil. Pressing it again puts the can down. The very first watering of a new game is no
+        // exception — it plants the seed, but only when the can reaches the soil
+        // (TreeInteraction → GameManager.PlantSeed; play-test 2026-10-28).
         if (ToolManager.Instance.ActiveTool == ToolType.WateringCan)
         {
             ToolManager.Instance.ClearTool();
             return;
         }
         ToolManager.Instance.SelectTool(ToolType.WateringCan);
+        if (GameManager.AwaitingPlanting) return;   // the planting tip already said what to do
         MaybeShowTooltip("water",
             "Watering",
-            "Click the soil to water. Aim for the soil, not the leaves: water poured over the foliage still reaches the pot, but leaves that stay wet invite fungus.\n\n" +
-            "Keep soil moisture in the healthy range (shown on the moisture bar). Too dry and the tree stresses; too wet and roots rot.\n\n" +
+            "Click the soil for a sip, or hold to keep pouring. Aim for the soil, not the leaves: water poured over the foliage still reaches the pot, but leaves that stay wet invite fungus.\n\n" +
+            "The blue bar under the can is soil moisture. The white mark on it is where this species starts to suffer from drought. The thin purple bar beneath is waterlogging: if it grows, let the soil dry out.\n\n" +
             "Tip: water less in winter when the tree is dormant — cold wet soil encourages root rot.");
     }
 
@@ -3188,6 +3550,37 @@ public class ButtonClicker : MonoBehaviour
             "Wet Leaves",
             "That water went over the leaves before it reached the soil. The tree still got its drink, but foliage that stays wet is where fungus takes hold — soak the same branches often and they'll be at risk of infection.\n\n" +
             "Aim below the canopy, at the soil around the trunk.");
+    }
+
+    /// <summary>
+    /// The leaves are visibly reacting to a tree-wide problem. The first time for each cause, a
+    /// tooltip explains what it is and how to fix it; after that a short toast names it, so a
+    /// player watching leaves drop always knows why and what to do (play-test 2026-10-28).
+    /// </summary>
+    void OnLeafStressNoticed(LeafManager.StressCause cause)
+    {
+        switch (cause)
+        {
+            case LeafManager.StressCause.Waterlog:
+                if (MaybeShowTooltip("stress_waterlog", "Waterlogged Soil",
+                    "The leaves are yellowing because the roots are sitting in water. Rain on an already-wet pot, or watering before the soil has dried, keeps the pot saturated, and roots that can't breathe start to rot.\n\n" +
+                    "To fix it: stop watering and let the soil dry out to about half (50%) before watering again. The yellowing eases within a couple of weeks.\n\n" +
+                    "If it keeps happening, the soil doesn't drain well enough: repot into a free-draining mix (more pumice or lava rock). The pot's saturation is shown in the repot panel.")) return;
+                ShowCareWarning("Leaves yellowing: the soil is waterlogged. Let it dry out before watering again.");
+                break;
+            case LeafManager.StressCause.Drought:
+                if (MaybeShowTooltip("stress_drought", "Drought Stress",
+                    "The leaves are turning tan and crisp because the soil is too dry. Water the soil now. Leaves that dropped come back once the tree has had about ten good days, as long as it's before September.\n\n" +
+                    "To stay ahead of it, add a watering rule in the Calendar that waters when moisture falls below a set level.")) return;
+                ShowCareWarning("Leaves browning: the soil is too dry. Water it.");
+                break;
+            case LeafManager.StressCause.Hunger:
+                if (MaybeShowTooltip("stress_hunger", "Hungry Tree",
+                    "The leaves are going pale and washed-out because the soil has run low on nutrients. Each spring's growth uses them up.\n\n" +
+                    "Fertilize, and the colour comes back over a few weeks. A fertilizer schedule in the Calendar keeps it from happening again.")) return;
+                ShowCareWarning("Leaves going pale: the tree is short of nutrients. Fertilize.");
+                break;
+        }
     }
 
     void OnFirstWeedSpawned()

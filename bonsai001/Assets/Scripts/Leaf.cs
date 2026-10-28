@@ -212,6 +212,10 @@ public class Leaf : MonoBehaviour
             }
         }
 
+        // Colour repaints are throttled to visible steps (2026-10-27). They used to run every frame
+        // for every leaf through spring grow-in and all of autumn — ~2,000 property-block uploads
+        // a frame on a mature tree for a colour that moves a fraction of a percent per frame.
+
         // Grow-in over in-game days (skip once falling so the fall keeps the correct scale)
         if (!isFalling && growProgress < 1f)
         {
@@ -219,18 +223,26 @@ public class Leaf : MonoBehaviour
             growProgress      = Mathf.Min(1f, growProgress + elapsedDays / Mathf.Max(1f, growDays));
             float s = Mathf.Lerp(GROW_START_FRACTION, 1f, Mathf.SmoothStep(0f, 1f, growProgress));
             transform.localScale = targetScale * s;
-            UpdateLeafColor();   // young pale green darkens to the species color as it grows
+            if (growProgress >= 1f || growProgress - paintedGrow >= ColorStep)
+            {
+                paintedGrow = growProgress;
+                UpdateLeafColor();   // young pale green darkens to the species color as it grows
+            }
         }
 
-        // Autumn colour progression
-        if (isInFallSeason)
+        // Autumn colour progression. A falling leaf keeps the colour it dropped with.
+        if (isInFallSeason && !isFalling)
         {
             float inGameDays  = Time.deltaTime * GameManager.TIMESCALE / 24f;
             fallColorProgress = Mathf.Min(1f, fallColorProgress + inGameDays * fallColorSpeed / FALL_COLOR_DAYS);
-            UpdateLeafColor();
+            if (fallColorProgress >= 1f || fallColorProgress - paintedFall >= ColorStep)
+            {
+                paintedFall = fallColorProgress;
+                UpdateLeafColor();
+            }
 
             // Fully browned — force fall regardless of LeafManager's roll
-            if (fallColorProgress >= 1f && !isFalling)
+            if (fallColorProgress >= 1f)
                 StartFalling();
         }
 
@@ -248,11 +260,42 @@ public class Leaf : MonoBehaviour
         // autumns otherwise pile up as live GameObjects during the fast-grow).
         float fallLifetime = (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating)
             ? 0.05f : 5f;
-        if (fallTimer > fallLifetime)
+        // Also gone once it has dropped well below where it let go — by then it's under the table
+        // and out of shot, and there's no point animating it for the rest of the 5 seconds.
+        if (fallTimer > fallLifetime || transform.position.y < despawnY)
             Destroy(gameObject);
     }
 
+    const float ColorStep = 0.01f;   // repaint when progress has moved this much (100 steps per ramp)
+    float paintedGrow = -1f, paintedFall = -1f;
+    float despawnY    = float.NegativeInfinity;
+
+    static readonly int IdColor     = Shader.PropertyToID("_Color");
+    static readonly int IdBaseColor = Shader.PropertyToID("_BaseColor");
+
     // ── Colour ────────────────────────────────────────────────────────────────
+
+    // Stress symptom, driven by LeafManager.UpdateStressSymptoms: the colour of the dominant
+    // cause (drought, waterlogging, hunger, a failing branch) and how far this leaf has gone toward
+    // it. Moves gradually in in-game days, both ways, so a fixed problem fades rather than snapping.
+    Color stressColor;
+    float stressAmount;
+    public float StressAmount => stressAmount;
+
+    public void TickStress(float target, Color causeColor, float onsetStep, float recoverStep)
+    {
+        float before = stressAmount;
+        if (target > stressAmount)
+        {
+            stressColor  = stressAmount < 0.02f ? causeColor : Color.Lerp(stressColor, causeColor, Mathf.Clamp01(onsetStep * 4f));
+            stressAmount = Mathf.Min(target, stressAmount + onsetStep);
+        }
+        else
+        {
+            stressAmount = Mathf.Max(target, stressAmount - recoverStep);
+        }
+        if (Mathf.Abs(stressAmount - before) > 0.002f) UpdateLeafColor();
+    }
 
     static readonly Color FungalSicklyColor = new Color(0.68f, 0.72f, 0.18f); // sickly yellow-green
 
@@ -277,13 +320,14 @@ public class Leaf : MonoBehaviour
             Color spring = Color.Lerp(Color.Lerp(springColor, youngTint, 0.65f), springColor,
                                       Mathf.SmoothStep(0f, 1f, growProgress));
             color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
+            if (stressAmount > 0f) color = Color.Lerp(color, stressColor, stressAmount);
         }
 
         color *= tint;   // per-instance variety (white = no-op)
 
         leafRenderer.GetPropertyBlock(propBlock);
-        propBlock.SetColor("_Color", color);      // Standard / Unlit shaders
-        propBlock.SetColor("_BaseColor", color);  // URP shaders
+        propBlock.SetColor(IdColor, color);       // Standard / Unlit shaders
+        propBlock.SetColor(IdBaseColor, color);   // URP shaders
         leafRenderer.SetPropertyBlock(propBlock);
     }
 
@@ -365,6 +409,7 @@ public class Leaf : MonoBehaviour
         isInFallSeason    = true;
         fallColorSpeed    = speed;
         fallColorProgress = 0f;
+        paintedFall       = 0f;
         UpdateLeafColor();
     }
 
@@ -385,6 +430,7 @@ public class Leaf : MonoBehaviour
         }
 
         transform.SetParent(null, worldPositionStays: true);
+        despawnY = transform.position.y - 3f;
         driftVelocity = new Vector3(
             Random.Range(-0.3f, 0.3f),
             Random.Range(-0.2f, 0f),

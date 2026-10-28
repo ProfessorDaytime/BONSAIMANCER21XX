@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public enum WeatherState { Clear, Overcast, Rain, Storm, Heat }
@@ -74,6 +75,8 @@ public class WeatherManager : MonoBehaviour
                 WeatherState.Storm    => 0.4f,
                 _                     => 1f,
             };
+            // Under cover: shaded and out of the wind.
+            if (Sheltered) return Mathf.Min(m, 0.7f);
             // Wind pulls moisture out regardless of sky — additive on top of the sky term.
             var wind = WindManager.Instance;
             if (wind != null) m *= Mathf.Lerp(1f, windDryMultiplier, wind.strength);
@@ -83,15 +86,84 @@ public class WeatherManager : MonoBehaviour
 
     public bool IsRaining => state == WeatherState.Rain || state == WeatherState.Storm;
 
+    [Header("Shelter")]
+    [Tooltip("Growth rate while sheltered: under cover the tree gets less light.")]
+    [Range(0f, 1f)] public float shelterLightFactor = 0.6f;
+
+    [Tooltip("Wind load on the tipping balance while sheltered.")]
+    [Range(0f, 1f)] public float shelterWindFactor = 0.3f;
+
+    /// <summary>
+    /// The tree has been moved under cover (2026-10-28): no rain reaches the pot, the wind and
+    /// sun dry it less and push on it less, but it grows more slowly for the lost light. The
+    /// player's answer to a forecast storm on an already-wet pot. Saved with the tree.
+    /// </summary>
+    public static bool Sheltered;
+
+    /// <summary>Growth multiplier for the shelter's lost light.</summary>
+    public float ShelterLightMult => Sheltered ? shelterLightFactor : 1f;
+
     float spellDaysLeft;
     int   lastDay = -1;
+
+    // Spells already rolled, so the coming days can be forecast (2026-10-28). The current spell
+    // is `state` / `spellDaysLeft`; when it ends the next one is taken from here.
+    readonly List<(WeatherState state, float days)> upcoming = new List<(WeatherState, float)>();
+    const int ForecastDays = 3;
 
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(this); return; }
         Instance = this;
+        Sheltered = false;   // a static outlives the scene
         spellDaysLeft = averageSpellDays;
     }
+
+    void TopUpForecast()
+    {
+        while (upcoming.Count < ForecastDays)
+            upcoming.Add((RollWeather(GameManager.month),
+                          Mathf.Max(1f, averageSpellDays * Random.Range(0.5f, 1.6f))));
+    }
+
+    /// <summary>
+    /// The weather for each of the next <paramref name="days"/> in-game days (tomorrow first),
+    /// read from the spells already rolled, so the forecast is what will actually happen.
+    /// </summary>
+    public WeatherState[] Forecast(int days)
+    {
+        TopUpForecast();
+        var result = new WeatherState[days];
+        WeatherState cur = state;
+        float left = spellDaysLeft;
+        int   next = 0;
+        for (int i = 0; i < days; i++)
+        {
+            if (!forceWeather)
+            {
+                left -= 1f;
+                if (left <= 0f && next < upcoming.Count)
+                {
+                    cur  = upcoming[next].state;
+                    left = upcoming[next].days;
+                    next++;
+                }
+            }
+            result[i] = cur;
+        }
+        return result;
+    }
+
+    /// <summary>Player-facing name of a weather state.</summary>
+    public static string Describe(WeatherState s) => s switch
+    {
+        WeatherState.Clear    => "Sunny",
+        WeatherState.Overcast => "Cloudy",
+        WeatherState.Rain     => "Rain",
+        WeatherState.Storm    => "Storm",
+        WeatherState.Heat     => "Hot",
+        _                     => s.ToString(),
+    };
 
     void OnDestroy() { if (Instance == this) Instance = null; }
 
@@ -111,8 +183,10 @@ public class WeatherManager : MonoBehaviour
         spellDaysLeft -= 1f;
         if (spellDaysLeft > 0f) return;
 
-        state = RollWeather(GameManager.month);
-        spellDaysLeft = Mathf.Max(1f, averageSpellDays * Random.Range(0.5f, 1.6f));
+        TopUpForecast();
+        (state, spellDaysLeft) = upcoming[0];
+        upcoming.RemoveAt(0);
+        TopUpForecast();
         Debug.Log($"[Weather] → {state} for ~{spellDaysLeft:F0}d | month={GameManager.month} " +
                   $"wind→{WindFor(state):F2}");
     }
@@ -146,7 +220,7 @@ public class WeatherManager : MonoBehaviour
     /// rides the same fixed-step clock as the moisture drain it opposes.</summary>
     public void ApplyRain(TreeSkeleton tree, float inGameDays)
     {
-        if (!IsRaining || tree == null || inGameDays <= 0f) return;
+        if (!IsRaining || Sheltered || tree == null || inGameDays <= 0f) return;
 
         float amount = rainMoisturePerDay * inGameDays * (state == WeatherState.Storm ? 1.5f : 1f);
         tree.soilMoisture = Mathf.Min(1f, tree.soilMoisture + amount);

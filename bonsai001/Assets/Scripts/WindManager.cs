@@ -61,11 +61,19 @@ public class WindManager : MonoBehaviour
     public static float   CanonReachIn   { get; private set; } = 0.35f;
     public static float   CanonReachSpan { get; private set; } = 1.2f;
 
+    /// <summary>
+    /// Multiplier on the VISIBLE sway only (bark, leaves, wires), set each frame by the tree's
+    /// LeafManager: a bare sprout that hasn't leafed out yet has almost nothing for the wind to
+    /// catch (play-test 2026-10-28). <see cref="strength"/> itself is untouched, so weather,
+    /// drying and the tipping load still see the real wind.
+    /// </summary>
+    public static float SwayScale = 1f;
+
     static readonly int IdWindA     = Shader.PropertyToID("_TreeWindA");
     static readonly int IdWindB     = Shader.PropertyToID("_TreeWindB");
     static readonly int IdReachSpan = Shader.PropertyToID("_TreeWindReachSpan");
 
-    void Awake()    => Instance = this;
+    void Awake()    { Instance = this; SwayScale = 1f; }   // a static outlives the scene
     void OnDestroy() { if (Instance == this) Instance = null; }
 
     void OnDisable()
@@ -88,14 +96,15 @@ public class WindManager : MonoBehaviour
 
         CanonDir       = dir;
         CanonGustEnv   = Mathf.PerlinNoise(t * gustFrequency, 0.5f);
-        CanonStrength  = strength;
+        float sway     = strength * SwayScale;
+        CanonStrength  = sway;
         CanonTime      = t;
         CanonAmpMax    = branchSwayMax;
         CanonHeightRef = swayHeightRef;
         CanonReachIn   = swayReachInner;
         CanonReachSpan = swayReachSpan;
 
-        Shader.SetGlobalVector(IdWindA, new Vector4(dir.x, dir.z, CanonGustEnv, strength));
+        Shader.SetGlobalVector(IdWindA, new Vector4(dir.x, dir.z, CanonGustEnv, sway));
         Shader.SetGlobalVector(IdWindB, new Vector4(t, branchSwayMax, swayHeightRef, swayReachInner));
         Shader.SetGlobalFloat (IdReachSpan, swayReachSpan);
     }

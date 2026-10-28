@@ -2130,6 +2130,11 @@ Future features not yet scheduled. Expand to read the spec.
 - **Art style consistency pass.** Across bark, leaves, pot meshes, UI, the cyberpunk cityscape
   backgrounds and the pixel-art sprites. Worth doing before R6 screenshots, since inconsistency is
   most visible in a capsule image.
+- 🟡 **First pass 2026-10-27 (compile-checked):** `Leaf` colour repaints throttled to 1% progress steps
+  (grow-in and autumn — were every frame for every leaf, ~2k property-block uploads/frame), no repaint
+  while falling, cached shader property IDs, and falling leaves despawn 3 units below release instead
+  of living the full 5 s. **Not done:** per-leaf MaterialPropertyBlocks still break SRP batching (one
+  draw call per leaf) — the real fix is an instanced leaf shader with per-instance colour.
 - **Falling leaves must not cost frame rate.** `LeafManager` already has the lever: pooled cluster
   meshes per tip instead of per-leaf prefab copies (the comment notes ~2,500 unbatchable objects on a
   mature maple without it). This is the same perf work R5's "performance floor" item needs.
@@ -2175,6 +2180,48 @@ useful but too short."* **This must not be true of Bonsaimancer.**
   **whole year**. It should **defer** the roll (re-check once the grace period lapses) rather than
   skip it. Days-since-planting is derivable from `SaveData.startYear` / `startMonth` and
   `skeleton.SaveStartYear`.
+- 🟡 **Built 2026-10-27 (compile-checked; not yet play-tested)** — `LeafManager.UpdateStressSymptoms`
+  drives a per-leaf stress colour (`Leaf.TickStress`) four times a second on in-game time. Causes and
+  signatures: **drought** (soil below the species' drought threshold) → crisp tan; **waterlogging /
+  root rot** (`PotSoil.saturationLevel` > 0.5) → yellow; **hunger** (`nutrientReserve` < 0.3) → pale
+  chlorosis; **failing branch** (node health < 0.6 — catches drought damage, rot, repot stress,
+  wounds) → brown on that branch only; fungus keeps its existing tint. Worst cause wins; onset
+  0.12/day, recovery 0.04/day. Past 0.55 stress leaves drop out of season at
+  `stressDropPerDay × species.stressLeafDrop` — new species field, tuned per asset (ficus 2.0, willow
+  1.5, birch 1.4, maple 1.2 … pines/spruce 0.25, juniper 0.2: conifers brown but hold). No stress drop
+  during Quick Start. **First play-test fixes (2026-10-28):** (1) a stress-dropped tip was re-leafed
+  at once by `SpawnSpringLeaves` (it re-leafs any bare terminal all season), so leaves dropped and
+  regrew endlessly — stress-bared tips stay bare (`stressBare`); (2) the waterlogging symptom is
+  scaled by current moisture; (3) a weekly `[LeafStress]` log line (dev builds) names the cause.
+  **Second play-test fixes (2026-10-28):** the `[LeafStress]` lines showed the real culprit —
+  `WeatherManager.ApplyRain` raised `saturationLevel` every rainy day on a full pot, but it only
+  came DOWN at the spring `SeasonTick` (−0.10, or + from a single moisture snapshot), so one wet
+  spring pinned it at 100% for a year and the leaves died all summer however the player watered.
+  (1) New `PotSoil.DailyTick` (from the grow tick, after rain): soaking-wet soil in a poor mix
+  builds saturation slowly; drying soil drains it at `(0.03 + 0.12 × effective drainage) /day`,
+  full rate by 50% moisture — kept above most species' drought lines (maple's is 40%). The
+  spring snapshot is gone; root rot now charges the season's **average** waterlogging. (2) Second
+  flush: after 10 calm in-game days, up to the end of August, stress-bared tips re-leaf.
+  (3) Player feedback: `LeafManager.OnStressNoticed` → one-time tooltip per cause (Waterlogged
+  Soil / Drought Stress / Hungry Tree) explaining cause and fix, then a short toast at most every
+  20 in-game days. **Third play-test (2026-10-28):** tips, free-draining repot advice and
+  drought → water → recovery all confirmed working. Fixed: stress kept ticking while the clock was
+  stopped (under the tip itself), because it integrated `Time.deltaTime × TIMESCALE` directly —
+  new `GameManager.ClockRunning` gates it. **Care improvements (2026-10-28, compile-checked):**
+  moisture bar gets a drought-line tick + a saturation bar under it, coloured against the
+  species' line; the can pours (click = 0.08 sip, hold = 0.45/s real time, `TreeSkeleton.AddWater`)
+  while rules/auto/Quick Start keep the full soak (`Water()`); `WeatherManager` pre-rolls spells
+  into a queue so `Forecast(3)` is what will actually happen, shown under the AP bar;
+  `WeatherManager.Sheltered` (saved, `SaveData.sheltered`) blocks rain, caps drying at 0.7, cuts
+  tipping wind to 30% and sway to 35%, and costs light (growth ×0.6); no-tool click on a leaf or
+  branch → `LeafManager.Diagnose` card; `LeafManager.OnRecovered` after 10 calm days following a
+  warning → gold banner + 15 AP, and the second flush now also refills thinned tips
+  (`stressThinned`). Stress tips reset on new game and on load (`SaveManager.OnLoaded`).
+  Also from the opening play-test: pot reset at new-game setup (`ResetPotForNewTree`), first
+  watering = can on soil (`GameManager.PlantSeed`), seed buried at −0.2, two Medium days then
+  Slow, sprout sway ×0.1 until first leaves (`WindManager.SwayScale`), long rake root starts at
+  the trunk base and fits the pot, care warnings in their own banner (were under the date). Noticed: Ficus.asset has no
+  `evergreen` flag, so the game treats ficus as deciduous — real ficus is evergreen. Not changed.
 - ⭐ **Leaves should fall for different reasons, and differ by species.** Right now leaf fall is
   **autumn-only**: `LeafManager` drops leaves stochastically at `baseFallChancePerDay` while the game
   is in `GameState.LeafFall`, and otherwise only sheds the leaves of nodes that are already
@@ -2205,6 +2252,11 @@ useful but too short."* **This must not be true of Bonsaimancer.**
 
 ### Player expression & identity
 
+- 🟡 **Built 2026-10-27 (compile-checked):** `TreeSkeleton.treeName` (separate from the slot name),
+  saved in `SaveData.treeName` + `SaveMeta.treeName` (additive, blank on old saves — no schema bump).
+  Set on the new-game Play Modes screen or in Settings ▸ Game; shown on the HUD date line and the save
+  cards. **Also built:** reset-camera button (🎥, above 📅) + rebindable key (R) → `CameraOrbit.ResetView`:
+  opening angle, framed to the tree's current height.
 - **Let players name their tree whatever they want.** Partly present: `SaveMeta.saveName` and the
   save-name prompt exist, but that names the *save slot*. The ask is a tree **identity** — shown
   in-game, on the stats screen, in the save card, and presumably on a finished/displayed tree. Worth

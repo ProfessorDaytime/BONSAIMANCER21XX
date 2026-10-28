@@ -44,6 +44,16 @@ public class LeafManager : MonoBehaviour
     [Tooltip("Probability per leaf per in-game day of falling during LeafFall state.")]
     [SerializeField] float baseFallChancePerDay = 0.15f;
 
+    [Header("Stress symptoms")]
+    [Tooltip("Per in-game day, how far a leaf's colour moves toward its stress colour while the cause lasts.")]
+    [SerializeField] float stressOnsetPerDay = 0.12f;
+    [Tooltip("Per in-game day, how fast the stress colour fades once the cause is fixed.")]
+    [SerializeField] float stressRecoveryPerDay = 0.04f;
+    [Tooltip("Stress level beyond which a leaf may drop out of season.")]
+    [SerializeField] [Range(0f, 1f)] float stressDropThreshold = 0.55f;
+    [Tooltip("Chance per in-game day that a fully stressed leaf drops, before the species' stressLeafDrop multiplier.")]
+    [SerializeField] float stressDropPerDay = 0.10f;
+
     // ── References ────────────────────────────────────────────────────────────
 
     TreeSkeleton skeleton;
@@ -251,6 +261,8 @@ public class LeafManager : MonoBehaviour
         if (state == GameState.BranchGrow && GameManager.year > lastSpringYear)
         {
             lastSpringYear = GameManager.year;
+            stressBare.Clear();   // tips bared by stress leaf out again with everything else
+            stressThinned.Clear();
             defoliationFactor = Mathf.Max(0f, defoliationFactor - 0.2f);  // decays ~1 full defoliation per 5 seasons
             ComputeSeasonLeafScale();
             CleanupOrphanedLeaves();
@@ -316,6 +328,9 @@ public class LeafManager : MonoBehaviour
             nextLodCheckTime = Time.unscaledTime + 0.25f;
             UpdateNeedleLod();
         }
+
+        UpdateStressSymptoms();
+        UpdateSproutSway();
 
         if (isLeafFall && !IsEvergreen)
         {
@@ -501,6 +516,7 @@ public class LeafManager : MonoBehaviour
             if (node.isRoot)               continue;  // roots never get leaves
             if (node.depth < minLeafDepth) continue;
             if (nodeLeaves.ContainsKey(node.id)) continue;  // already has leaves
+            if (stressBare.Contains(node.id))    continue;  // dropped its leaves to stress this year
 
             // Bud gate: old-wood nodes only get leaves if they set a bud last autumn.
             // Nodes born this spring (birthYear == current year) get leaves immediately
@@ -1016,6 +1032,7 @@ public class LeafManager : MonoBehaviour
     /// needle assets so a species change rebuilds them.</summary>
     public void ResetForNewTree()
     {
+        everLeafed = false;
         foreach (var kvp in nodeLeaves)
             foreach (var go in kvp.Value)
                 if (go != null) Destroy(go);
@@ -1137,6 +1154,270 @@ public class LeafManager : MonoBehaviour
                 allLeaves.RemoveAt(i);
             }
         }
+    }
+
+    // ── Sprout sway ───────────────────────────────────────────────────────────
+
+    // A sprout is a bare stem with nothing for the wind to catch, so it barely moves until its
+    // first leaves open; then sway eases up to full over a couple of seconds rather than snapping
+    // (play-test 2026-10-28). Only a first-year tree counts, so an older deciduous tree that is
+    // bare in winter sways normally.
+    const float SproutSwayScale = 0.1f;
+    bool everLeafed;
+
+    void UpdateSproutSway()
+    {
+        if (allLeaves.Count > 0) everLeafed = true;
+        bool sprout = skeleton != null && skeleton.root != null && !everLeafed &&
+                      GameManager.year <= skeleton.plantingYear;
+        float target = (sprout ? SproutSwayScale : 1f) * (WeatherManager.Sheltered ? 0.35f : 1f);
+        WindManager.SwayScale = Mathf.MoveTowards(WindManager.SwayScale, target, 0.5f * Time.deltaTime);
+    }
+
+    // ── Stress symptoms ───────────────────────────────────────────────────────
+
+    // Each cause has its own signature, so the symptom hints at the problem the way a real bonsai's
+    // does. Fungus already has its own (Leaf.FungalSicklyColor, from node.fungalLoad).
+    static readonly Color DroughtColor  = new Color(0.62f, 0.50f, 0.27f);   // wilt, then crisp tan
+    static readonly Color WaterlogColor = new Color(0.86f, 0.80f, 0.30f);   // yellowing: root rot
+    static readonly Color HungerColor   = new Color(0.74f, 0.82f, 0.44f);   // pale, even chlorosis
+    static readonly Color DyingColor    = new Color(0.42f, 0.30f, 0.16f);   // a failing branch browns
+
+    float    stressTimer;
+    PotSoil  soil;
+
+    // Branch tips that lost their leaves to stress. SpawnSpringLeaves re-leafs any bare terminal
+    // all through the growing season, so without this a dropped leaf was replaced at once, picked
+    // up the same stress and dropped again — an endless "leaves constantly dying" loop (first
+    // play-test, 2026-10-28). A stressed tip stays bare until the stress has passed: after
+    // secondFlushCalmDays without stress, up to the end of August, they push a second flush (as a
+    // maple defoliated in early summer does); later than that they wait for spring.
+    readonly HashSet<int> stressBare = new HashSet<int>();
+    // Tips that lost SOME of their leaves to stress; the second flush tops them back up, so a
+    // recovered tree visibly fills back in rather than staying thin until spring.
+    readonly HashSet<int> stressThinned = new HashSet<int>();
+    float stressCalmDays;
+
+    /// <summary>
+    /// Raised once the tree has been calm for <see cref="SecondFlushCalmDays"/> after a stress
+    /// the player was warned about — so the game speaks up when things go right, not only when
+    /// they go wrong (2026-10-28).
+    /// </summary>
+    public static event System.Action OnRecovered;
+    bool recovering;
+    const float SecondFlushCalmDays = 10f;
+    const int   SecondFlushLastMonth = 8;
+
+    /// <summary>What the leaves are reacting to, for the player-facing warning.</summary>
+    public enum StressCause { Drought, Waterlog, Hunger }
+
+    /// <summary>
+    /// Raised when a tree-wide cause becomes clearly visible in the leaves, at most once per
+    /// <see cref="StressNoticeCooldownDays"/> per cause. buttonClicker turns it into a one-time
+    /// explanation, then a short toast naming the cause and the fix — the leaves alone don't tell
+    /// a player what to do about them (play-test 2026-10-28).
+    /// </summary>
+    public static event System.Action<StressCause> OnStressNoticed;
+    const float StressNoticeThreshold    = 0.35f;
+    const float StressNoticeCooldownDays = 20f;
+    readonly float[] stressNoticeCooldown = new float[3];
+
+    // Diagnostics: one summary line per in-game week while anything is stressed.
+    float stressLogDays;
+    int   stressDropsSinceLog;
+    readonly Dictionary<int, TreeNode> stressNodeById = new Dictionary<int, TreeNode>();
+
+    /// <summary>
+    /// Out-of-season leaf symptoms (2026-10-27). Before this, leaves only changed in autumn, so a
+    /// sick tree in midsummer looked exactly like a healthy one and the player's only warning was a
+    /// UI panel. Now the leaves themselves show trouble, by cause:
+    /// <list type="bullet">
+    /// <item><b>Drought</b> — soil below the species' drought threshold: wilt, then crisp tan.</item>
+    /// <item><b>Waterlogging / root rot</b> — PotSoil saturation above 0.5: yellowing.</item>
+    /// <item><b>Hunger</b> — nutrient reserve below 0.3: pale, even chlorosis.</item>
+    /// <item><b>A failing branch</b> — that node's health below 0.6 (drought damage, rot, repot
+    /// stress, wounds all land here): brown, on that branch only.</item>
+    /// </list>
+    /// The worst cause wins. Leaves pushed past <c>stressDropThreshold</c> start dropping, at a rate
+    /// scaled by the species' <c>stressLeafDrop</c> — a ficus sheds readily, a pine browns but holds.
+    /// Runs four times a real second on the in-game time elapsed, so it stops when time does.
+    /// </summary>
+    void UpdateStressSymptoms()
+    {
+        // Only on in-game time. Without this, stress kept building under the very tooltip that
+        // explains it (play-test 2026-10-28: the log repeated one date dozens of times).
+        if (!GameManager.ClockRunning) { stressTimer = 0f; return; }
+        stressTimer += Time.deltaTime;
+        if (stressTimer < 0.25f) return;
+        float inGameDays = stressTimer * GameManager.TIMESCALE / 24f;
+        stressTimer = 0f;
+        // No allLeaves.Count check: a fully stripped tree still has to notice the stress passing.
+        if (inGameDays <= 0f || skeleton == null) return;
+
+        if (soil == null) soil = GetComponent<PotSoil>();
+
+        float thr      = skeleton.DroughtThreshold;
+        float drought  = skeleton.soilMoisture < thr ? Mathf.InverseLerp(thr, 0f, skeleton.soilMoisture) : 0f;
+        // Saturation is PotSoil's waterlogging level (daily, see PotSoil.DailyTick). The symptom is
+        // also scaled by how wet the soil is NOW, so letting it dry out helps straight away.
+        float wetNow   = Mathf.InverseLerp(0.5f, 0.85f, skeleton.soilMoisture);
+        float waterlog = soil != null ? Mathf.InverseLerp(0.5f, 1f, soil.saturationLevel) * wetNow : 0f;
+        float hunger   = Mathf.InverseLerp(0.3f, 0f, skeleton.nutrientReserve);
+
+        // Worst tree-wide cause.
+        float treeStress = drought; Color treeColor = DroughtColor;
+        if (waterlog > treeStress) { treeStress = waterlog; treeColor = WaterlogColor; }
+        if (hunger   > treeStress) { treeStress = hunger;   treeColor = HungerColor; }
+        StressCause cause = treeColor == WaterlogColor ? StressCause.Waterlog
+                          : treeColor == HungerColor   ? StressCause.Hunger : StressCause.Drought;
+
+        // Tell the player, once the cause is plain in the leaves.
+        for (int c = 0; c < stressNoticeCooldown.Length; c++)
+            stressNoticeCooldown[c] = Mathf.Max(0f, stressNoticeCooldown[c] - inGameDays);
+        bool quickStart = QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating;
+        if (!quickStart && treeStress >= StressNoticeThreshold && stressNoticeCooldown[(int)cause] <= 0f)
+        {
+            stressNoticeCooldown[(int)cause] = StressNoticeCooldownDays;
+            recovering = true;
+            OnStressNoticed?.Invoke(cause);
+        }
+
+        // Second flush once the stress has passed.
+        stressCalmDays = treeStress < 0.15f ? stressCalmDays + inGameDays : 0f;
+
+        stressNodeById.Clear();
+        foreach (var n in skeleton.allNodes) stressNodeById[n.id] = n;
+
+        if ((stressBare.Count > 0 || stressThinned.Count > 0) && stressCalmDays >= SecondFlushCalmDays &&
+            GameManager.month <= SecondFlushLastMonth && isGrowingSeason)
+        {
+            if (BonsaiDebug.Enabled)
+                Debug.Log($"[LeafStress] Second flush: {stressBare.Count} bare + {stressThinned.Count} thinned tips re-leaf | " +
+                          $"{GameManager.year}-{GameManager.month:D2}-{GameManager.day:D2}");
+            stressBare.Clear();   // SpawnSpringLeaves re-leafs these
+            RefillThinnedTips();
+        }
+
+        if (recovering && stressCalmDays >= SecondFlushCalmDays)
+        {
+            recovering = false;
+            if (!quickStart) OnRecovered?.Invoke();
+        }
+
+        float onset    = stressOnsetPerDay    * inGameDays;
+        float recover  = stressRecoveryPerDay * inGameDays;
+        float dropMult = skeleton.species != null ? skeleton.species.stressLeafDrop : 1f;
+
+        for (int i = allLeaves.Count - 1; i >= 0; i--)
+        {
+            var (nodeId, go) = allLeaves[i];
+            if (go == null) { allLeaves.RemoveAt(i); continue; }
+            var leaf = go.GetComponent<Leaf>();
+            if (leaf == null) continue;
+
+            float target = treeStress; Color color = treeColor;
+            if (stressNodeById.TryGetValue(nodeId, out var node))
+            {
+                float dying = Mathf.InverseLerp(0.6f, 0.15f, node.health);
+                if (dying > target) { target = dying; color = DyingColor; }
+            }
+
+            leaf.TickStress(target, color, onset, recover);
+
+            // Out-of-season drop. Not during Quick Start, which fast-forwards decades with the
+            // care automated — a stress drop there would be an artefact, not a symptom.
+            if (quickStart || leaf.StressAmount <= stressDropThreshold) continue;
+            float chance = stressDropPerDay * dropMult * inGameDays
+                         * Mathf.InverseLerp(stressDropThreshold, 1f, leaf.StressAmount);
+            if (Random.value >= chance) continue;
+
+            leaf.StartFalling();
+            stressDropsSinceLog++;
+            if (nodeLeaves.TryGetValue(nodeId, out var list))
+            {
+                list.Remove(go);
+                if (list.Count == 0) { nodeLeaves.Remove(nodeId); stressBare.Add(nodeId); stressThinned.Remove(nodeId); }
+                else stressThinned.Add(nodeId);
+            }
+            allLeaves.RemoveAt(i);
+        }
+
+        // 3. One line a week while anything is stressed, so a play-test log shows the cause.
+        stressLogDays += inGameDays;
+        if (stressLogDays >= 7f && BonsaiDebug.Enabled && (treeStress > 0.05f || stressDropsSinceLog > 0))
+        {
+            int dying = 0;
+            foreach (var n in skeleton.allNodes)
+                if (!n.isRoot && n.isTerminal && !n.isTrimmed && n.health < 0.6f) dying++;
+            Debug.Log($"[LeafStress] {GameManager.year}-{GameManager.month:D2}-{GameManager.day:D2} | " +
+                      $"drought={drought:F2} (moist={skeleton.soilMoisture:F2} thr={thr:F2}) " +
+                      $"waterlog={waterlog:F2} (sat={(soil != null ? soil.saturationLevel : 0f):F2}) " +
+                      $"hunger={hunger:F2} (nutr={skeleton.nutrientReserve:F2}) | weakTips={dying} | " +
+                      $"leaves={allLeaves.Count} dropsThisWeek={stressDropsSinceLog} bareTips={stressBare.Count}");
+            stressLogDays = 0f;
+            stressDropsSinceLog = 0;
+        }
+        else if (stressLogDays >= 7f)
+        {
+            stressLogDays = 0f;
+            stressDropsSinceLog = 0;
+        }
+    }
+
+    /// <summary>Second flush for thinned tips: grow them back up to a full cluster.</summary>
+    void RefillThinnedTips()
+    {
+        if (!IsNeedleSpecies)
+            foreach (int id in stressThinned)
+            {
+                if (!nodeLeaves.TryGetValue(id, out var list)) continue;
+                if (!stressNodeById.TryGetValue(id, out var node) || node.isTrimmed || node.isDead) continue;
+                for (int i = list.Count; i < leavesPerNode; i++) list.Add(SpawnSingleLeaf(node));
+                listDirty = true;
+            }
+        stressThinned.Clear();
+    }
+
+    /// <summary>
+    /// What is wrong with this branch, in the player's words — the leaf-inspect card (2026-10-28).
+    /// Uses the same causes and thresholds as <see cref="UpdateStressSymptoms"/>, so the card
+    /// always agrees with the colour the player clicked on.
+    /// </summary>
+    public string Diagnose(TreeNode node)
+    {
+        if (skeleton == null || node == null) return null;
+        if (soil == null) soil = GetComponent<PotSoil>();
+
+        float thr     = skeleton.DroughtThreshold;
+        float moist   = skeleton.soilMoisture;
+        float drought = moist < thr ? Mathf.InverseLerp(thr, 0f, moist) : 0f;
+        float sat     = soil != null ? soil.saturationLevel : 0f;
+        float waterlog = Mathf.InverseLerp(0.5f, 1f, sat) * Mathf.InverseLerp(0.5f, 0.85f, moist);
+        float hunger  = Mathf.InverseLerp(0.3f, 0f, skeleton.nutrientReserve);
+        float dying   = Mathf.InverseLerp(0.6f, 0.15f, node.health);
+
+        var found = new List<(float severity, string text)>();
+        if (dying > 0.05f)
+            found.Add((dying, $"Browning: this branch is failing (health {node.health * 100f:F0}%). " +
+                              "Drought, root rot, a hard repot or big cuts all weaken branches."));
+        if (waterlog > 0.05f)
+            found.Add((waterlog, $"Yellowing: waterlogged soil (saturation {sat * 100f:F0}%). " +
+                                 "Let it dry to about half before watering again."));
+        if (drought > 0.05f)
+            found.Add((drought, $"Tan and crisp: the soil is too dry (moisture {moist * 100f:F0}%; " +
+                                $"this species suffers below {thr * 100f:F0}%). Water it."));
+        if (hunger > 0.05f)
+            found.Add((hunger, $"Pale: the tree is short of nutrients ({skeleton.nutrientReserve * 100f:F0}%). Fertilize."));
+        if (node.fungalLoad > 0.05f)
+            found.Add((node.fungalLoad, $"Sickly spots: fungal infection ({node.fungalLoad * 100f:F0}%). " +
+                                         "Treat with fungicide, and keep water off the leaves."));
+
+        if (found.Count == 0)
+            return $"Healthy. Branch health {node.health * 100f:F0}%, soil moisture {moist * 100f:F0}%.";
+        found.Sort((a, b) => b.severity.CompareTo(a.severity));
+        var sb = new System.Text.StringBuilder();
+        foreach (var f in found) { if (sb.Length > 0) sb.Append("\n"); sb.Append(f.text); }
+        return sb.ToString();
     }
 
     // ── Flat list helper ──────────────────────────────────────────────────────

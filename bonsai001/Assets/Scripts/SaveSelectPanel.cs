@@ -196,7 +196,9 @@ public class SaveSelectPanel
         badge.style.marginRight = 7;
         row.Add(badge);
 
-        var spec = new Label { text = meta.speciesName ?? "" };
+        // "Kaze · Japanese Maple" when the tree has a name; just the species otherwise.
+        string species = meta.speciesName ?? "";
+        var spec = new Label { text = string.IsNullOrWhiteSpace(meta.treeName) ? species : $"{meta.treeName.Trim()}  ·  {species}" };
         spec.style.fontSize = 12;
         spec.style.color    = new StyleColor(th.textSub);
         row.Add(spec);

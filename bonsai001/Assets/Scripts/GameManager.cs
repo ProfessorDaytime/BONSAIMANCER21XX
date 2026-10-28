@@ -373,7 +373,16 @@ public class GameManager : MonoBehaviour
 
     void CalculateTime(){
         float winterMult = (quickWinter && IsWinterMonth(month)) ? 2f : 1f;
-        hour += Time.deltaTime * TIMESCALE * winterMult;
+        float hoursThisFrame = Time.deltaTime * TIMESCALE * winterMult;
+        hour += hoursThisFrame;
+
+        // Opening of a new game: the first two days run at Medium so the sprout visibly breaks the
+        // soil, then drop to Slow — unless the player has picked a speed themselves meanwhile.
+        if (introMedHoursLeft > 0f)
+        {
+            introMedHoursLeft -= hoursThisFrame;
+            if (introMedHoursLeft <= 0f && CurrentSpeed == SpeedMode.Med) SetSpeedMode(SpeedMode.Slow);
+        }
 
         // Refresh calendar whenever the displayed minute changes
         int curMinute = Mathf.FloorToInt((hour % 1f) * 60f);
@@ -443,10 +452,16 @@ public class GameManager : MonoBehaviour
         string date = GameSettings.DateDisplay == GameSettings.DateFormat.Numeric
             ? $"{year:D4}-{month:D2}-{day:D2}"
             : $"{monthName} {day}, {year}";
+        if (hudTree == null) hudTree = FindAnyObjectByType<TreeSkeleton>();
+        string name = hudTree != null ? hudTree.DisplayName : null;
+        if (name != null) date = $"{name}  ·  {date}";
+
         calendar.text = string.IsNullOrEmpty(toolName)
             ? $"{date}  {h:D2}:{m:D2}"
             : $"{date}  {h:D2}:{m:D2}  ·  {toolName}";
     }
+
+    static TreeSkeleton hudTree;   // for the tree's name on the HUD date line
 
     static string ActiveToolLabel()
     {
@@ -464,6 +479,8 @@ public class GameManager : MonoBehaviour
             ToolType.Pinch         => "Pinch",
             ToolType.Defoliate     => "Defoliate",
             ToolType.Graft         => "Graft",
+            ToolType.Promote       => "Promote",
+            ToolType.Jin           => "Jin (deadwood)",
             ToolType.WateringCan   => "Watering Can",
             _                      => string.Empty,
         };
@@ -604,6 +621,30 @@ public class GameManager : MonoBehaviour
     }
     
 
+    /// <summary>In-game hours left of the new-game Medium-speed opening (see CalculateTime).</summary>
+    float introMedHoursLeft;
+    const float IntroMedHours = 48f;
+
+    /// <summary>
+    /// The first watering of a new game: plants the seed and starts the season. Called when the
+    /// player first clicks the soil with the watering can — the button only picks the can up,
+    /// same as for every later watering (play-test 2026-10-28).
+    /// </summary>
+    public void PlantSeed()
+    {
+        if (state != GameState.Idle || waterings != -1) return;
+        UpdateGameState(GameState.Water);
+        UpdateGameState(GameState.BranchGrow);
+        waterings++;
+        SetSpeedMode(SpeedMode.Med);
+        introMedHoursLeft = IntroMedHours;
+        Debug.Log("[Tree] Seed planted with the first watering");
+    }
+
+    /// <summary>True between choosing a new tree and its first watering.</summary>
+    public static bool AwaitingPlanting =>
+        Instance != null && Instance.state == GameState.Idle && waterings == -1;
+
     void HandleWaterState(){
         if(waterings < 0){
             Debug.Log("Waterings is -1");
@@ -690,6 +731,19 @@ public class GameManager : MonoBehaviour
             _              => TIMESCALE_FAST,
         };
         Debug.Log($"[Time] Speed → {mode} TIMESCALE={TIMESCALE} | year={year} month={month}");
+    }
+
+    /// <summary>True while the in-game clock is advancing (the states <see cref="CalculateTime"/>
+    /// runs in). Systems that integrate <c>Time.deltaTime × TIMESCALE</c> themselves must check
+    /// this, or they keep running under tips, menus and tool modes.</summary>
+    public static bool ClockRunning
+    {
+        get
+        {
+            var s = Instance != null ? Instance.state : GameState.Idle;
+            return s == GameState.BranchGrow || s == GameState.LeafGrow ||
+                   s == GameState.LeafFall   || s == GameState.TimeGo;
+        }
     }
 
     /// <summary>States that are a menu or dialog over the paused game.</summary>

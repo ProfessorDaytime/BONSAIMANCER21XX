@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
   m_Name: Japanese Maple
   m_EditorClassIdentifier:
+  stressLeafDrop: 1.2
   speciesName: Japanese Maple
   scientificName: Acer palmatum
   baseGrowSpeed: 0.26

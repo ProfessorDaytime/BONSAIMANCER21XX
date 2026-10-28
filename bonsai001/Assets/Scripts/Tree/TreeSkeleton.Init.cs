@@ -69,33 +69,16 @@ public partial class TreeSkeleton : MonoBehaviour
 
         if (species != null) ApplySpecies();
 
-        // Fresh seed = fresh pot. Reset the pot/soil state the previous game left on the
-        // PotSoil component — the auto-styler may have advanced the pot to L and degraded
-        // the soil, and a stale L-sized root box around a seedling lets new roots range
-        // far outside the visual pot (2026-07-02 "starburst on new game" report; pot size
-        // never reset). Loading a save is unaffected: the load path restores + applies
-        // its own pot state after this.
-        var potSoilReset = GetComponent<PotSoil>();
-        if (potSoilReset != null)
-        {
-            potSoilReset.potSize = PotSoil.PotSize.XS;   // design start: smallest pot
-            potSoilReset.ApplyPotSize(GetRootAreaTransform());
-            potSoilReset.soilDegradation   = 0f;
-            potSoilReset.saturationLevel   = 0f;
-            potSoilReset.compaction        = 0f;
-            potSoilReset.seasonsSinceRepot = 0;
-            potSoilReset.ComputeDerivedProperties();
-            potSoilReset.RefreshDrainageHoles();
-            Debug.Log($"[Tree] InitTree — pot/soil reset to XS fresh | year={GameManager.year}");
-        }
+        ResetPotForNewTree();
 
-        // Create the seed visual -- an elongated sphere at the soil surface.
-        // It disappears once the sprout grows past seedHideLength.
+        // Create the seed visual -- an elongated sphere just under the soil surface: sown, not
+        // sitting on top (play-test 2026-10-28). It disappears once the sprout grows past
+        // seedHideLength.
         if (seedObject != null) Destroy(seedObject);
         seedObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         seedObject.name = "_Seed";
         seedObject.transform.SetParent(transform, false);
-        seedObject.transform.localPosition = Vector3.zero;
+        seedObject.transform.localPosition = new Vector3(0f, -0.2f, 0f);   // -0.07 still peeked through
         seedObject.transform.localScale    = new Vector3(0.06f, 0.10f, 0.06f);
         // Remove the collider so it doesn't interfere with tree raycasts
         Destroy(seedObject.GetComponent<Collider>());
@@ -140,6 +123,30 @@ public partial class TreeSkeleton : MonoBehaviour
         // Seed the stability readout so the Tree Health panel shows real numbers immediately
         // rather than dashes until the first season boundary.
         EvaluateStability();
+    }
+
+    /// <summary>
+    /// Fresh seed = fresh pot. Reset the pot/soil state the previous game left on the
+    /// PotSoil component — the auto-styler may have advanced the pot to L and degraded
+    /// the soil, and a stale L-sized root box around a seedling lets new roots range
+    /// far outside the visual pot (2026-07-02 "starburst on new game" report; pot size
+    /// never reset). Loading a save is unaffected: the load path restores + applies
+    /// its own pot state after this. Also called when a new game is set up, before the
+    /// seed is planted, so the player never sees the previous game's pot (2026-10-28).
+    /// </summary>
+    public void ResetPotForNewTree()
+    {
+        var potSoilReset = GetComponent<PotSoil>();
+        if (potSoilReset == null) return;
+        potSoilReset.potSize = PotSoil.PotSize.XS;   // design start: smallest pot
+        potSoilReset.ApplyPotSize(GetRootAreaTransform());
+        potSoilReset.soilDegradation   = 0f;
+        potSoilReset.saturationLevel   = 0f;
+        potSoilReset.compaction        = 0f;
+        potSoilReset.seasonsSinceRepot = 0;
+        potSoilReset.ComputeDerivedProperties();
+        potSoilReset.RefreshDrainageHoles();
+        Debug.Log($"[Tree] Pot/soil reset to XS fresh | year={GameManager.year}");
     }
 
     // Root Planting
@@ -197,11 +204,26 @@ public partial class TreeSkeleton : MonoBehaviour
         Vector3 dir = (directionLocal + Vector3.down * rootInitialPitch).normalized;
         float   seg = Mathf.Max(rootSegmentLength * rootSegmentLengthDecay, 0.3f);
 
+        // Keep the whole cable inside the pot: four full segments (~1 unit) ran straight out
+        // through the wall of an XS/S pot (play-test 2026-10-28).
+        float total = 0f;
+        for (int i = 0; i < 4; i++) total += seg * Mathf.Max(0.3f, 1f - i * 0.18f);
+        if (rootAreaTransform != null)
+        {
+            Vector3 box   = rootAreaTransform.lossyScale;
+            float   reach = 0.45f * Mathf.Min(Mathf.Abs(box.x), Mathf.Abs(box.z));
+            if (total > reach) seg *= reach / total;
+        }
+
+        // The first segment starts at the trunk BASE, just under the soil, like PlantRoot's. It
+        // used to start at root.tipPosition — the top of the first trunk segment — so the "surface"
+        // root sprouted from the stem in mid-air (play-test 2026-10-28).
         TreeNode prev = root;
         for (int i = 0; i < 4; i++)
         {
             float segLen = seg * Mathf.Max(0.3f, 1f - i * 0.18f);
-            var node = CreateNode(prev.tipPosition, dir, rootTerminalRadius, segLen, prev);
+            Vector3 start = i == 0 ? root.worldPosition + Vector3.down * 0.03f : prev.tipPosition;
+            var node = CreateNode(start, dir, rootTerminalRadius, segLen, prev);
             node.isRoot = true;
             node.length = node.targetLength;   // pre-grown
             prev = node;
