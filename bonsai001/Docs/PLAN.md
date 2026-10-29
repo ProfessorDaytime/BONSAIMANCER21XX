@@ -2435,6 +2435,96 @@ useful but too short."* **This must not be true of Bonsaimancer.**
   (`JsonUtility`) and versioned (`schemaVersion` + migration ladder), so an import path exists:
   compress the JSON and Base64 it. Imports must refuse newer schemas exactly as loads do. Workshop
   needs Steamworks (R8). Decide whether imported trees count towards achievements and AP.
+- **Tilt and choose "the front" when repotting.** Choosing the viewing front and the planting angle
+  is one of the biggest artistic decisions in bonsai. A 15° tilt can turn a stiff upright into a
+  slanting (shakan) or semi-cascade (han-kengai) tree. **This mostly exists already:** Ishitsuki has
+  a `TreeOrient` step (`RockPlacer`): right-drag rotates the tree on two axes, scroll rolls it, and a
+  Confirm button locks it in. The ask is to **offer the same orient step on every repot**, not
+  just when planting on a rock, before the soil goes back in. Store the chosen front (a yaw) with
+  the tree so **Reset Camera** (`CameraOrbit.ResetView`) and the menu showcase face it. Check how a
+  tilt interacts with `PotSoil` root containment and the `Stability` moment balance (a tilted tree
+  moves its centre of mass).
+- **Blossom and fruit thinning.** `FlowerManager` already runs the full flower → fruit lifecycle,
+  but **fruit costs the tree nothing today**. Add an energy cost per fruit drawn from the tree's
+  reserves, so a heavy crop weakens next spring's flush. When a flowering species (Cherry, Wisteria,
+  etc.) sets lots of fruit, a tip suggests thinning. Picking fruit, which the existing **Fruit
+  picking** backlog item covers, saves vitality and can yield seeds for the nursery tray (see
+  Cuttings above). A balanced cluster left on gives the autumn display.
+- **Pot ageing, patina and kintsugi.** Pots slowly gain mineral rings, water stains and edge wear
+  with in-game years (a shader blend on the authored pot meshes, driven by pot age and watering
+  history). **Kintsugi:** when the tree tips over (`TreeSkeleton.Stability`, `PotSoil.TipVisuals`),
+  the pot could crack. Today tipping never breaks the pot. Mending it with gold lacquer would make
+  the accident part of the pot's history. Needs pot age stored per pot (and per catalogue pot) in
+  `SaveData`.
+- **Negative space (ma) and foliage-pad overlay.** A toggleable view that colours distinct foliage
+  pads (horizontal clouds of foliage) and highlights the open gaps between branch tiers ("a bird
+  should be able to fly through"). It guides the player to carve clean layers without dictating
+  cuts. Precedent: the debug health rings and other GL overlays in `TreeInteraction`. Pad detection
+  could cluster leaf positions by height band per primary branch. The auto-styler's analysis may
+  already hold useful pieces.
+- **Soil blending.** The 7-component mix is already simulated (`PotSoil`: akadama, pumice, lava,
+  organic, sand, kanuma, perlite, saved in `SaveData`), and it already drives drainage, water
+  retention, breakdown over years, and pot weight for tipping. But the player only picks one of
+  four presets (Classic / Free-draining / Moist / Acidic). The ask: a mixing trough at repot where the
+  player scoops components in, with a live readout of what the blend does:
+  - drainage;
+  - water held;
+  - weight;
+  - how fast it breaks down.
+
+  Species hints (conifer: pumice + lava + coarse akadama; azalea: kanuma; maple: akadama + some
+  organic). Saved recipes become the new presets. Ties into the tool-interactivity plan below
+  (scooping as a gesture).
+
+</details>
+
+<details>
+<summary><strong>Making the tools more interactive</strong> — raised 2026-10-28. Most tools today are a single click on a highlighted node. Plan for giving each one a gesture that mirrors the real action.</summary>
+
+**Today.** Almost every tool is *hover → highlight → click → done* (`TreeInteraction.Handle*Hover`).
+Four already go further and are the models to follow:
+- **Saw:** back-and-forth mouse strokes cut through thick wood (`StartSawing`).
+- **Wire:** aim, then bend (`StartWireAim`).
+- **Root rake:** vertical drag strokes (`HandleRootRakeHover`).
+- **Watering can:** click for a sip, hold to pour.
+
+**Principles**
+- The gesture should **mirror the real action**, so learning the tool teaches the technique.
+- Skill changes **quality, not success**. A sloppy cut leaves a bigger wound that heals slower
+  (`WoundSystem`). It never fails outright or punishes the player harshly.
+- Every gesture needs **feedback**: the highlight changes, the sound responds (see the tactile
+  sound idea above), and there's a small progress indicator.
+- Keep a **Simple tools** setting (one click, as today) for accessibility and fast play. The
+  auto-styler and calendar rules are unaffected.
+- **Reduced motion** and colour-blind palettes apply to all the new feedback.
+- Ending any gesture must be safe on focus loss (R5b).
+
+**Per tool**
+
+| Tool | Today | Interactive version |
+|---|---|---|
+| Clippers (small/big) | click | Drag across the branch to set the **cut angle and position**. Flush to the parent with concave cutters heals cleanly; leaving a stub or a ragged angle makes a bigger wound. Hold briefly to "squeeze" on thick branches. |
+| Saw | strokes ✓ | Already interactive. Add a wobble if strokes are erratic, and a bark tear if you finish too fast without an undercut. |
+| Wire | aim + bend ✓ | **Wrap by dragging along the branch** so the coils follow the cursor (spacing at ~45° is ideal). Pick the gauge. Bending gives resistance and a creak, then a crack warning near the limit. Pairs with the branch snapping backlog item. |
+| Remove wire | click | Snip each turn, or unwind by circling the cursor. Pulling bitten-in wire off fast scars the bark. |
+| Paste | click | **Rub over the wound** to spread it. Coverage % shows; partial coverage protects partly. |
+| Pinch | click | Grab the tip and pull. How much you take off (one leaf pair vs the whole shoot) changes the result. |
+| Defoliate | click / all | **Brush across leaves** to cut them one by one, or snip at the leaf stalk. Partial defoliation (leaf reduction) becomes a real choice. |
+| Air layer | click | Three steps: **ring the bark** (circle drag), pack moss, wrap. Ring-barking too shallow means no roots. |
+| Graft | click source + target | Line up the scion and hold it steady while it's tied. Alignment quality sets the take chance. |
+| Jin | click (no button) | **Peel the bark by dragging** along the branch. The stripped length follows the drag. Leads into shari carving (above). Give it a button. |
+| Fertilize | button | **Place fertilizer cakes** on the soil surface. Count and position matter; they dissolve over weeks. |
+| Fungicide / Herbicide | button | **Spray with a mister**: hold to spray, aim at the affected area, coverage shown. Overspray wastes it. |
+| Repot | panel | A sequence: lift the tree out → comb roots (rake ✓) → prune roots (✓) → **tilt and choose the front** → **scoop soil in** (soil blending above) → work it in with a chopstick to remove air pockets. |
+| Promote | click | Keep as is (it's a planning marker, not a physical action). |
+
+**Order to build**
+1. The shared gesture framework: drag tracking, a progress ring, focus-safe cancel, and the
+   Simple tools fallback.
+2. Paste, defoliate and fertilize: simple drags with the biggest feel gain.
+3. Clippers cut angle: wires into `WoundSystem`.
+4. Wire wrap and bend resistance: biggest job, pairs with branch snapping.
+5. Repot sequence: pairs with the tilt/front and soil-blending items.
 
 </details>
 
