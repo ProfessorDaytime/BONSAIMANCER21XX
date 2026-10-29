@@ -812,6 +812,14 @@ public static class SaveManager
         var potSoil  = skeleton.GetComponent<PotSoil>();
         var weedMgr  = skeleton.GetComponent<WeedManager>();
 
+        // Record which branches carry leaves right now. Loading restores leaves only where
+        // hasLeaves is set, and until 2026-10-29 nothing ever set it, so every load came up bare
+        // until the next spring.
+        var leafMgr = skeleton.GetComponent<LeafManager>();
+        if (leafMgr != null)
+            foreach (var n in skeleton.allNodes)
+                if (!n.isRoot) n.hasLeaves = leafMgr.NodeHasLeaves(n.id);
+
         var data = new SaveData
         {
             schemaVersion = SchemaVersion,

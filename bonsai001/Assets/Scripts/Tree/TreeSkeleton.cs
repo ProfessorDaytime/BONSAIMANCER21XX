@@ -1152,6 +1152,17 @@ public partial class TreeSkeleton : MonoBehaviour
             foreach (var node in allNodes)
                 if (node.isTerminal && !node.isTrimmed && !node.isRoot && node.hasLeaves)
                     leafNodes.Add(node);
+
+            // Saves from before 2026-10-29 never recorded hasLeaves. If none is set but the tree
+            // should be in leaf (an evergreen, or a deciduous tree May–September), leaf every live tip.
+            bool inLeaf = (species != null && species.evergreen) || (GameManager.month >= 5 && GameManager.month <= 9);
+            if (leafNodes.Count == 0 && inLeaf)
+            {
+                foreach (var node in allNodes)
+                    if (node.isTerminal && !node.isTrimmed && !node.isRoot && !node.isDead && !node.isJin)
+                        leafNodes.Add(node);
+                Debug.Log($"[Save] Old save without leaf data: leafing {leafNodes.Count} tips (in leaf season).");
+            }
             leafManager.ForceSpawnLeaves(leafNodes);
         }
 
