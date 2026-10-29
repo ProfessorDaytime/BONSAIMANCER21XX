@@ -182,8 +182,10 @@ public class TreeInteraction : MonoBehaviour
     [Tooltip("Pixels of mouse travel ACROSS the branch in one direction before a reversal counts as a half-stroke.")]
     [SerializeField] float sawMinStrokePx = 20f;
 
-    [Tooltip("Number of half-strokes (direction reversals) needed to complete a saw cut (~4–6 full strokes).")]
-    [SerializeField] int sawTotalHalfStrokes = 10;
+    [Tooltip("Back-and-forths needed to saw through the thinnest twig.")]
+    [SerializeField] int sawMinBackForths = 2;
+    [Tooltip("Back-and-forths needed to saw through wood as thick as the trunk base. Scales linearly with radius in between.")]
+    [SerializeField] int sawMaxBackForths = 10;
 
     bool     isSawing;
     TreeNode sawTarget;
@@ -192,6 +194,7 @@ public class TreeInteraction : MonoBehaviour
     float    sawCurrentDir;     // +1 or -1
     float    sawDirTravel;      // pixels traveled in current direction
     int      sawHalfStrokes;
+    int      sawNeededHalfStrokes;  // set per branch in StartSawing
     bool     sawStrokeSounded;  // this stroke's rasp has played
 
     // ── Selection cursor (screen-space GL circle) ─────────────────────────────
@@ -821,10 +824,12 @@ public class TreeInteraction : MonoBehaviour
             {
                 var  tool     = ToolManager.Instance.ActiveTool;
                 bool tooThick = node.radius >= skeleton.SawRadiusThreshold;
-                if (tooThick && tool == ToolType.Saw)
+                if (tool == ToolType.Saw)
                 {
-                    Debug.Log($"[Saw] Start node={node.id} r={node.radius:F3} limit={skeleton.SawRadiusThreshold:F3}");
+                    // The saw never cuts in one click (2026-10-29) — even a twig takes a couple of strokes.
                     StartSawing(node);
+                    Debug.Log($"[Saw] Start node={node.id} r={node.radius:F3} trunk={skeleton.root.radius:F3} " +
+                              $"halfStrokes={sawNeededHalfStrokes}");
                 }
                 else if (tooThick)
                 {
@@ -1009,6 +1014,9 @@ public class TreeInteraction : MonoBehaviour
         sawTarget      = node;
         sawProgress    = 0f;
         sawHalfStrokes = 0;
+        float trunkR   = skeleton.root != null ? skeleton.root.radius : 0f;
+        float t        = trunkR > 0f ? Mathf.Clamp01(node.radius / trunkR) : 1f;
+        sawNeededHalfStrokes = 2 * Mathf.RoundToInt(Mathf.Lerp(sawMinBackForths, sawMaxBackForths, t));
         sawCurrentDir  = 0f;
         sawDirTravel   = 0f;
         sawLastMouse   = Mouse.current.position.ReadValue();
@@ -1067,10 +1075,10 @@ public class TreeInteraction : MonoBehaviour
             SawEffects.EmitDust(SawKerfWorld(), SawStrokeWorldDir(across, dir), SawFxScale(), Mathf.Abs(dx));
         }
 
-        sawProgress = Mathf.Clamp01((float)sawHalfStrokes / sawTotalHalfStrokes);
+        sawProgress = Mathf.Clamp01((float)sawHalfStrokes / sawNeededHalfStrokes);
         SetHighlight(sawTarget, HighlightMode.TrimSubtree);
 
-        if (sawHalfStrokes >= sawTotalHalfStrokes)
+        if (sawHalfStrokes >= sawNeededHalfStrokes)
             CompleteSaw();
     }
 
