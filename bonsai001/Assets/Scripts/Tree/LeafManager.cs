@@ -1246,7 +1246,7 @@ public class LeafManager : MonoBehaviour
     {
         // Only on in-game time. Without this, stress kept building under the very tooltip that
         // explains it (play-test 2026-10-28: the log repeated one date dozens of times).
-        if (!GameManager.ClockRunning) { stressTimer = 0f; return; }
+        if (!GameManager.ClockRunning || QuickStartManager.Protected) { stressTimer = 0f; return; }
         stressTimer += Time.deltaTime;
         if (stressTimer < 0.25f) return;
         float inGameDays = stressTimer * GameManager.TIMESCALE / 24f;

@@ -376,6 +376,12 @@ public partial class TreeSkeleton : MonoBehaviour
         if (_ks == GameState.TreeDead || _ks == GameState.SpeciesSelect ||
             _ks == GameState.LoadMenu  || _ks == GameState.Menu) return;
 
+        if (QuickStartManager.Protected)
+        {
+            Debug.Log($"[Death] Ignored during Quick Start. Cause: {cause} | year={GameManager.year}");
+            return;
+        }
+
         LastDeathCause = cause;
         Debug.Log($"[Death] Tree is dead. Cause: {cause} | year={GameManager.year}");
 

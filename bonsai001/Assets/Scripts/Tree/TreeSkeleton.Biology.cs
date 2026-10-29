@@ -313,6 +313,12 @@ public partial class TreeSkeleton : MonoBehaviour
     /// </summary>
     void UpdateFungalInfection()
     {
+        if (QuickStartManager.Protected)
+        {
+            foreach (var n in allNodes) { n.fungalLoad = 0f; n.foliageWettings = 0; }
+            return;
+        }
+
         // Collect spread deltas separately so we don't double-count in one pass
         var spreadDelta = new Dictionary<int, float>(allNodes.Count);
         foreach (var n in allNodes) spreadDelta[n.id] = 0f;

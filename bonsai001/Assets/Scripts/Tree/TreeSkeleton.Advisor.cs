@@ -1114,6 +1114,7 @@ public partial class TreeSkeleton : MonoBehaviour
     /// </summary>
     public void ApplyDamage(TreeNode node, DamageType type, float amount)
     {
+        if (QuickStartManager.Protected) return;   // a generated tree is grown healthy
         node.health = Mathf.Max(0f, node.health - amount);
 
         if (!damageThisSeason.TryGetValue(type, out float t)) t = 0f;

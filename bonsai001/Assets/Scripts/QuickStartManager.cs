@@ -38,6 +38,14 @@ public class QuickStartManager : MonoBehaviour
     public IReadOnlyList<StyleDefinition> Styles => styles;
     public bool IsGenerating => generating;
 
+    /// <summary>True while a Quick Start is growing. Nothing takes damage, gets sick or dies then
+    /// (2026-10-29): a dead leader in year 15 cost a 40-year Maple most of its height.</summary>
+    public static bool Protected => Instance != null && Instance.generating;
+
+    /// <summary>Age in whole years grown so far (shown on the Stop button).</summary>
+    public int YearsGrown => generating ? GameManager.year - startYear : 0;
+    public int TargetYears => totalYears;
+
     [Tooltip("No major auto-style cuts in this many final years, so the tree regrows before it's handed over.")]
     [SerializeField] int noMajorCutFinalYears = 4;
 
@@ -131,6 +139,15 @@ public class QuickStartManager : MonoBehaviour
         bool aged = GameManager.year >= targetEndYear;
         bool died = GameManager.Instance.state == GameState.TreeDead;
         if (aged || died) Finish(died);
+    }
+
+    /// <summary>Stop the fast-grow now and hand the tree over as it is (the Stop button).</summary>
+    public void StopEarly()
+    {
+        if (!generating) return;
+        Debug.Log($"[QuickStart] Stopped by the player at age {YearsGrown}yr (target {totalYears}).");
+        totalYears = Mathf.Max(1, YearsGrown);   // pot size in RestoreHealthyBaseline follows the real age
+        Finish(false);
     }
 
     void Finish(bool died)

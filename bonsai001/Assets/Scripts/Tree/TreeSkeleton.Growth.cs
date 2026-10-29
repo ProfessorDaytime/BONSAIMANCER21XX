@@ -270,7 +270,7 @@ public partial class TreeSkeleton : MonoBehaviour
         // Drought death: extended time at zero moisture kills immediately.
         // (No second += here — the block above already counted this frame; the old
         // double-count made every zero-moisture day worth two.)
-        if (treeDeathEnabled && soilMoisture <= 0f)
+        if (treeDeathEnabled && soilMoisture <= 0f && !QuickStartManager.Protected)
         {
             if (droughtDaysAccumulated >= droughtDeathDays)
             {

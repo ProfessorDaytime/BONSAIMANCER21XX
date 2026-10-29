@@ -483,6 +483,7 @@ public class ButtonClicker : MonoBehaviour
         calendarButton?.RegisterCallback<ClickEvent>(_ => OpenCalendar());
         SetupResetCameraButton(root);
         SetupForecastAndShelter(root);
+        SetupQuickStartStopButton(root);
         calCloseButton?.RegisterCallback<ClickEvent>(_ => CloseCalendar());
         calPrevMonth?.RegisterCallback<ClickEvent>(_ => { calViewMonth--; if (calViewMonth < 1) { calViewMonth = 12; calViewYear--; } BuildCalendarGrid(); });
         calNextMonth?.RegisterCallback<ClickEvent>(_ => { calViewMonth++; if (calViewMonth > 12) { calViewMonth = 1; calViewYear++; } BuildCalendarGrid(); });
@@ -1014,6 +1015,8 @@ public class ButtonClicker : MonoBehaviour
 
     void Update()
     {
+        RefreshQuickStartStopButton();
+
         if (BonsaiDebug.Enabled)
         {
             if (Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
@@ -2296,6 +2299,46 @@ public class ButtonClicker : MonoBehaviour
     }
 
     // ── Forecast + shelter (2026-10-28) ──────────────────────────────────────
+
+    Button quickStartStopButton;
+    int    quickStartStopShownYears = -1;
+
+    /// <summary>Bottom-centre button shown only while a Quick Start grows (2026-10-29): stops the
+    /// fast-grow and hands the tree over at its current age.</summary>
+    void SetupQuickStartStopButton(VisualElement root)
+    {
+        quickStartStopButton = new Button(() => QuickStartManager.Instance?.StopEarly()) { name = "QuickStartStopButton" };
+        var b = quickStartStopButton.style;
+        b.position  = Position.Absolute;
+        b.bottom    = 70;
+        b.left      = new Length(50, LengthUnit.Percent);
+        b.translate = new Translate(new Length(-50, LengthUnit.Percent), 0);
+        b.height    = 36;
+        b.fontSize  = 15;
+        b.paddingLeft = b.paddingRight = 16;
+        b.unityFontStyleAndWeight = FontStyle.Bold;
+        b.backgroundColor = new StyleColor(new Color(20f / 255f, 20f / 255f, 20f / 255f, 0.85f));
+        b.color           = new StyleColor(new Color(229f / 255f, 162f / 255f, 16f / 255f));
+        b.borderTopColor = b.borderBottomColor =
+        b.borderLeftColor = b.borderRightColor = new StyleColor(new Color(229f / 255f, 162f / 255f, 16f / 255f));
+        b.borderTopWidth = b.borderBottomWidth = b.borderLeftWidth = b.borderRightWidth = 1;
+        b.borderTopLeftRadius = b.borderTopRightRadius =
+        b.borderBottomLeftRadius = b.borderBottomRightRadius = 6;
+        b.display = DisplayStyle.None;
+        root.Add(quickStartStopButton);
+    }
+
+    void RefreshQuickStartStopButton()
+    {
+        if (quickStartStopButton == null) return;
+        var qsm = QuickStartManager.Instance;
+        bool show = qsm != null && qsm.IsGenerating;
+        quickStartStopButton.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+        if (!show) { quickStartStopShownYears = -1; return; }
+        if (qsm.YearsGrown == quickStartStopShownYears) return;
+        quickStartStopShownYears = qsm.YearsGrown;
+        quickStartStopButton.text = $"■  Stop growing here  ·  age {qsm.YearsGrown} of {qsm.TargetYears}";
+    }
 
     Label  forecastLabel;
     Button shelterButton;
