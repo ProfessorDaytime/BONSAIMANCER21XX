@@ -3047,7 +3047,11 @@ public class ButtonClicker : MonoBehaviour
         var quitBtn = new Button(QuitToMainMenu) { text = "QUIT TO MAIN MENU" };
         quitBtn.style.marginBottom = 4;
         game.Add(quitBtn);
-        var quitNote = new Label { text = "Your tree is saved first." };
+        var quitGameBtn = new Button(QuitGame) { text = "QUIT GAME" };
+        quitGameBtn.style.marginBottom = 4;
+        game.Add(quitGameBtn);
+        var quitNote = new Label { text = "Your tree is saved first, and becomes the tree on the main menu." };
+        quitNote.style.whiteSpace = WhiteSpace.Normal;
         quitNote.style.fontSize = 10;
         quitNote.style.color = new StyleColor(th.locked);
         game.Add(quitNote);
@@ -3113,23 +3117,186 @@ public class ButtonClicker : MonoBehaviour
             TogglePauseMenu();
     }
 
+    void QuitToMainMenu() => BeginQuit(toDesktop: false);
+    void QuitGame()       => BeginQuit(toDesktop: true);
+
     /// <summary>
-    /// Leaves for the main menu, saving first so nothing is lost.
+    /// Both quit buttons: save the game, then save the tree as this playthrough's menu tree
+    /// (2026-10-29, <see cref="MenuTreeLibrary"/>), then leave. If the menu-tree gallery is full and
+    /// this playthrough has no tree in it yet, the player is asked to delete one first.
+    /// </summary>
+    void BeginQuit(bool toDesktop)
+    {
+        bool hasTree = skeleton != null && skeleton.root != null;
+        if (hasTree)
+            SaveManager.AutoSave(skeleton, skeleton.GetComponent<LeafManager>());
+
+        string slot = SaveManager.ActiveSlotId;
+        if (hasTree && slot != null)
+        {
+            if (MenuTreeLibrary.NeedsRoomFor(slot)) { ShowMenuTreeFullPrompt(slot, toDesktop); return; }
+            MenuTreeLibrary.SaveCurrent(slot, skeleton);
+        }
+        FinishQuit(toDesktop);
+    }
+
+    /// <summary>
+    /// Leaves for the main menu or the desktop.
     /// <para>The AudioManager must be destroyed by hand: it is DontDestroyOnLoad, and in Game001 it
     /// shares its GameObject with GameManager and seven other managers — so without this, the whole
     /// simulation would follow the player into the menu scene.</para>
     /// </summary>
-    void QuitToMainMenu()
+    void FinishQuit(bool toDesktop)
     {
-        if (skeleton != null && skeleton.root != null)
-            SaveManager.AutoSave(skeleton, skeleton.GetComponent<LeafManager>());
-
         settingsPanel.SetVisible(false);
         Time.timeScale = 1f;
         SaveManager.PendingLaunch = PendingLaunchAction.None;
 
+        if (toDesktop)
+        {
+            Debug.Log("[Quit] Quitting the game.");
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+            return;
+        }
+
         if (AudioManager.Instance != null) AudioManager.Instance.DestroyAudioManager();
         UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+    }
+
+    // ── Menu-tree gallery full ──
+
+    VisualElement menuTreePrompt;
+    readonly List<Texture2D> menuTreeThumbs = new List<Texture2D>();
+
+    /// <summary>
+    /// Shown on quit when <see cref="MenuTreeLibrary.MaxTrees"/> menu trees are already saved and
+    /// this playthrough has none: lists them with a picture each, and saving this tree waits until
+    /// one is deleted. The player can also quit without saving it, or go back to the game.
+    /// </summary>
+    void ShowMenuTreeFullPrompt(string slot, bool toDesktop)
+    {
+        var root = buttonDocument != null ? buttonDocument.rootVisualElement : null;
+        if (root == null) { FinishQuit(toDesktop); return; }
+        CloseMenuTreeFullPrompt();
+        var th = UiTheme.Current;
+
+        menuTreePrompt = new VisualElement { name = "MenuTreeFullPrompt" };
+        var ps = menuTreePrompt.style;
+        ps.position = Position.Absolute;
+        ps.left = ps.right = ps.top = ps.bottom = 0;
+        ps.backgroundColor = new StyleColor(th.scrim);
+        ps.alignItems = Align.Center;
+        ps.justifyContent = Justify.Center;
+
+        var card = new VisualElement();
+        var cs = card.style;
+        cs.width = 560;
+        cs.maxHeight = new Length(85, LengthUnit.Percent);
+        cs.backgroundColor = new StyleColor(th.panelBg);
+        cs.borderTopColor = cs.borderBottomColor = cs.borderLeftColor = cs.borderRightColor = new StyleColor(th.edge);
+        cs.borderTopWidth = cs.borderBottomWidth = cs.borderLeftWidth = cs.borderRightWidth = 1;
+        cs.borderTopLeftRadius = cs.borderTopRightRadius = cs.borderBottomLeftRadius = cs.borderBottomRightRadius = 8;
+        cs.paddingTop = cs.paddingBottom = 16;
+        cs.paddingLeft = cs.paddingRight = 18;
+        menuTreePrompt.Add(card);
+
+        var title = new Label("Menu tree gallery is full");
+        title.style.fontSize = 18;
+        title.style.unityFontStyleAndWeight = FontStyle.Bold;
+        title.style.color = new StyleColor(th.accent);
+        title.style.marginBottom = 6;
+        card.Add(title);
+
+        var body = new Label($"You can keep up to {MenuTreeLibrary.MaxTrees} menu trees, one per playthrough. " +
+                             "Delete one to keep this tree for the main menu, or quit without saving it. " +
+                             "Your game is already saved either way.");
+        body.style.whiteSpace = WhiteSpace.Normal;
+        body.style.color = new StyleColor(th.textMain);
+        body.style.marginBottom = 10;
+        card.Add(body);
+
+        var list = new ScrollView();
+        list.style.flexShrink = 1;
+        list.style.marginBottom = 12;
+        card.Add(list);
+
+        var saveBtn = new Button { text = "SAVE TREE AND QUIT" };
+        saveBtn.SetEnabled(false);
+
+        foreach (var meta in MenuTreeLibrary.List())
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems = Align.Center;
+            row.style.marginBottom = 6;
+            row.style.backgroundColor = new StyleColor(th.cardBg);
+            row.style.borderTopLeftRadius = row.style.borderTopRightRadius =
+            row.style.borderBottomLeftRadius = row.style.borderBottomRightRadius = 4;
+            row.style.paddingTop = row.style.paddingBottom = row.style.paddingLeft = row.style.paddingRight = 4;
+
+            var tex = MenuTreeLibrary.LoadThumbnail(meta.slotId);
+            var img = new Image { scaleMode = ScaleMode.ScaleAndCrop };
+            img.style.width = 96;
+            img.style.height = 54;
+            img.style.marginRight = 10;
+            if (tex != null) { img.image = tex; menuTreeThumbs.Add(tex); }
+            row.Add(img);
+
+            string name = string.IsNullOrEmpty(meta.treeName) ? meta.speciesName : $"{meta.treeName} · {meta.speciesName}";
+            string when = System.DateTime.TryParse(meta.savedUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt)
+                ? dt.ToLocalTime().ToString("MMM d, yyyy") : "";
+            var info = new Label($"{name}\n{meta.treeAge} years old · saved {when}");
+            info.style.flexGrow = 1;
+            info.style.flexShrink = 1;
+            info.style.color = new StyleColor(th.textMain);
+            info.style.whiteSpace = WhiteSpace.Normal;
+            row.Add(info);
+
+            string id = meta.slotId;
+            var del = new Button { text = "Delete" };
+            del.clicked += () =>
+            {
+                MenuTreeLibrary.Delete(id);
+                row.RemoveFromHierarchy();
+                saveBtn.SetEnabled(!MenuTreeLibrary.NeedsRoomFor(slot));
+            };
+            row.Add(del);
+            list.Add(row);
+        }
+
+        var footer = new VisualElement();
+        footer.style.flexDirection = FlexDirection.Row;
+        footer.style.justifyContent = Justify.FlexEnd;
+        card.Add(footer);
+
+        var cancel = new Button(CloseMenuTreeFullPrompt) { text = "CANCEL" };
+        var skip = new Button(() => { CloseMenuTreeFullPrompt(); FinishQuit(toDesktop); }) { text = "QUIT WITHOUT SAVING TREE" };
+        saveBtn.clicked += () =>
+        {
+            CloseMenuTreeFullPrompt();
+            MenuTreeLibrary.SaveCurrent(slot, skeleton);
+            FinishQuit(toDesktop);
+        };
+        foreach (var b in new[] { cancel, skip, saveBtn })
+        {
+            b.style.marginLeft = 6;
+            footer.Add(b);
+        }
+
+        root.Add(menuTreePrompt);
+        menuTreePrompt.BringToFront();
+    }
+
+    void CloseMenuTreeFullPrompt()
+    {
+        menuTreePrompt?.RemoveFromHierarchy();
+        menuTreePrompt = null;
+        foreach (var t in menuTreeThumbs) if (t != null) Destroy(t);
+        menuTreeThumbs.Clear();
     }
 
     // ── Pre-start (new game) ──

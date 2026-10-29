@@ -595,6 +595,25 @@ assets: they are shipped art.
 - **Original first-bake checklist:** leaves on their twigs; colour variety looks right; no console errors about
   unreadable meshes from `CombineMeshes` (imported pot FBX); menu framing/lighting matches the shot.
 
+### 🟡 R3b — player-saved menu trees, built 2026-10-29 (compile-checked; not yet play-tested)
+
+- **What:** both in-game quit buttons (Quit to Main Menu, and the new **Quit Game**) save the current tree
+  as that playthrough's menu tree. One per playthrough (save slot), overwritten on each quit. The main
+  menu shows the most recently saved one; with none saved it falls back to the editor-baked prefab above.
+- **Limit:** 50 (`MenuTreeLibrary.MaxTrees`). Quitting a playthrough with no tree yet while 50 are saved
+  opens a prompt listing them with thumbnails; delete one to save, quit without saving it, or cancel.
+  Deleting a save keeps its menu tree.
+- **Storage:** `persistentDataPath/menutrees/<slot id>/` — `tree.bin` (gzipped `MenuTreeSnapshot`),
+  `thumb.png`, `meta.json`. Moves with the save folder when R0 changes `companyName`.
+- **How it works without the editor:** `MenuTreeCapture` combines readable meshes (bark, soil) into vertex
+  data, saves unreadable project models (leaves, pots, tables, rocks, decorations) as `"guid:name"`
+  references plus a transform, and saves every material as a recipe (shader + property values).
+  `MenuTreeRegistry` resolves the references: through the AssetDatabase in the editor, through
+  `Resources/MenuTreeRegistry.asset` in a build. `Assets/Editor/MenuTreeRegistryBuilder.cs` writes that
+  asset before every build (also **Bonsai ▸ Rebuild Menu Tree Registry**).
+- **Watch for:** menu load time and draw calls with thousands of individually placed leaves (they can't
+  be combined without readable meshes); shaders reached only through `Shader.Find` must be in the build.
+
 ---
 
 ### R4. Tool Cursors — per-tool cursor art

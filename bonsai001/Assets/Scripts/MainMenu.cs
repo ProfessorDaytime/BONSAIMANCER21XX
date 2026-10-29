@@ -35,8 +35,9 @@ public class MainMenu : MonoBehaviour
         HideLegacyCanvas();
         UpgradeLegacyInputModule();
 
-        // The player-grown showcase tree (R3), if one has been baked. Static set dressing only.
-        MenuTreeShowcase.SpawnIfBaked();
+        // The player's most recently saved menu tree, else the one baked into the build (R3).
+        // Static set dressing only.
+        MenuTreeShowcase.SpawnForMenu();
 
         var doc = GetComponent<UIDocument>();
         if (doc == null) doc = gameObject.AddComponent<UIDocument>();
