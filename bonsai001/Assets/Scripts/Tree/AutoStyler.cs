@@ -162,6 +162,10 @@ public class AutoStyler : MonoBehaviour
              "(all cuts combined: excess trims + thinning). Health over style.")]
     [Range(0.02f, 0.5f)] public float maxCutFractionPerSeason = 0.10f;
 
+    [Tooltip("A cut removing at least this many live branch nodes counts as major — skipped in the " +
+             "final years of a Quick Start (QuickStartManager.noMajorCutFinalYears).")]
+    public int majorCutNodes = 6;
+
     [Tooltip("No structural (excess-branch) cuts unless average tree health is at least this.")]
     [Range(0f, 1f)] public float minHealthForStructuralCuts = 0.6f;
 
@@ -449,6 +453,14 @@ public class AutoStyler : MonoBehaviour
                     // Health over style: every cut pays its subtree size from the season
                     // budget. Over budget = the cut simply doesn't happen this year.
                     int cost = CountSubtree(n);
+                    // Quick Start's final years: no big cuts, so the tree it hands over has regrown.
+                    if (cost >= majorCutNodes && QuickStartManager.Instance != null
+                        && QuickStartManager.Instance.InNoMajorCutWindow)
+                    {
+                        pendingTrims.Remove(id);
+                        Log($"[AutoStyle] Trim SKIPPED node={id} (cost={cost}) — Quick Start final years, no major cuts");
+                        continue;
+                    }
                     if (cost > cutBudgetRemaining)
                     {
                         pendingTrims.Remove(id);
@@ -465,7 +477,7 @@ public class AutoStyler : MonoBehaviour
                     }
                     cutBudgetRemaining -= cost;
 
-                    Log($"[AutoStyle] Trim fired node={id}");
+                    Log($"[AutoStyle] Trim fired node={id} cost={cost}");
                     float trimAz = GetBranchAzimuth(n);
                     var cutSite = n.parent;   // TrimNode wounds the parent — capture before the cut
                     ProgressionManager.AutomationActive = true;   // auto-styler cuts don't earn the player's badge

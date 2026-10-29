@@ -37,6 +37,13 @@ public class QuickStartManager : MonoBehaviour
 
     public IReadOnlyList<StyleDefinition> Styles => styles;
     public bool IsGenerating => generating;
+
+    [Tooltip("No major auto-style cuts in this many final years, so the tree regrows before it's handed over.")]
+    [SerializeField] int noMajorCutFinalYears = 4;
+
+    /// <summary>True during the last <see cref="noMajorCutFinalYears"/> years of a Quick Start —
+    /// AutoStyler skips big cuts then, so the player never gets a freshly chopped, short tree.</summary>
+    public bool InNoMajorCutWindow => generating && GameManager.year >= targetEndYear - noMajorCutFinalYears;
     /// <summary>0→1 progress of the current generation (by years grown).</summary>
     public float Progress => generating && totalYears > 0
         ? Mathf.Clamp01((GameManager.year - startYear) / (float)totalYears) : 0f;
