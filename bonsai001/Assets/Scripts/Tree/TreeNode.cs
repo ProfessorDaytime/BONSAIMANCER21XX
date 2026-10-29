@@ -100,8 +100,15 @@ public class TreeNode
             // than snapping the tip ring to a thinner radius at spawn time.
             float maxRadius   = 0f;
             float maxProgress = 0f;
+            bool  anyBranch   = false;
             foreach (var child in children)
             {
+                // Roots hang off the trunk base node but aren't part of the trunk: the pipe model
+                // already leaves them out of branch radii. Counting them here sized the trunk's
+                // first segment to the thickest root at its top — thin at the soil, fat above
+                // (play-test 2026-10-29).
+                if (!isRoot && child.isRoot) continue;
+                anyBranch = true;
                 if (child.radius > maxRadius)
                 {
                     maxRadius   = child.radius;
@@ -110,6 +117,8 @@ public class TreeNode
                         : 1f;
                 }
             }
+
+            if (!anyBranch) return terminalTip;
 
             // Clamp the lerp start so the tip ring is never narrower than the child's base.
             // Without this, thin branches (radius ≈ terminalRadius) taper to 0.55×radius

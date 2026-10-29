@@ -48,7 +48,9 @@ public static class MenuTreeExport
                 var mesh = mf.sharedMesh;
                 var mr   = mf.GetComponent<MeshRenderer>();
                 if (mesh == null || mr == null || !mr.enabled) continue;
-                if (!mesh.isReadable) { skipped++; continue; }
+                // A leaf or pot placed one by one is an unreadable model; use its readable copy.
+                if (!mesh.isReadable) mesh = MenuTreeRegistry.ReadableTwin(MenuTreeRegistry.KeyOf(mesh));
+                if (mesh == null) { skipped++; continue; }
 
                 var m  = toRoot * mf.transform.localToWorldMatrix;
                 var nm = m.inverse.transpose;
