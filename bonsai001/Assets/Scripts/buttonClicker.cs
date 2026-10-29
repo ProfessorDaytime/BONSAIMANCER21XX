@@ -231,7 +231,7 @@ public class ButtonClicker : MonoBehaviour
     bool             qsEnabled;
     StyleDefinition  qsStyle;
     int              qsAge = 10;
-    static readonly int[] QuickStartAges = { 5, 10, 20, 40 };
+    static readonly int[] QuickStartAges = { 5, 10, 15, 20, 40 };
 
     // ── Progression mode (Career / Sandbox) ───────────────────────────────────
     Button           modeToggleButton;          // "Mode: …" injected into the species overlay
