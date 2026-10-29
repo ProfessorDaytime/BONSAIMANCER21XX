@@ -20,7 +20,7 @@ public class MainMenuUI
 {
     // ── Views ─────────────────────────────────────────────────────────────────
 
-    enum View { Menu, SaveSelect, Credits, Settings }
+    enum View { Menu, SaveSelect, Credits, Settings, Greenhouse }
 
     VisualElement root;
     VisualElement menuView, saveSelectView, creditsView, settingsView;
@@ -129,6 +129,7 @@ public class MainMenuUI
         if (hasSaves)
             view.Add(MenuButton("NEW TREE", primary: false, onClick: LaunchNewTree));
 
+        view.Add(MenuButton("GREENHOUSE", primary: false, onClick: OpenGreenhouse));
         view.Add(MenuButton("SETTINGS", primary: false, onClick: () => Show(View.Settings)));
         view.Add(MenuButton("CREDITS",  primary: false, onClick: () => Show(View.Credits)));
         view.Add(MenuButton("QUIT",     primary: false, onClick: Application.Quit));
@@ -260,10 +261,19 @@ public class MainMenuUI
         if (v == View.Settings) settings.SetVisible(true);
     }
 
+    /// <summary>The greenhouse of saved trees (2026-10-29). It hides the menu and runs its own HUD
+    /// and Esc handling; its BACK reloads this scene.</summary>
+    void OpenGreenhouse()
+    {
+        if (launching || current == View.Greenhouse) return;
+        Show(View.Greenhouse);
+        Greenhouse.Open(root, OnLoadSlot);
+    }
+
     /// <summary>Esc backs out of a sub-view to the menu. Called from the host's Update.</summary>
     public void OnEscape()
     {
-        if (launching) return;
+        if (launching || current == View.Greenhouse) return;
         if (current != View.Menu) Show(View.Menu);
     }
 

@@ -79,12 +79,12 @@ public class MenuTreeShowcase : MonoBehaviour
     }
 
     /// <summary>
-    /// What the main menu shows (2026-10-29): the player's most recently saved menu tree, or, if
-    /// they have none yet, the tree baked into the build.
+    /// What the main menu shows (2026-10-29): the tree the player set as their menu tree in the
+    /// greenhouse, else their most recently saved one, else the tree baked into the build.
     /// </summary>
     public static MenuTreeShowcase SpawnForMenu()
     {
-        var snap = MenuTreeLibrary.LoadMostRecent();
+        var snap = MenuTreeLibrary.LoadForMenu();
         if (snap != null)
         {
             var built = SpawnFromSnapshot(snap);
@@ -93,56 +93,13 @@ public class MenuTreeShowcase : MonoBehaviour
         return SpawnIfBaked();
     }
 
-    static readonly int IdBaseColor = Shader.PropertyToID("_BaseColor");
-    static readonly int IdColor     = Shader.PropertyToID("_Color");
-
-    /// <summary>Builds a player-saved menu tree (see <see cref="MenuTreeCapture"/>).</summary>
+    /// <summary>Builds a player-saved menu tree (see <see cref="MenuTreeCapture"/>) and frames it
+    /// as it was captured.</summary>
     public static MenuTreeShowcase SpawnFromSnapshot(MenuTreeSnapshot snap)
     {
-        if (snap == null || snap.parts.Count == 0) return null;
-
-        var mats = new Material[snap.materials.Count];
-        for (int i = 0; i < mats.Length; i++) mats[i] = BuildMaterial(snap.materials[i]);
-
-        var go = new GameObject("MenuTree");
-        go.transform.SetPositionAndRotation(Vector3.zero, snap.rootRotation);
-        go.transform.localScale = snap.rootScale;
-
-        var mpb = new MaterialPropertyBlock();
-        int built = 0;
-        foreach (var p in snap.parts)
-        {
-            Mesh mesh = p.mesh != null ? BuildMesh(p.mesh) : MenuTreeRegistry.Resolve<Mesh>(p.meshKey);
-            if (mesh == null) { Debug.LogWarning($"[MenuTree] Missing model {p.meshKey}; part skipped."); continue; }
-
-            var part = new GameObject("Part");
-            part.transform.SetParent(go.transform, false);
-            var m = p.localMatrix;
-            part.transform.localPosition = m.GetPosition();
-            part.transform.localRotation = m.rotation;
-            part.transform.localScale    = m.lossyScale;
-
-            part.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var mr = part.AddComponent<MeshRenderer>();
-            var list = new Material[Mathf.Max(1, p.materials.Length)];
-            for (int i = 0; i < p.materials.Length; i++)
-            {
-                int mi = p.materials[i];
-                list[i] = mi >= 0 && mi < mats.Length ? mats[mi] : null;
-            }
-            mr.sharedMaterials   = list;
-            mr.shadowCastingMode = p.cast;
-            mr.receiveShadows    = p.receive;
-            if (p.hasTint)
-            {
-                mpb.Clear();
-                mpb.SetColor(IdBaseColor, p.tint);
-                mpb.SetColor(IdColor, p.tint);
-                mr.SetPropertyBlock(mpb);
-            }
-            built++;
-        }
-        if (built == 0) { Destroy(go); return null; }
+        var mats = MenuTreeBuilder.BuildMaterials(snap);
+        var go   = MenuTreeBuilder.Build(snap, mats);
+        if (go == null) return null;
 
         var s = go.AddComponent<MenuTreeShowcase>();
         s.cameraLocalPosition = snap.cameraLocalPosition;
@@ -162,53 +119,6 @@ public class MenuTreeShowcase : MonoBehaviour
         s.lights           = snap.lights.ToArray();
         s.pivotLocal       = snap.pivotLocal;
         return s;
-    }
-
-    static Mesh BuildMesh(MenuTreeSnapshot.MeshData d)
-    {
-        var mesh = new Mesh { indexFormat = IndexFormat.UInt32, name = "MenuTreePart" };
-        mesh.vertices = d.vertices;
-        if (d.normals  != null) mesh.normals  = d.normals;
-        if (d.tangents != null) mesh.tangents = d.tangents;
-        if (d.colors   != null) mesh.colors   = d.colors;
-        for (int c = 0; c < 4; c++)
-            if (d.uvs[c] != null) mesh.SetUVs(c, d.uvs[c]);
-        mesh.triangles = d.triangles;
-        mesh.RecalculateBounds();
-        return mesh;
-    }
-
-    static Material BuildMaterial(MenuTreeSnapshot.MaterialRecipe r)
-    {
-        var sh = Shader.Find(r.shader);
-        if (sh == null)
-        {
-            Debug.LogWarning($"[MenuTree] Shader '{r.shader}' isn't in this build; using URP Lit.");
-            sh = Shader.Find("Universal Render Pipeline/Lit");
-            if (sh == null) return null;
-        }
-        var m = new Material(sh);
-        foreach (var (n, v) in r.floats)
-        {
-            if (!m.HasProperty(n)) continue;
-            int pi = sh.FindPropertyIndex(n);
-            if (pi >= 0 && sh.GetPropertyType(pi) == ShaderPropertyType.Int) m.SetInteger(n, (int)v);
-            else m.SetFloat(n, v);
-        }
-        foreach (var (n, v) in r.colors)  if (m.HasProperty(n)) m.SetColor(n, v);
-        foreach (var (n, v) in r.vectors) if (m.HasProperty(n)) m.SetVector(n, v);
-        foreach (var (n, key, sc, of) in r.textures)
-        {
-            if (!m.HasProperty(n)) continue;
-            var tex = MenuTreeRegistry.Resolve<Texture>(key);
-            if (tex == null) continue;
-            m.SetTexture(n, tex);
-            m.SetTextureScale(n, sc);
-            m.SetTextureOffset(n, of);
-        }
-        m.shaderKeywords = r.keywords;
-        m.renderQueue    = r.renderQueue;
-        return m;
     }
 
     void Start()

@@ -611,8 +611,28 @@ assets: they are shipped art.
   `MenuTreeRegistry` resolves the references: through the AssetDatabase in the editor, through
   `Resources/MenuTreeRegistry.asset` in a build. `Assets/Editor/MenuTreeRegistryBuilder.cs` writes that
   asset before every build (also **Bonsai ▸ Rebuild Menu Tree Registry**).
-- **Watch for:** menu load time and draw calls with thousands of individually placed leaves (they can't
-  be combined without readable meshes); shaders reached only through `Shader.Find` must be in the build.
+- **Watch for:** shaders reached only through `Shader.Find` must be in the build.
+- **Merging (2026-10-29):** the registry builder also writes readable copies of small model meshes
+  (≤ 30k verts, not Read/Write) to `Assets/MenuTreeReadable/`, made from temp re-imports like the baker,
+  reused until the model's import hash changes. `MenuTreeBuilder` merges a saved tree's leaves, flowers
+  and pots through them into a few meshes per material and leaf colour. Run **Bonsai ▸ Rebuild Menu Tree
+  Registry** once so Play mode gets them; without them pieces are placed one by one.
+
+### 🟡 R3c — the greenhouse, built 2026-10-29 (compile-checked; not yet play-tested)
+
+- **GREENHOUSE** on the main menu opens a 3D room of every saved menu tree (`Greenhouse.cs`), built at
+  runtime inside the menu scene, 2000 units from the menu set; BACK / Esc reloads the menu scene.
+- Trees stand on their own tables in two rows either side of a central aisle, each turned so the side
+  the player last looked at faces the aisle. Spacing follows the widest tree.
+- Camera glides between trees (click one, ◀ / ▶, A / D, arrow keys), orbits the focused one (drag),
+  zooms (scroll).
+- Card actions: **Play** (that save, if it still exists), **Set as menu tree** (pins it; otherwise the
+  menu shows the most recent), **Favorite** (stored in meta.json; purpose still open), **Export 3D model**
+  (OBJ + MTL with colours, no textures, to Documents/Bonsaimancer Exports; opens the folder),
+  **Delete** (with a confirm; the save is untouched).
+- **Placeholder art:** `Greenhouse.BuildHouse` makes the building from primitives — paved floor and
+  aisle, white frame, faint glass (Sprites/Default, always in a build). Replace that one method for
+  real art.
 
 ---
 

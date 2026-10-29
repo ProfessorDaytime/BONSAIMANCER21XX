@@ -25,6 +25,22 @@ public static class MenuTreeLibrary
         public string speciesName;
         public int    treeAge;
         public string savedUtc;   // ISO 8601, sorts newest first as a string
+        public bool   favorite;   // marked in the greenhouse; what favourites do is still open
+    }
+
+    const string PinnedKey = "MenuTreePinned";
+
+    /// <summary>The tree the player chose for the main menu in the greenhouse, or null to show the
+    /// most recent. A pin to a deleted tree is ignored.</summary>
+    public static string Pinned
+    {
+        get { string v = PlayerPrefs.GetString(PinnedKey, ""); return Has(v) ? v : null; }
+        set
+        {
+            if (string.IsNullOrEmpty(value)) PlayerPrefs.DeleteKey(PinnedKey);
+            else PlayerPrefs.SetString(PinnedKey, value);
+            PlayerPrefs.Save();
+        }
     }
 
     public static string Root => Path.Combine(Application.persistentDataPath, "menutrees");
@@ -81,6 +97,7 @@ public static class MenuTreeLibrary
             if (thumb != null) File.WriteAllBytes(ThumbPath(slotId), thumb);
             var meta = new Meta
             {
+                favorite    = ReadMeta(slotId)?.favorite ?? false,   // a re-save keeps the mark
                 slotId      = slotId,
                 treeName    = skeleton.treeName,
                 speciesName = skeleton.SpeciesName,
@@ -98,9 +115,39 @@ public static class MenuTreeLibrary
         }
     }
 
+    static Meta ReadMeta(string slotId)
+    {
+        try { return File.Exists(MetaPath(slotId)) ? JsonUtility.FromJson<Meta>(File.ReadAllText(MetaPath(slotId))) : null; }
+        catch { return null; }
+    }
+
+    public static void SetFavorite(string slotId, bool favorite)
+    {
+        var m = ReadMeta(slotId);
+        if (m == null) return;
+        m.favorite = favorite;
+        File.WriteAllText(MetaPath(slotId), JsonUtility.ToJson(m, true));
+    }
+
+    public static MenuTreeSnapshot Load(string slotId) =>
+        string.IsNullOrEmpty(slotId) ? null : MenuTreeSnapshot.Read(TreePath(slotId));
+
+    /// <summary>What the main menu shows: the pinned tree, else the most recent.</summary>
+    public static MenuTreeSnapshot LoadForMenu()
+    {
+        var pinned = Pinned;
+        if (pinned != null)
+        {
+            var s = Load(pinned);
+            if (s != null) return s;
+        }
+        return LoadMostRecent();
+    }
+
     public static void Delete(string slotId)
     {
         if (string.IsNullOrEmpty(slotId)) return;
+        if (PlayerPrefs.GetString(PinnedKey, "") == slotId) Pinned = null;
         try
         {
             if (Directory.Exists(Dir(slotId))) Directory.Delete(Dir(slotId), true);
