@@ -484,9 +484,18 @@ public partial class TreeSkeleton : MonoBehaviour
     [SerializeField] float maxEnergyMultiplier = 1.5f;
 
     [Header("Wound System")]
-    [Tooltip("Branches at or above this radius require the Saw tool's multi-stroke mechanic " +
-             "to remove. Thinner branches can be cut with a single click.")]
-    [SerializeField] public float sawRadiusThreshold = 0.08f;
+    // Relative, not absolute (2026-10-28): a fixed 0.08 was the radius of a 20-year trunk's base,
+    // so the clippers cut every branch. The saw is for wood that's thick FOR THIS TREE.
+    [Tooltip("Branches at least this fraction of the trunk's base radius need the Saw. " +
+             "Thinner wood can be cut with the clippers in one click.")]
+    [SerializeField, Range(0.1f, 1f)] public float sawTrunkFraction = 0.35f;
+
+    [Tooltip("Never ask for the saw below this radius, so a young tree is all clipper work.")]
+    [SerializeField] public float sawMinRadius = 0.02f;
+
+    /// <summary>Radius at or above which the clippers refuse and the saw is needed.</summary>
+    public float SawRadiusThreshold =>
+        Mathf.Max(sawMinRadius, (root != null ? root.radius : 0f) * sawTrunkFraction);
 
     [Tooltip("Cut branches at an angle so water runs off the wound face rather than pooling. " +
              "Traditional bonsai practice — angled cuts also heal faster.")]

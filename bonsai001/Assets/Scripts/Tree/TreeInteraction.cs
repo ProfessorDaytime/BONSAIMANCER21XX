@@ -822,13 +822,16 @@ public class TreeInteraction : MonoBehaviour
             if (Mouse.current.leftButton.wasPressedThisFrame)
             {
                 var  tool     = ToolManager.Instance.ActiveTool;
-                bool tooThick = node.radius >= skeleton.sawRadiusThreshold;
+                bool tooThick = node.radius >= skeleton.SawRadiusThreshold;
                 if (tooThick && tool == ToolType.Saw)
                 {
+                    Debug.Log($"[Saw] Start node={node.id} r={node.radius:F3} limit={skeleton.SawRadiusThreshold:F3}");
                     StartSawing(node);
                 }
                 else if (tooThick)
                 {
+                    Debug.Log($"[Saw] Clippers refused node={node.id} r={node.radius:F3} " +
+                              $"limit={skeleton.SawRadiusThreshold:F3} trunk={skeleton.root.radius:F3}");
                     // Clippers can't take wood this thick (2026-10-28) — the saw is the only way.
                     if (inspectUi == null) inspectUi = FindAnyObjectByType<ButtonClicker>();
                     string name = tool == ToolType.BigClippers ? "big clippers" : "small clippers";
