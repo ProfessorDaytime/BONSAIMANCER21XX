@@ -539,7 +539,7 @@ public class LeafManager : MonoBehaviour
         {
             // Pines push a pale upright CANDLE first; the tuft pops when it finishes
             // elongating (ProcessCandles). Other conifer types go straight to needles.
-            bool wantCandle = candleDays > 0f && skeleton.species != null
+            bool wantCandle = !restoringGrown && candleDays > 0f && skeleton.species != null
                               && skeleton.species.foliageType == FoliageType.PineFascicle;
             if (wantCandle)
             {
@@ -572,9 +572,13 @@ public class LeafManager : MonoBehaviour
         nodeLeaves[node.id] = list;
         listDirty = true;
 
-        int firstBatch = Mathf.Min(UnfurlBatchSize, count);
+        int firstBatch = restoringGrown ? count : Mathf.Min(UnfurlBatchSize, count);
         for (int i = 0; i < firstBatch; i++)
-            list.Add(SpawnSingleLeaf(node));
+        {
+            var leafGo = SpawnSingleLeaf(node);
+            if (restoringGrown) { var lf = leafGo.GetComponent<Leaf>(); if (lf != null) lf.startGrown = true; }
+            list.Add(leafGo);
+        }
 
         int remaining = count - firstBatch;
         if (remaining > 0)
@@ -690,6 +694,7 @@ public class LeafManager : MonoBehaviour
         mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         var leaf         = go.AddComponent<Leaf>();
+        leaf.startGrown  = restoringGrown;
         leaf.ownerNode   = node;
         leaf.tipOffset   = Vector3.zero;
         leaf.targetScale = Vector3.one * seasonLeafScale;
@@ -1006,15 +1011,27 @@ public class LeafManager : MonoBehaviour
     /// </summary>
     public void ForceSpawnLeaves(List<TreeNode> nodes)
     {
-        foreach (var node in nodes)
+        // Leaves restored from a save (2026-10-29). Size them for this season first: the scale is
+        // otherwise only computed at the start of BranchGrow and still held its 0.25 default here,
+        // so restored leaves were ~1/2500 of their size — present, invisible, and blocking the
+        // spring flush on their tips. They also appear full-grown and whole, not unfurling again.
+        ComputeSeasonLeafScale();
+        restoringGrown = true;
+        try
         {
-            if (node.isTrimmed)                    continue;
-            if (node.isRoot)                       continue;
-            if (node.depth < minLeafDepth)         continue;
-            if (nodeLeaves.ContainsKey(node.id))   continue;
-            SpawnCluster(node);
+            foreach (var node in nodes)
+            {
+                if (node.isTrimmed)                    continue;
+                if (node.isRoot)                       continue;
+                if (node.depth < minLeafDepth)         continue;
+                if (nodeLeaves.ContainsKey(node.id))   continue;
+                SpawnCluster(node);
+            }
         }
+        finally { restoringGrown = false; }
     }
+
+    bool restoringGrown;   // ForceSpawnLeaves: spawn whole clusters, full-grown
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
 

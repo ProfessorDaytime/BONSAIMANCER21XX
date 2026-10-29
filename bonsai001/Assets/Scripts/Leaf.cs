@@ -70,6 +70,10 @@ public class Leaf : MonoBehaviour
 
     float growProgress = 0f;   // 0 = just emerged, 1 = full size + full color
 
+    /// <summary>Set before Start for a leaf restored from a save: it appears full-grown instead
+    /// of unfurling again.</summary>
+    [HideInInspector] public bool startGrown;
+
     // ── Fall animation ────────────────────────────────────────────────────────
 
     bool    isFalling = false;
@@ -133,8 +137,9 @@ public class Leaf : MonoBehaviour
         // Start small immediately — no full-size flash on the spawn frame.
         // (Unless StartFalling already ran before Start — shed needles spawn falling
         // at full scale; don't shrink them back down.)
+        if (startGrown) { growProgress = 1f; paintedGrow = 1f; }
         if (!isFalling)
-            transform.localScale = targetScale * GROW_START_FRACTION;
+            transform.localScale = startGrown ? targetScale : targetScale * GROW_START_FRACTION;
 
         // If the leaf prefab has a Rigidbody, make it kinematic so the physics
         // engine doesn't override our manual transform.position changes.
