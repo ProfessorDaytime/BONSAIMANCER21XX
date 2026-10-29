@@ -52,6 +52,9 @@ public class AudioManager : MonoBehaviour
         musicSource.mute = !musicSource.mute;
     }
 
+    /// <summary>The clip for a named SFX, or null if none is assigned (no log).</summary>
+    public AudioClip FindSFX(string name) => sfxSounds == null ? null : Array.Find(sfxSounds, x => x.name == name)?.clip;
+
     public void PlaySFX(string name){
         Sound s = Array.Find(sfxSounds, x=> x.name==name);
 

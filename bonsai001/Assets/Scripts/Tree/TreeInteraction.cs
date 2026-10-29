@@ -179,7 +179,7 @@ public class TreeInteraction : MonoBehaviour
 
     // ── Saw sub-state ─────────────────────────────────────────────────────────
 
-    [Tooltip("Pixels of mouse travel in one direction before a direction reversal counts as a half-stroke.")]
+    [Tooltip("Pixels of mouse travel ACROSS the branch in one direction before a reversal counts as a half-stroke.")]
     [SerializeField] float sawMinStrokePx = 20f;
 
     [Tooltip("Number of half-strokes (direction reversals) needed to complete a saw cut (~4–6 full strokes).")]
@@ -188,13 +188,11 @@ public class TreeInteraction : MonoBehaviour
     bool     isSawing;
     TreeNode sawTarget;
     float    sawProgress;       // 0→1
-    float    sawLastMouseX;
+    Vector2  sawLastMouse;
     float    sawCurrentDir;     // +1 or -1
     float    sawDirTravel;      // pixels traveled in current direction
     int      sawHalfStrokes;
-
-    GameObject sawGrooveGO;
-    Mesh       sawGrooveMesh;
+    bool     sawStrokeSounded;  // this stroke's rasp has played
 
     // ── Selection cursor (screen-space GL circle) ─────────────────────────────
     Material glCircleMat;
@@ -837,7 +835,7 @@ public class TreeInteraction : MonoBehaviour
                     string name = tool == ToolType.BigClippers ? "big clippers" : "small clippers";
                     inspectUi?.ShowToolHint(
                         $"That branch is too thick for the {name}. Press {KeyBindings.Display(BindAction.NextTool)} " +
-                        "until the tool reads Saw, then move the mouse side to side to cut through.");
+                        "until the tool reads Saw, then move the mouse back and forth across the branch to cut through.");
                 }
                 else
                 {
@@ -1013,9 +1011,9 @@ public class TreeInteraction : MonoBehaviour
         sawHalfStrokes = 0;
         sawCurrentDir  = 0f;
         sawDirTravel   = 0f;
-        sawLastMouseX  = Mouse.current.position.ReadValue().x;
+        sawLastMouse   = Mouse.current.position.ReadValue();
+        sawStrokeSounded = false;
         isSawing       = true;
-        BuildSawGroove();
         SetHighlight(node, HighlightMode.TrimSubtree);
     }
 
@@ -1036,36 +1034,40 @@ public class TreeInteraction : MonoBehaviour
             return;
         }
 
-        // Track horizontal mouse movement; count direction reversals as strokes
-        float mouseX = Mouse.current.position.ReadValue().x;
-        float dx     = mouseX - sawLastMouseX;
-        sawLastMouseX = mouseX;
+        // Strokes run ACROSS the branch as it appears on screen (2026-10-28) — like a real saw,
+        // not a fixed left-right wiggle. Movement along the branch doesn't count.
+        Vector2 mouse  = Mouse.current.position.ReadValue();
+        Vector2 across = SawAcrossScreenDir();
+        float   dx     = Vector2.Dot(mouse - sawLastMouse, across);
+        sawLastMouse = mouse;
 
         if (Mathf.Abs(dx) > 0.5f)
         {
             float dir = Mathf.Sign(dx);
-            if (sawCurrentDir == 0f)
+            if (dir != sawCurrentDir && sawCurrentDir != 0f)
             {
-                // First movement — establish direction
-                sawCurrentDir = dir;
-                sawDirTravel  = Mathf.Abs(dx);
-            }
-            else if (dir == sawCurrentDir)
-            {
-                sawDirTravel += Mathf.Abs(dx);
-            }
-            else
-            {
-                // Reversed direction — count a half-stroke if enough travel
+                // Reversed direction — count a half-stroke if enough travel, flick splinters
                 if (sawDirTravel >= sawMinStrokePx)
+                {
                     sawHalfStrokes++;
-                sawCurrentDir = dir;
-                sawDirTravel  = Mathf.Abs(dx);
+                    SawEffects.EmitSplinters(SawKerfWorld(), SawStrokeWorldDir(across, sawCurrentDir), SawFxScale());
+                }
+                sawDirTravel     = 0f;
+                sawStrokeSounded = false;
             }
+            sawCurrentDir = dir;
+            sawDirTravel += Mathf.Abs(dx);
+
+            // One rasp per stroke, once the blade is properly moving.
+            if (!sawStrokeSounded && sawDirTravel >= sawMinStrokePx * 0.5f)
+            {
+                sawStrokeSounded = true;
+                SawEffects.PlayStroke(dir > 0f);
+            }
+            SawEffects.EmitDust(SawKerfWorld(), SawStrokeWorldDir(across, dir), SawFxScale(), Mathf.Abs(dx));
         }
 
         sawProgress = Mathf.Clamp01((float)sawHalfStrokes / sawTotalHalfStrokes);
-        UpdateSawGroove();
         SetHighlight(sawTarget, HighlightMode.TrimSubtree);
 
         if (sawHalfStrokes >= sawTotalHalfStrokes)
@@ -1075,7 +1077,6 @@ public class TreeInteraction : MonoBehaviour
     void CompleteSaw()
     {
         var node = sawTarget;
-        DestroySawGroove();
         SetHighlight(null, HighlightMode.None);
         isSawing    = false;
         sawTarget   = null;
@@ -1086,7 +1087,6 @@ public class TreeInteraction : MonoBehaviour
 
     void CancelSaw()
     {
-        DestroySawGroove();
         SetHighlight(null, HighlightMode.None);
         isSawing    = false;
         sawTarget   = null;
@@ -1094,75 +1094,32 @@ public class TreeInteraction : MonoBehaviour
         sawHalfStrokes = 0;
     }
 
-    // Builds a flat dark ring (annulus) at the cut face, perpendicular to the branch.
-    // The ring deepens toward the center as sawProgress increases.
-    void BuildSawGroove()
+    /// <summary>Screen-space unit vector perpendicular to the branch being sawn. Falls back to
+    /// horizontal when the branch points at the camera and has no on-screen direction.</summary>
+    Vector2 SawAcrossScreenDir()
     {
-        DestroySawGroove();
-        sawGrooveGO = new GameObject("_SawGroove");
-        sawGrooveGO.transform.SetParent(transform, false);
-
-        var mf = sawGrooveGO.AddComponent<MeshFilter>();
-        var mr = sawGrooveGO.AddComponent<MeshRenderer>();
-        mr.material          = new Material(Shader.Find("Unlit/Color")) { color = new Color(0.12f, 0.06f, 0.03f) };
-        mr.shadowCastingMode = ShadowCastingMode.Off;
-        mr.receiveShadows    = false;
-
-        sawGrooveMesh = new Mesh { name = "SawGroove" };
-        mf.mesh = sawGrooveMesh;
-
-        UpdateSawGroove();
+        var t = skeleton.transform;
+        Vector2 a = cam.WorldToScreenPoint(t.TransformPoint(sawTarget.worldPosition));
+        Vector2 b = cam.WorldToScreenPoint(t.TransformPoint(sawTarget.tipPosition));
+        Vector2 d = b - a;
+        if (d.sqrMagnitude < 36f) return Vector2.right;
+        d.Normalize();
+        return new Vector2(-d.y, d.x);
     }
 
-    void UpdateSawGroove()
+    /// <summary>The cut point on the camera-facing side of the branch, in world space.</summary>
+    Vector3 SawKerfWorld()
     {
-        if (sawTarget == null || sawGrooveMesh == null) return;
-
-        // Build annulus in local (tree) space at the node base, perpendicular to growDirection.
-        Vector3 center = sawTarget.worldPosition;
-        Vector3 axis   = sawTarget.growDirection.normalized;
-
-        // Build an orthonormal frame perpendicular to the branch axis
-        Vector3 perp  = Vector3.Cross(axis, Vector3.up);
-        if (perp.sqrMagnitude < 0.01f) perp = Vector3.Cross(axis, Vector3.right);
-        perp = perp.normalized;
-        Vector3 perp2 = Vector3.Cross(perp, axis).normalized;
-
-        float outerR = sawTarget.radius * 1.12f;
-        // Inner radius shrinks from just inside the outer edge toward zero as progress grows
-        float innerR = Mathf.Lerp(sawTarget.radius * 0.9f, 0f, sawProgress);
-
-        const int segs = 20;
-        var verts = new Vector3[segs * 2];
-        var tris  = new int[segs * 6];
-
-        for (int i = 0; i < segs; i++)
-        {
-            float a   = (float)i / segs * Mathf.PI * 2f;
-            Vector3 d = Mathf.Cos(a) * perp + Mathf.Sin(a) * perp2;
-            verts[i]        = center + d * outerR;
-            verts[segs + i] = center + d * innerR;
-        }
-
-        for (int i = 0; i < segs; i++)
-        {
-            int ni = (i + 1) % segs;
-            int b  = i * 6;
-            tris[b + 0] = i;        tris[b + 1] = ni;       tris[b + 2] = segs + i;
-            tris[b + 3] = segs + i; tris[b + 4] = ni;       tris[b + 5] = segs + ni;
-        }
-
-        sawGrooveMesh.Clear();
-        sawGrooveMesh.SetVertices(verts);
-        sawGrooveMesh.SetTriangles(tris, 0);
-        sawGrooveMesh.RecalculateNormals();
+        Vector3 c = skeleton.transform.TransformPoint(sawTarget.worldPosition);
+        Vector3 toCam = (cam.transform.position - c).normalized;
+        return c + toCam * sawTarget.radius * skeleton.transform.lossyScale.x;
     }
 
-    void DestroySawGroove()
-    {
-        if (sawGrooveGO != null) { Destroy(sawGrooveGO); sawGrooveGO = null; }
-        sawGrooveMesh = null;
-    }
+    Vector3 SawStrokeWorldDir(Vector2 across, float sign) =>
+        (cam.transform.right * across.x + cam.transform.up * across.y).normalized * sign;
+
+    /// <summary>Effect size follows the branch thickness, so a trunk chop throws more than a limb.</summary>
+    float SawFxScale() => Mathf.Clamp(sawTarget.radius * skeleton.transform.lossyScale.x * 12f, 0.25f, 1.5f);
 
     // ── Wire placement ────────────────────────────────────────────────────────
 
