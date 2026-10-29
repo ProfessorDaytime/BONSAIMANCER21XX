@@ -821,11 +821,20 @@ public class TreeInteraction : MonoBehaviour
             SetHighlight(node, HighlightMode.TrimSubtree);
             if (Mouse.current.leftButton.wasPressedThisFrame)
             {
-                bool needsSaw = ToolManager.Instance.ActiveTool == ToolType.Saw
-                             && node.radius >= skeleton.sawRadiusThreshold;
-                if (needsSaw)
+                var  tool     = ToolManager.Instance.ActiveTool;
+                bool tooThick = node.radius >= skeleton.sawRadiusThreshold;
+                if (tooThick && tool == ToolType.Saw)
                 {
                     StartSawing(node);
+                }
+                else if (tooThick)
+                {
+                    // Clippers can't take wood this thick (2026-10-28) — the saw is the only way.
+                    if (inspectUi == null) inspectUi = FindAnyObjectByType<ButtonClicker>();
+                    string name = tool == ToolType.BigClippers ? "big clippers" : "small clippers";
+                    inspectUi?.ShowToolHint(
+                        $"That branch is too thick for the {name}. Press {KeyBindings.Display(BindAction.NextTool)} " +
+                        "until the tool reads Saw, then move the mouse side to side to cut through.");
                 }
                 else
                 {

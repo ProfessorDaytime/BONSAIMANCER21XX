@@ -2194,6 +2194,9 @@ public class ButtonClicker : MonoBehaviour
     /// the save toast: that is a 13px line at the bottom centre, underneath the date, and a
     /// warning there went unseen (play-test 2026-10-28).
     /// </summary>
+    /// <summary>A tool refusal ("too thick for the clippers"), shown in the care-warning banner.</summary>
+    public void ShowToolHint(string message) => ShowCareWarning(message);
+
     void ShowCareWarning(string message, bool good = false)
     {
         if (careWarningLabel == null)
