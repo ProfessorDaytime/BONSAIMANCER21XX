@@ -76,6 +76,9 @@ public class Leaf : MonoBehaviour
     // in half along its midrib and opens out instead of being squeezed to FOLDED_WIDTH.
     [HideInInspector] public bool unfold;
     bool        folds;
+    // While folded it wears the opening bud's colour (species.budSwellColor), so a just-emerged
+    // leaf reads as part of the bud until it spreads (2026-10-30).
+    [HideInInspector] public Color budColor = new Color(0.78f, 0.30f, 0.34f);
     const float FOLDED_WIDTH   = 0.2f;    // blade width when it emerges, as a fraction of open
     const float EMERGE_UNTIL   = 0.15f;   // pointing out of the bud along the shoot until here
     const float HANG_BY        = 0.4f;    // then swung down to hang by here
@@ -357,6 +360,7 @@ public class Leaf : MonoBehaviour
                 Color mid = (young + springColor) * 0.35f;
                 mid.a  = 1f;
                 spring = g < 0.5f ? Color.Lerp(young, mid, g * 2f) : Color.Lerp(mid, springColor, (g - 0.5f) * 2f);
+                if (folds) spring = Color.Lerp(budColor, spring, Mathf.SmoothStep(0f, 1f, Opened(growProgress)));
             }
             else spring = Color.Lerp(young, springColor, g);
             color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));

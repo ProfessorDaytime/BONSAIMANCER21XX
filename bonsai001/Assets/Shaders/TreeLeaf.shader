@@ -1,7 +1,8 @@
 // Broadleaf foliage (2026-10-30), in place of URP Lit on the leaf materials. A leaf is a thin
 // sheet, so both faces are drawn and each is lit from its own side; light wraps past the edge
 // of the lit half instead of cutting off at a line; and sun striking the far face glows
-// through it (translucency), brightest when looking toward the sun through the canopy.
+// through it (translucency), brightest when looking toward the sun through the canopy. Lit by
+// the main light and ambient only.
 // The colour comes from _BaseColor, which Leaf sets per leaf through a MaterialPropertyBlock.
 //
 // Spring unfold: the blade folds along its midrib, each half turned up by _FoldAngle × _Fold
@@ -13,7 +14,7 @@ Shader "Custom/TreeLeaf"
     Properties
     {
         _BaseColor        ("Colour",                         Color)       = (0.2, 0.55, 0.12, 1)
-        _Wrap             ("Light Wrap",                     Range(0, 1)) = 0.4
+        _Wrap             ("Light Wrap",                     Range(0, 1)) = 0.25
         _Translucency     ("Translucency",                   Range(0, 2)) = 0.7
         _TranslucencyTint ("Translucency Tint",              Color)       = (1.0, 1.15, 0.55, 1)
         _ForwardScatter   ("Glow Looking Toward the Sun",    Range(0, 4)) = 1.5
@@ -80,7 +81,6 @@ Shader "Custom/TreeLeaf"
             #pragma vertex   LeafVert
             #pragma fragment LeafFrag
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
-            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
             #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             #pragma multi_compile_fog
 
@@ -134,12 +134,9 @@ Shader "Custom/TreeLeaf"
                 half3  albedo = _BaseColor.rgb;
 
                 half3 col = albedo * SampleSH(n);
+                // The sun only, like the bark and buds: the scene's other directional and point
+                // lights lit every face from some side and flattened the canopy (2026-10-30).
                 col += LeafLight(GetMainLight(TransformWorldToShadowCoord(IN.posWS)), n, v, albedo);
-                #if defined(_ADDITIONAL_LIGHTS) || defined(_ADDITIONAL_LIGHTS_VERTEX)
-                uint count = GetAdditionalLightsCount();
-                for (uint i = 0u; i < count; i++)
-                    col += LeafLight(GetAdditionalLight(i, IN.posWS), n, v, albedo);
-                #endif
                 return half4(MixFog(col, IN.fog), 1);
             }
             ENDHLSL
