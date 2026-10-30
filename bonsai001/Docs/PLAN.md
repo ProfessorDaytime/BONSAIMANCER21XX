@@ -2513,12 +2513,21 @@ kind. Every place in the left column then asks it instead of keeping its own lis
 - Anything the editor tools compute about a model (like the leaf midrib and turn) lives in
   runtime code the editor calls, so it works on a GLB at runtime too.
 
+### Decisions (2026-10-30)
+- **Aesthetic vs gameplay mods.** A mod is *aesthetic* if it only adds or replaces models,
+  textures, leaf shapes, colours, music, backgrounds or themes. It is *gameplay* if it changes
+  any number the simulation uses: growth rates, soil volume, prices, AP costs, species
+  behaviour. The game decides this **from what the mod's JSON actually sets**, not from a label
+  the author chooses. The same check sets the Workshop tag ("Aesthetic" / "Gameplay") and the
+  mods screen's marker, so a mod can't call itself aesthetic while changing growth rates.
+- **Aesthetic mods never affect achievements or progression.**
+- **A save that needs a missing mod refuses to load.** It says which mods are missing, and once
+  the Workshop exists, offers to subscribe to them. So saves record the ids *and* the mods
+  that supplied them.
+
 ### Open questions
-- Mods that change gameplay numbers (growth rates, prices, AP costs): allowed freely, or flagged
-  as "changes balance"?
-- Achievements and progression with mods on: disabled, or allowed?
-- Sharing a tree that wears modded content: the save records ids, so a missing mod has to fall
-  back (default pot, built-in species of the same kind) rather than fail to load.
+- Gameplay mods and achievements: turn achievements off while one is enabled, or just mark the
+  save as modded?
 
 ---
 
