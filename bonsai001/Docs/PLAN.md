@@ -1139,6 +1139,9 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
   support, else grows straight on. (b) Fusion paired each fork's two zero-length shoots (distance 0 at
   their shared base) and later built a bridge between their tips — 976 stray cross-pieces in 40 years;
   shoots now need length ≥ 0.05 to fuse.
+  (c) Pinching softened: a pinch gives half a trim's refinement (`pinchRefinementFactor` 0.5; refinement
+  never decays and shortens future internodes) and wakes buds on 1 section below it, not 2
+  (`pinchBackBudAncestors`). The 40-year run had ~95 auto pinches a year.
 
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.

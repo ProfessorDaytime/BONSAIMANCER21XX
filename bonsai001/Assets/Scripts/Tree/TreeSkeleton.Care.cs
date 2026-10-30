@@ -1369,8 +1369,11 @@ public partial class TreeSkeleton : MonoBehaviour
         node.isGrowing = false;
         node.length    = node.targetLength;
 
-        // Refinement gain (same rate as a trim cut but scaled by vigor — less effective on strong vigorous growth)
-        float refGain = refinementOnTrim / Mathf.Max(0.5f, node.branchVigor);
+        // Refinement gain: a fraction of a trim cut's (pinchRefinementFactor), scaled by vigor — less
+        // effective on strong growth. Refinement never decays and every level shortens future
+        // internodes, so at the full cut rate ~95 auto pinches a year packed the branch ends with
+        // ever-shorter stubs (2026-10-29).
+        float refGain = refinementOnTrim * pinchRefinementFactor / Mathf.Max(0.5f, node.branchVigor);
         node.refinementLevel = Mathf.Min(node.refinementLevel + refGain, refinementCap);
 
         // Vigor reduction — pinching weakens the tip slightly
@@ -1379,9 +1382,11 @@ public partial class TreeSkeleton : MonoBehaviour
         // Light health cost — much less than a hard cut (soft tissue only)
         ApplyDamage(node, DamageType.TrimTrauma, trimTraumaDamage * 0.25f);
 
-        // Back-bud stimulation on up to 2 ancestors
+        // Back-bud stimulation just behind the pinch. A real pinch wakes the buds at the leaf pair
+        // below it, not further back; two ancestors per pinch woke ~190 sections a year near the
+        // branch ends (2026-10-29).
         TreeNode ancestor = node.parent;
-        for (int i = 0; i < 2 && ancestor != null && ancestor != root; i++)
+        for (int i = 0; i < pinchBackBudAncestors && ancestor != null && ancestor != root; i++)
         {
             ancestor.backBudStimulated = true;
             ancestor = ancestor.parent;

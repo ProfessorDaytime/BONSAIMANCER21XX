@@ -335,6 +335,14 @@ public partial class TreeSkeleton : MonoBehaviour
     [Tooltip("Refinement gained each time a node is the direct cut point of a trim.")]
     [SerializeField] float refinementOnTrim = 0.5f;
 
+    [Tooltip("A pinch gives this fraction of a trim's refinement gain (2026-10-29). Refinement never " +
+             "decays, and each level shortens future internodes ×Refinement Taper.")]
+    [SerializeField] [Range(0f, 1f)] float pinchRefinementFactor = 0.5f;
+
+    [Tooltip("How many sections below a pinch get their dormant buds woken. A real pinch wakes the " +
+             "buds just behind it (2026-10-29: was 2).")]
+    [SerializeField] [Range(0, 3)] int pinchBackBudAncestors = 1;
+
     [Tooltip("Refinement gained on a node when one of its back-buds activates in spring.")]
     [SerializeField] float refinementOnBackBud = 0.25f;
 
