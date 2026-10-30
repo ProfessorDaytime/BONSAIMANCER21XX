@@ -79,6 +79,12 @@ public class TreeSpecies : ScriptableObject
              "Opposite: two symmetric equal forks (Japanese maple, ash, dogwood).")]
     public BudType budType = BudType.Alternate;
 
+    [Tooltip("Opposite species: base chance a tip splits into a pair each spring, scaled like laterals by " +
+             "the tip's vigour, the tree's energy, root support and how full the canopy is. A tip that " +
+             "doesn't split grows straight on. Before 2026-10-29 every tip split every year, doubling the " +
+             "tips at the branch ends until the canopy budget ran out.")]
+    [Range(0f, 1f)] public float oppositeForkChance = 0.6f;
+
     [Tooltip("How strongly the terminal bud suppresses lateral shoots (0 = equal vigor, 1 = laterals don't grow).")]
     [Range(0f, 1f)] public float apicalDominance = 0.3f;
 

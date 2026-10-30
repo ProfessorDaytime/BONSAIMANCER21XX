@@ -285,6 +285,7 @@ public partial class TreeSkeleton : MonoBehaviour
     [Tooltip("Alternate: one continuation + one optional lateral per node (most trees).\n" +
              "Opposite: two symmetric equal forks per node (Japanese maple, ash, dogwood).")]
     [SerializeField] BudType budType = BudType.Alternate;
+    [SerializeField] [Range(0f, 1f)] float oppositeForkChance = 0.6f;
 
     [Tooltip("How strongly the terminal bud suppresses lateral shoots (0 = equal vigor, 1 = laterals don't grow).\n" +
              "Japanese maple ≈ 0.1  |  most broadleaf trees ≈ 0.3–0.5  |  conifers ≈ 0.7–0.9")]
@@ -1465,6 +1466,7 @@ public partial class TreeSkeleton : MonoBehaviour
         backBudBaseChance            = species.backBudBaseChance;
 
         budType                      = species.budType;
+        oppositeForkChance           = species.oppositeForkChance;
         apicalDominance              = species.apicalDominance;
 
         apicalVigorBonus             = species.apicalVigorBonus;

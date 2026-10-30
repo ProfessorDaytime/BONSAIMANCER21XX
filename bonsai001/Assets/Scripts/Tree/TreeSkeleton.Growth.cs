@@ -1084,8 +1084,15 @@ public partial class TreeSkeleton : MonoBehaviour
 
                 if (budType == BudType.Opposite)
                 {
-                    var forkNeeded = currentBranchCount + 2 <= EffectiveMaxBranchNodes;
+                    // A tip splits into a pair only by chance, gated like laterals (2026-10-29).
+                    // Unconditional forking doubled the tips at every branch end each spring — the
+                    // knuckles of stubby twigs on 20–40-year maples.
+                    float forkChance = oppositeForkChance * vigorFactor * treeEnergy
+                                       * terminal.branchVigor * _rootSupportCached;
+                    var forkNeeded = currentBranchCount + 2 <= EffectiveMaxBranchNodes
+                                     && Random.value < forkChance;
                     var (dirA, dirB) = OppositeForkDirections(terminal);
+                    if (!forkNeeded) dirA = ContinuationDirection(terminal);   // grows straight on
                     var forkA = CreateNode(terminal.tipPosition, dirA, nodeRadius, childLength, terminal);
                     forkA.isRoot = false;
                     if (subdivs > 1) forkA.subdivisionsLeft = subdivs - 1;

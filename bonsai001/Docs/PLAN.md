@@ -1133,7 +1133,12 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
 3. **Visible buds**: red pointed opposite buds at tips and nodes from autumn to spring, swelling in early
    spring, scales opening as the leaf tuft emerges. One combined mesh, not ~1,400 objects (the bud
    prefabs are switched off in the scene, likely for that reason).
-- If the branch ends are still too twiggy after this: per-species branch budget, or less pinching.
+- ✅ *compile-checked* **Branch-end knuckles (found 2026-10-29 from a 40-year run):** (a) opposite species
+  forked EVERY tip into two every spring, unconditionally — tips doubled yearly at the branch ends; now
+  a tip splits only with `oppositeForkChance` (0.6) × canopy vigor × tree energy × tip vigor × root
+  support, else grows straight on. (b) Fusion paired each fork's two zero-length shoots (distance 0 at
+  their shared base) and later built a bridge between their tips — 976 stray cross-pieces in 40 years;
+  shoots now need length ≥ 0.05 to fuse.
 
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.

@@ -183,6 +183,8 @@ public partial class TreeSkeleton : MonoBehaviour
     /// parent are close enough they are registered as a new FusionBond.
     /// Called from StartNewGrowingSeason after all new growth is spawned.
     /// </summary>
+    const float fusionMinLength = 0.05f;
+
     void DetectNewFusions()
     {
         // Build a per-parent list of living terminal branches
@@ -215,6 +217,11 @@ public partial class TreeSkeleton : MonoBehaviour
                         fb.nodeIdA == a.id || fb.nodeIdB == a.id ||
                         fb.nodeIdA == b.id || fb.nodeIdB == b.id);
                     if (alreadyBonded) continue;
+
+                    // Only grown shoots fuse. A fork's two new shoots both sit at zero length on the
+                    // same point each spring, so they "touched" and later got a bridge built between
+                    // their tips — 976 stray cross-pieces on a 40-year maple (2026-10-29).
+                    if (a.length < fusionMinLength || b.length < fusionMinLength) continue;
 
                     float threshold = (a.radius + b.radius) * fusionTipProximityMult;
                     float dist = Vector3.Distance(
