@@ -300,7 +300,8 @@ public partial class FlowerVisuals
     {
         if (r < 0.0008f) return;
         const int N = 10;
-        Vector3 u = (up - normal * Vector3.Dot(up, normal)).normalized;
+        Vector3 u = up - normal * Vector3.Dot(up, normal);
+        u = u.sqrMagnitude > 1e-8f ? u.normalized : BudVisuals.Side(normal, 0f);   // up along the normal: any in-plane direction
         Vector3 v = Vector3.Cross(normal, u);
         Vector3 P(int k)
         {
