@@ -85,6 +85,14 @@ public class Leaf : MonoBehaviour
     const float OPEN_FROM      = 0.25f;   // fingers start to spread here
     const float OPEN_BY        = 0.6f;    // fully spread by here
     const float LIFTED_BY      = 0.75f;   // risen to its rest angle by here
+    // Its colour (2026-10-30): bud pink turns to the young red by BUD_UNTIL, stays red until
+    // RED_UNTIL (late in the first week for an 18-day maple leaf), passes quickly through the
+    // bronze-olive midpoint by OLIVE_BY — the halfway mix is a dull brown, so it mustn't linger —
+    // and is fully green by GREEN_BY.
+    const float BUD_UNTIL      = 0.40f;
+    const float RED_UNTIL      = 0.42f;
+    const float OLIVE_BY       = 0.50f;
+    const float GREEN_BY       = 0.85f;
     Quaternion emergeLocalRotation, droopLocalRotation;
 
     float growProgress = 0f;   // 0 = just emerged, 1 = full size + full color
@@ -359,8 +367,11 @@ public class Leaf : MonoBehaviour
                 // passes through a bright yellow that real maple leaves never show (2026-10-29).
                 Color mid = (young + springColor) * 0.35f;
                 mid.a  = 1f;
-                spring = g < 0.5f ? Color.Lerp(young, mid, g * 2f) : Color.Lerp(mid, springColor, (g - 0.5f) * 2f);
-                if (folds) spring = Color.Lerp(budColor, spring, Mathf.SmoothStep(0f, 1f, Opened(growProgress)));
+                float p = growProgress;
+                spring = p < OLIVE_BY
+                    ? Color.Lerp(young, mid,         Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(RED_UNTIL, OLIVE_BY, p)))
+                    : Color.Lerp(mid, springColor,   Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(OLIVE_BY, GREEN_BY, p)));
+                if (folds) spring = Color.Lerp(budColor, spring, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(OPEN_FROM, BUD_UNTIL, p)));
             }
             else spring = Color.Lerp(young, springColor, g);
             color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
