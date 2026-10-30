@@ -53,7 +53,7 @@ public class FlowerManager : MonoBehaviour
 
     void Update()
     {
-        dayAccum += Time.deltaTime * GameManager.TIMESCALE / 24f;
+        dayAccum += GameManager.InGameDaysThisFrame;   // stops under menus and tooltips
 
         if (bloomed && skeleton != null && skeleton.species != null &&
             dayAccum - bloomDay >= skeleton.species.bloomDurationDays)
@@ -329,7 +329,7 @@ public class Flower : MonoBehaviour
 
     void Update()
     {
-        float dtDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
+        float dtDays = GameManager.InGameDaysThisFrame;
 
         if (!falling)
         {

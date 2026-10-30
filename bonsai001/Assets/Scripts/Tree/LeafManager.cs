@@ -875,7 +875,7 @@ public class LeafManager : MonoBehaviour
         airborneShedNeedles.RemoveAll(go => go == null);
         if (airborneShedNeedles.Count >= maxAirborneShedNeedles) return;
 
-        float days       = Time.deltaTime * GameManager.TIMESCALE / 24f;
+        float days       = GameManager.InGameDaysThisFrame;
         float seasonMult = (GameManager.month >= 9 && GameManager.month <= 11) ? 3f : 1f;
         shedAccumulator += nodeLeaves.Count * 0.01f * needleShedPer100TuftsPerDay * seasonMult * days;
 
@@ -1222,7 +1222,8 @@ public class LeafManager : MonoBehaviour
     {
         if (allLeaves.Count == 0) return;
 
-        float inGameDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
+        float inGameDays = GameManager.InGameDaysThisFrame;
+        if (inGameDays <= 0f) return;
 
         // Iterate backward so we can remove mid-loop
         for (int i = allLeaves.Count - 1; i >= 0; i--)

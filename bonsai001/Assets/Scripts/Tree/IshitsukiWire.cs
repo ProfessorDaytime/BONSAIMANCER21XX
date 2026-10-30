@@ -51,7 +51,7 @@ public class IshitsukiWire : MonoBehaviour
         // Tick progress — SeasonalGrowthRate is 0 outside growing months,
         // so this is naturally a no-op during dormancy.
         float rate      = GameManager.SeasonalGrowthRate;
-        float daysDelta = Time.deltaTime * GameManager.TIMESCALE / 24f;
+        float daysDelta = GameManager.InGameDaysThisFrame;   // stops under menus and tooltips
 
         if (WireSetProgress < 1f)
             WireSetProgress = Mathf.Min(1f, WireSetProgress + daysDelta * rate / wireDaysToSet);

@@ -736,6 +736,12 @@ public class GameManager : MonoBehaviour
     /// <summary>True while the in-game clock is advancing (the states <see cref="CalculateTime"/>
     /// runs in). Systems that integrate <c>Time.deltaTime × TIMESCALE</c> themselves must check
     /// this, or they keep running under tips, menus and tool modes.</summary>
+    /// <summary>In-game days that passed this frame — zero while the clock is stopped by a menu,
+    /// dialog or tooltip (2026-10-29). Per-frame timers that used Time.deltaTime × TIMESCALE kept
+    /// running under a tooltip: a spring tooltip at Fast speed grew every new leaf to full size and
+    /// colour while the calendar sat still on March 1.</summary>
+    public static float InGameDaysThisFrame => ClockRunning ? Time.deltaTime * TIMESCALE / 24f : 0f;
+
     public static bool ClockRunning
     {
         get

@@ -164,8 +164,10 @@ public class BudVisuals : MonoBehaviour
         return Quaternion.AngleAxis(azimuthDeg, axis) * perp.normalized;
     }
 
-    static float BudLength(TreeNode n, float swell) => Mathf.Clamp(n.radius * 5.5f, 0.018f, 0.055f) * (1f + 0.7f * swell);
-    static float BudWidth (TreeNode n, float swell) => Mathf.Clamp(n.radius * 1.8f, 0.007f, 0.022f) * (1f + 0.5f * swell);
+    // Smaller, and far less dependent on twig thickness (2026-10-29: "they start a little too big";
+    // thick cut stumps carried the largest buds). A typical tip (r ≈ 0.006) gets ~0.022 × 0.009.
+    static float BudLength(TreeNode n, float swell) => Mathf.Clamp(0.014f + n.radius * 1.4f, 0.014f, 0.03f) * (1f + 0.7f * swell);
+    static float BudWidth (TreeNode n, float swell) => Mathf.Clamp(0.005f + n.radius * 0.6f, 0.005f, 0.012f) * (1f + 0.5f * swell);
 
     /// <summary>The V-pair at the tip, between the tip's leaf pair (turned 90° from it).</summary>
     void AddTipPair(TreeNode n, float swell, Color col)

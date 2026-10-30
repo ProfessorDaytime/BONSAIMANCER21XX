@@ -234,7 +234,7 @@ public class Leaf : MonoBehaviour
         // Grow-in over in-game days (skip once falling so the fall keeps the correct scale)
         if (!isFalling && growProgress < 1f)
         {
-            float elapsedDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
+            float elapsedDays = GameManager.InGameDaysThisFrame;
             growProgress      = Mathf.Min(1f, growProgress + elapsedDays / Mathf.Max(1f, growDays));
             float s = Mathf.Lerp(GROW_START_FRACTION, 1f, Mathf.SmoothStep(0f, 1f, growProgress));
             transform.localScale = GrowScale(s, growProgress);
@@ -248,7 +248,7 @@ public class Leaf : MonoBehaviour
         // Autumn colour progression. A falling leaf keeps the colour it dropped with.
         if (isInFallSeason && !isFalling)
         {
-            float inGameDays  = Time.deltaTime * GameManager.TIMESCALE / 24f;
+            float inGameDays  = GameManager.InGameDaysThisFrame;
             fallColorProgress = Mathf.Min(1f, fallColorProgress + inGameDays * fallColorSpeed / FALL_COLOR_DAYS);
             if (fallColorProgress >= 1f || fallColorProgress - paintedFall >= ColorStep)
             {
@@ -332,8 +332,18 @@ public class Leaf : MonoBehaviour
         else
         {
             // Young leaves are paler; the species spring color develops as the leaf grows
-            Color spring = Color.Lerp(Color.Lerp(springColor, youngTint, youngTintStrength), springColor,
-                                      Mathf.SmoothStep(0f, 1f, growProgress));
+            Color young = Color.Lerp(springColor, youngTint, youngTintStrength);
+            float g     = Mathf.SmoothStep(0f, 1f, growProgress);
+            Color spring;
+            if (unfold)
+            {
+                // Red young leaves green through a darker bronze-olive: a straight red→green blend
+                // passes through a bright yellow that real maple leaves never show (2026-10-29).
+                Color mid = (young + springColor) * 0.35f;
+                mid.a  = 1f;
+                spring = g < 0.5f ? Color.Lerp(young, mid, g * 2f) : Color.Lerp(mid, springColor, (g - 0.5f) * 2f);
+            }
+            else spring = Color.Lerp(young, springColor, g);
             color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
             if (stressAmount > 0f) color = Color.Lerp(color, stressColor, stressAmount);
         }
