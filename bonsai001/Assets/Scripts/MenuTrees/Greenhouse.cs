@@ -313,11 +313,15 @@ public class Greenhouse : MonoBehaviour
             {
                 if (r == null) continue;
                 float k = Mathf.Clamp(Luma(summerTint) / 0.45f, 0.6f, 1.4f);
-                Color own = Color.Lerp(ShadeFall, fall, Mathf.Lerp(0.35f, 1f, exp));   // shaded = duller
-                var target = new Color(own.r * k, own.g * k, own.b * k, summerTint.a);
                 // Exposed leaves start at t = 0; the deepest start TurnSpread later; all done by t = 1.
                 float lag = (1f - exp) * TurnSpread;
                 float lt  = Mathf.Clamp01((t - lag) / Mathf.Max(0.0001f, 1f - lag));
+                // Shaded leaves start duller (yellow-orange) but keep deepening as their own change
+                // completes, reaching the full species colour at the end — a maple ends red all
+                // through, not orange inside (play-test 2026-10-29).
+                float vivid = Mathf.Lerp(Mathf.Lerp(0.35f, 1f, exp), 1f, lt * lt);
+                Color own = Color.Lerp(ShadeFall, fall, vivid);
+                var target = new Color(own.r * k, own.g * k, own.b * k, summerTint.a);
                 var c = Color.Lerp(summerTint, target, Mathf.SmoothStep(0f, 1f, lt));
                 r.GetPropertyBlock(seasonMpb);
                 seasonMpb.SetColor(IdBaseColor, c);
