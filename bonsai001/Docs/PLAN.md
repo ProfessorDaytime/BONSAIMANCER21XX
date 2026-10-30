@@ -1119,8 +1119,7 @@ Play-tested by the user unless marked *compile-checked*. Pushed through **v0.1.4
 
 **Platform / build**
 - *compile-checked* **Tree outline setting** (Settings ▸ Display, Off–200 %): global `_BonsaiOutlineScale` in
-  the bark shader's Outline pass (0 discards it). **Default Off for now** (`GameSettings.DefaultTreeOutline`);
-  the user wants it back later — set the default to 1.
+  the bark shader's Outline pass (0 discards it). default now **20%** (`DefaultTreeOutline` 0.2), the user's choice after trying it.
 - *compile-checked* **UI drawn over by the tree when zoomed in:** the UI canvas is Screen Space - Camera at
   plane distance 1, so geometry nearer than 1 unit covered it. Now set to near clip + 0.01 at startup.
 - `FocusGuard` (R5b). Company name **WZRD HAU5**. Version scheme release.build.update, tagged per push.
@@ -1133,8 +1132,11 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
    segments ≥ 0.15 (`oppositeSecondPairLength`), each pair 90° round from the last; blades rolled
    face-up. Maple leaf scale 0.02 → 0.012 (≈ a Ficus leaf's area). Fixes the "way too dense" 20-year
    maple: 1,422 leafy tips × 5 leaves at ~3× a Ficus leaf's area each.
-2. **Leaves unfold**: emerge folded and narrow, pointing up / drooping, then spread open; young colour
-   a deep red-bronze.
+2. ✅ *compile-checked* **Leaves unfold** (species `leafUnfold`, Japanese Maple on): a new leaf emerges with
+   its blade at 20% width (local Y), hanging most of the way down from its stem, spreads fully open by
+   45% of its grow-in and lifts to its resting angle by 70%; wind sway follows the lifting angle.
+   Young colour deep red-bronze (`leafBudBreakColor` 0.70/0.24/0.16) at 90% strength
+   (`youngTintStrength`, was a fixed 65%), fading to green over the grow-in (`leafGrowDays` 14 → 18).
 3. **Visible buds**: red pointed opposite buds at tips and nodes from autumn to spring, swelling in early
    spring, scales opening as the leaf tuft emerges. One combined mesh, not ~1,400 objects (the bud
    prefabs are switched off in the scene, likely for that reason).

@@ -92,9 +92,9 @@ public static class GameSettings
 
     // ── Tree outline ──────────────────────────────────────────────────────────
 
-    /// <summary>Default for the tree outline: off for now (2026-10-29). Set to 1 to bring the
-    /// original outline back for everyone who hasn't chosen otherwise.</summary>
-    public const float DefaultTreeOutline = 0f;
+    /// <summary>Default for the tree outline: 20% of the original width (2026-10-29, the user's
+    /// choice after trying it). 1 = the original look.</summary>
+    public const float DefaultTreeOutline = 0.2f;
     public const float MaxTreeOutline     = 2f;
 
     /// <summary>Thickness of the dark outline around the bark, as a multiple of the material's

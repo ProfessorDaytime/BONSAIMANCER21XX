@@ -259,6 +259,15 @@ public class TreeSpecies : ScriptableObject
              "yellow-green of fresh growth that darkens as the leaf matures.")]
     public Color leafBudBreakColor = new Color(0.72f, 0.88f, 0.38f);
 
+    [Tooltip("How much of the young colour a just-opened leaf starts with (0–1); it fades to the " +
+             "spring colour as the leaf grows. 0.65 was the fixed value before 2026-10-29.")]
+    [Range(0f, 1f)] public float youngTintStrength = 0.65f;
+
+    [Tooltip("Leaves emerge folded and hanging, then spread open and lift to their resting angle " +
+             "as they grow (Japanese maple, 2026-10-29). The model's blade width must run along its " +
+             "local Y axis.")]
+    public bool leafUnfold;
+
     [Tooltip("Peak autumn colour for this species (deciduous only — evergreens never turn).\n" +
              "Maple: crimson.  Birch/willow: gold.  Dawn redwood/swamp cypress: copper-rust.\n" +
              "Leaves run spring-colour → THIS → dried (darkened) before falling.")]

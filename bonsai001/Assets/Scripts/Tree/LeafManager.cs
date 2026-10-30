@@ -701,6 +701,8 @@ public class LeafManager : MonoBehaviour
             leaf.springColor = skeleton.species.leafSpringColor;
             leaf.growDays    = skeleton.species.leafGrowDays;
             leaf.youngTint   = skeleton.species.leafBudBreakColor;
+            leaf.youngTintStrength = skeleton.species.youngTintStrength;
+            leaf.unfold      = skeleton.species.leafUnfold;
             leaf.autumnColor = skeleton.species.leafAutumnColor;
         }
 
@@ -756,6 +758,8 @@ public class LeafManager : MonoBehaviour
             leaf.springColor = skeleton.species.leafSpringColor;
             leaf.growDays    = skeleton.species.leafGrowDays;
             leaf.youngTint   = skeleton.species.leafBudBreakColor;
+            leaf.youngTintStrength = skeleton.species.youngTintStrength;
+            leaf.unfold      = skeleton.species.leafUnfold;
             leaf.autumnColor = skeleton.species.leafAutumnColor;
         }
         // Per-tuft colour variety via the Leaf's MaterialPropertyBlock (per-renderer, so

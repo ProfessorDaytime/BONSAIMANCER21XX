@@ -67,6 +67,15 @@ public class Leaf : MonoBehaviour
 
     [HideInInspector] public float growDays  = 20f;
     [HideInInspector] public Color youngTint = new Color(0.72f, 0.88f, 0.38f);
+    [HideInInspector] public float youngTintStrength = 0.65f;
+
+    // Unfolding (2026-10-29, maple leaf-out): the leaf emerges with its fingers closed and hanging
+    // limp, then spreads open over the first part of its growth and lifts to its resting angle.
+    [HideInInspector] public bool unfold;
+    const float FOLDED_WIDTH   = 0.2f;    // blade width when it emerges, as a fraction of open
+    const float OPEN_BY        = 0.45f;   // growProgress at which it is fully spread
+    const float LIFTED_BY      = 0.7f;    // growProgress at which it has risen to its rest angle
+    Quaternion droopLocalRotation;
 
     float growProgress = 0f;   // 0 = just emerged, 1 = full size + full color
 
@@ -129,6 +138,7 @@ public class Leaf : MonoBehaviour
 
         windPhase         = Random.value;
         baseLocalRotation = transform.localRotation;
+        droopLocalRotation = DroopFrom(baseLocalRotation);
         CacheBranchIdentity();
         // For riding the bark's vertex-shader sway: leaves are parented under the skeleton, so
         // the builder is findable here. Cached now — falling leaves may be reparented later.
@@ -139,7 +149,7 @@ public class Leaf : MonoBehaviour
         // at full scale; don't shrink them back down.)
         if (startGrown) { growProgress = 1f; paintedGrow = 1f; }
         if (!isFalling)
-            transform.localScale = startGrown ? targetScale : targetScale * GROW_START_FRACTION;
+            transform.localScale = startGrown ? targetScale : GrowScale(GROW_START_FRACTION, 0f);
 
         // If the leaf prefab has a Rigidbody, make it kinematic so the physics
         // engine doesn't override our manual transform.position changes.
@@ -188,7 +198,7 @@ public class Leaf : MonoBehaviour
 
                 Quaternion parentRot = transform.parent != null ? transform.parent.rotation
                                                                 : Quaternion.identity;
-                Quaternion restWorld = parentRot * baseLocalRotation;
+                Quaternion restWorld = parentRot * RestLocalRotation;
                 Vector3    bladeDirW = restWorld * Vector3.forward;   // blade runs along local +Z
 
                 // Only the component across the blade swings it; along-blade wind just compresses.
@@ -213,7 +223,7 @@ public class Leaf : MonoBehaviour
             }
             else
             {
-                transform.localRotation = baseLocalRotation;
+                transform.localRotation = RestLocalRotation;
             }
         }
 
@@ -227,7 +237,7 @@ public class Leaf : MonoBehaviour
             float elapsedDays = Time.deltaTime * GameManager.TIMESCALE / 24f;
             growProgress      = Mathf.Min(1f, growProgress + elapsedDays / Mathf.Max(1f, growDays));
             float s = Mathf.Lerp(GROW_START_FRACTION, 1f, Mathf.SmoothStep(0f, 1f, growProgress));
-            transform.localScale = targetScale * s;
+            transform.localScale = GrowScale(s, growProgress);
             if (growProgress >= 1f || growProgress - paintedGrow >= ColorStep)
             {
                 paintedGrow = growProgress;
@@ -322,7 +332,7 @@ public class Leaf : MonoBehaviour
         else
         {
             // Young leaves are paler; the species spring color develops as the leaf grows
-            Color spring = Color.Lerp(Color.Lerp(springColor, youngTint, 0.65f), springColor,
+            Color spring = Color.Lerp(Color.Lerp(springColor, youngTint, youngTintStrength), springColor,
                                       Mathf.SmoothStep(0f, 1f, growProgress));
             color = Color.Lerp(spring, FungalSicklyColor, Mathf.Clamp01(fungalSeverity));
             if (stressAmount > 0f) color = Color.Lerp(color, stressColor, stressAmount);
@@ -345,7 +355,40 @@ public class Leaf : MonoBehaviour
     {
         if (isFalling || ownerNode == null || propBlock == null) return;   // propBlock: Start has run
         transform.localPosition = ownerNode.tipPosition + tipOffset;
-        transform.localRotation = baseLocalRotation;
+        transform.localRotation = RestLocalRotation;
+    }
+
+    /// <summary>The leaf's resting angle: hanging while it is young if it unfolds, lifting to
+    /// its spawn angle by <see cref="LIFTED_BY"/>.</summary>
+    Quaternion RestLocalRotation
+    {
+        get
+        {
+            if (!unfold || growProgress >= LIFTED_BY) return baseLocalRotation;
+            float lift = Mathf.SmoothStep(0f, 1f, growProgress / LIFTED_BY);
+            return Quaternion.Slerp(droopLocalRotation, baseLocalRotation, lift);
+        }
+    }
+
+    /// <summary>Size for the grow-in: uniform, except an unfolding leaf starts narrow — its blade
+    /// width (local Y) opens from <see cref="FOLDED_WIDTH"/> to full by <see cref="OPEN_BY"/>.</summary>
+    Vector3 GrowScale(float s, float progress)
+    {
+        var v = targetScale * s;
+        if (unfold)
+            v.y *= Mathf.Lerp(FOLDED_WIDTH, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / OPEN_BY)));
+        return v;
+    }
+
+    /// <summary>The hanging angle a young unfolding leaf starts from: the blade (local +Z) tipped
+    /// most of the way toward straight down, about the stem attachment.</summary>
+    Quaternion DroopFrom(Quaternion rest)
+    {
+        if (!unfold || transform.parent == null) return rest;
+        Vector3 blade = rest * Vector3.forward;
+        Vector3 down  = transform.parent.InverseTransformDirection(Vector3.down).normalized;
+        Vector3 hang  = Vector3.Slerp(blade, down, 0.65f);
+        return Quaternion.FromToRotation(blade, hang) * rest;
     }
 
     /// <summary>Force a colour refresh — called by LeafManager after updating fungalSeverity.</summary>
