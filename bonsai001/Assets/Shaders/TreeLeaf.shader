@@ -3,7 +3,8 @@
 // of the lit half instead of cutting off at a line; and sun striking the far face glows
 // through it (translucency), brightest when looking toward the sun through the canopy. Lit by
 // the main light and ambient only.
-// The colour comes from _BaseColor, which Leaf sets per leaf through a MaterialPropertyBlock.
+// The colour comes from _BaseColor, which Leaf sets per leaf through a MaterialPropertyBlock;
+// it and _Fold are instanced, so leaves sharing a model draw in batches.
 //
 // Spring unfold: the blade folds along its midrib, each half turned down by _FoldAngle × _Fold
 // (undersides together, as a maple leaf leaves the bud). Leaf sets _Fold per leaf; LeafManager
@@ -42,8 +43,10 @@ Shader "Custom/TreeLeaf"
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
+        // Per-leaf values (Leaf's property block) are instanced, so leaves sharing a model draw in
+        // batches (2026-10-30). That leaves the shader outside the SRP Batcher, which a property
+        // block rules out anyway.
         CBUFFER_START(UnityPerMaterial)
-            float4 _BaseColor;
             float  _Wrap;
             float  _ShadowFill;
             float  _Translucency;
@@ -52,21 +55,27 @@ Shader "Custom/TreeLeaf"
             float  _Smoothness;
             float  _Specular;
             float  _FoldAngle;
-            float  _Fold;
             float4 _FoldOrigin;
             float4 _FoldAxis;
             float4 _FoldUp;
         CBUFFER_END
 
+        UNITY_INSTANCING_BUFFER_START(LeafProps)
+            UNITY_DEFINE_INSTANCED_PROP(float4, _BaseColor)
+            UNITY_DEFINE_INSTANCED_PROP(float,  _Fold)
+        UNITY_INSTANCING_BUFFER_END(LeafProps)
+
         // Turns each half of the blade about the midrib line, the +w half by +θ and the −w half
         // by −θ, so both droop away from _FoldUp. Every pass folds, so shadows and depth match.
+        // Call after UNITY_SETUP_INSTANCE_ID.
         void Fold(inout float3 posOS, inout float3 nrmOS)
         {
-            if (_Fold <= 0.0) return;
+            float fold = UNITY_ACCESS_INSTANCED_PROP(LeafProps, _Fold);
+            if (fold <= 0.0) return;
             float3 a  = normalize(_FoldAxis.xyz);
             float3 w  = normalize(cross(a, _FoldUp.xyz));   // a × w = −up: +θ lowers the +w half
             float3 d  = posOS - _FoldOrigin.xyz;
-            float  th = radians(_FoldAngle) * _Fold * (dot(d, w) >= 0.0 ? 1.0 : -1.0);
+            float  th = radians(_FoldAngle) * fold * (dot(d, w) >= 0.0 ? 1.0 : -1.0);
             float  c  = cos(th), s = sin(th);
             posOS = _FoldOrigin.xyz + d * c + cross(a, d) * s + a * dot(a, d) * (1.0 - c);
             nrmOS = nrmOS * c + cross(a, nrmOS) * s + a * dot(a, nrmOS) * (1.0 - c);
@@ -85,6 +94,7 @@ Shader "Custom/TreeLeaf"
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
             #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             #pragma multi_compile_fog
+            #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
@@ -92,6 +102,7 @@ Shader "Custom/TreeLeaf"
             {
                 float4 posOS : POSITION;
                 float3 nrmOS : NORMAL;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
             struct LeafVary
             {
@@ -99,11 +110,14 @@ Shader "Custom/TreeLeaf"
                 float3 nrmWS  : TEXCOORD0;
                 float3 posWS  : TEXCOORD1;
                 float  fog    : TEXCOORD2;
+                half4  color  : COLOR;
             };
 
             LeafVary LeafVert(LeafAttr IN)
             {
                 LeafVary OUT;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                OUT.color  = UNITY_ACCESS_INSTANCED_PROP(LeafProps, _BaseColor);
                 float3 pos = IN.posOS.xyz, nrm = IN.nrmOS;
                 Fold(pos, nrm);
                 OUT.posWS  = TransformObjectToWorld(pos);
@@ -135,7 +149,7 @@ Shader "Custom/TreeLeaf"
             {
                 float3 n      = normalize(IN.nrmWS) * IS_FRONT_VFACE(face, 1.0, -1.0);
                 float3 v      = GetWorldSpaceNormalizeViewDir(IN.posWS);
-                half3  albedo = _BaseColor.rgb;
+                half3  albedo = IN.color.rgb;
 
                 half3 col = albedo * SampleSH(n);
                 // The sun only, like the bark and buds: the scene's other directional and point
@@ -156,16 +170,18 @@ Shader "Custom/TreeLeaf"
             #pragma vertex   ShadowVert
             #pragma fragment ShadowFrag
             #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
+            #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 
             float3 _LightDirection;   // set by URP for the light being rendered
             float3 _LightPosition;
 
-            struct ShadowAttr { float4 posOS : POSITION; float3 nrmOS : NORMAL; };
+            struct ShadowAttr { float4 posOS : POSITION; float3 nrmOS : NORMAL; UNITY_VERTEX_INPUT_INSTANCE_ID };
 
             float4 ShadowVert(ShadowAttr IN) : SV_POSITION
             {
+                UNITY_SETUP_INSTANCE_ID(IN);
                 float3 pos = IN.posOS.xyz, nrm = IN.nrmOS;
                 Fold(pos, nrm);
                 float3 posWS = TransformObjectToWorld(pos);
@@ -196,11 +212,13 @@ Shader "Custom/TreeLeaf"
             HLSLPROGRAM
             #pragma vertex   DepthVert
             #pragma fragment DepthFrag
+            #pragma multi_compile_instancing
 
-            struct DepthAttr { float4 posOS : POSITION; float3 nrmOS : NORMAL; };
+            struct DepthAttr { float4 posOS : POSITION; float3 nrmOS : NORMAL; UNITY_VERTEX_INPUT_INSTANCE_ID };
 
             float4 DepthVert(DepthAttr IN) : SV_POSITION
             {
+                UNITY_SETUP_INSTANCE_ID(IN);
                 float3 pos = IN.posOS.xyz, nrm = IN.nrmOS;
                 Fold(pos, nrm);   // must match ForwardLit
                 return TransformObjectToHClip(pos);

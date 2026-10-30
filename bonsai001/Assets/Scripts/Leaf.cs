@@ -112,6 +112,7 @@ public class Leaf : MonoBehaviour
 
     Renderer              leafRenderer;
     MaterialPropertyBlock propBlock;
+    bool                  paintColor = true, paintBaseColor = true;
 
     // ── Wind ──────────────────────────────────────────────────────────────────
     // Per-leaf phase staggers the canopy shimmer; base rotation captured in Start so
@@ -155,6 +156,10 @@ public class Leaf : MonoBehaviour
         propBlock    = new MaterialPropertyBlock();
         var mat      = leafRenderer != null ? leafRenderer.sharedMaterial : null;
         folds        = unfold && mat != null && mat.HasProperty(IdFold) && mat.GetFloat(IdFoldAngle) > 0f;
+        // Only properties the shader has go in the block: the leaf shader draws instanced, and a
+        // stray property (Standard's _Color) would stop it batching.
+        paintColor     = mat == null || mat.HasProperty(IdColor);
+        paintBaseColor = mat == null || mat.HasProperty(IdBaseColor);
 
         windPhase         = Random.value;
         baseLocalRotation = transform.localRotation;
@@ -381,8 +386,8 @@ public class Leaf : MonoBehaviour
         color *= tint;   // per-instance variety (white = no-op)
 
         leafRenderer.GetPropertyBlock(propBlock);
-        propBlock.SetColor(IdColor, color);       // Standard / Unlit shaders
-        propBlock.SetColor(IdBaseColor, color);   // URP shaders
+        if (paintColor)     propBlock.SetColor(IdColor, color);       // Standard / Unlit shaders
+        if (paintBaseColor) propBlock.SetColor(IdBaseColor, color);   // URP and leaf shaders
         // The fold rides the colour's repaint steps: both follow growProgress.
         if (folds) propBlock.SetFloat(IdFold, 1f - Mathf.SmoothStep(0f, 1f, Opened(growProgress)));
         leafRenderer.SetPropertyBlock(propBlock);
