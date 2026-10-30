@@ -48,6 +48,7 @@ public static class GameSettings
     const string K_CUSTOM_CURSORS = "set.customCursors";
     const string K_UI_SCALE       = "set.uiScale";
     const string K_HIGH_CONTRAST  = "set.highContrast";
+    const string K_OUTLINE        = "set.treeOutline";
 
     // Legacy key this panel took over.
     const string K_LEGACY_AA     = "antiAliasing";
@@ -86,7 +87,26 @@ public static class GameSettings
         ApplySceneBound();   // applies audio and interface size too
         TreeInteraction.ApplyHighlightPalette(Colorblind);
         UiTheme.SetHighContrast(HighContrast);
+        ApplyTreeOutline();
     }
+
+    // ── Tree outline ──────────────────────────────────────────────────────────
+
+    /// <summary>Default for the tree outline: off for now (2026-10-29). Set to 1 to bring the
+    /// original outline back for everyone who hasn't chosen otherwise.</summary>
+    public const float DefaultTreeOutline = 0f;
+    public const float MaxTreeOutline     = 2f;
+
+    /// <summary>Thickness of the dark outline around the bark, as a multiple of the material's
+    /// width: 0 = off, 1 = the original look.</summary>
+    public static float TreeOutline
+    {
+        get => PlayerPrefs.GetFloat(K_OUTLINE, DefaultTreeOutline);
+        set { PlayerPrefs.SetFloat(K_OUTLINE, Mathf.Clamp(value, 0f, MaxTreeOutline)); Save(); ApplyTreeOutline(); Notify(); }
+    }
+
+    /// <summary>The bark shader reads this global, so it reaches every bark material in every scene.</summary>
+    public static void ApplyTreeOutline() => Shader.SetGlobalFloat("_BonsaiOutlineScale", TreeOutline);
 
     static void MigrateLegacyKeys()
     {
@@ -459,6 +479,7 @@ public static class GameSettings
             K_VOL_MASTER, K_VOL_MUSIC, K_VOL_SFX, K_MUTE_MASTER,
             K_QUICK_WINTER, K_AUTOSAVE, K_DATE_FORMAT,
             K_COLORBLIND, K_REDUCED_MOTION, K_CUSTOM_CURSORS, K_UI_SCALE, K_HIGH_CONTRAST,
+            K_OUTLINE,
         })
             PlayerPrefs.DeleteKey(k);
         foreach (var k in KeyBindings.PrefKeys())

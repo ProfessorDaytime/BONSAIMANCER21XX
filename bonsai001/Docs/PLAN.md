@@ -1118,6 +1118,11 @@ Play-tested by the user unless marked *compile-checked*. Pushed through **v0.1.4
 **Quit Game** button, the greenhouse with play / pin / favourite / OBJ export / delete, the season slider.
 
 **Platform / build**
+- *compile-checked* **Tree outline setting** (Settings ▸ Display, Off–200 %): global `_BonsaiOutlineScale` in
+  the bark shader's Outline pass (0 discards it). **Default Off for now** (`GameSettings.DefaultTreeOutline`);
+  the user wants it back later — set the default to 1.
+- *compile-checked* **UI drawn over by the tree when zoomed in:** the UI canvas is Screen Space - Camera at
+  plane distance 1, so geometry nearer than 1 unit covered it. Now set to near clip + 0.01 at startup.
 - `FocusGuard` (R5b). Company name **WZRD HAU5**. Version scheme release.build.update, tagged per push.
 - `Docs/BUSINESS_SETUP.md`: the LLC → Steam path, operating-agreement decisions, trademark notes, and the
   financials-spreadsheet prompt.

@@ -371,8 +371,23 @@ public class ButtonClicker : MonoBehaviour
     Slider sliderCableRadius;    Label labelCableRadius;
     Slider sliderMinCableAngle;  Label labelMinCableAngle;
 
+    /// <summary>
+    /// The in-game UI reaches the screen through a "Screen Space - Camera" canvas (the RawImage
+    /// that composites UIToolkitRT, with the CRT pass), which the camera draws as a sheet
+    /// <c>planeDistance</c> in front of itself — anything nearer is drawn over the UI. At 1 unit,
+    /// zooming in pushed leaves through the Settings panel (play-test 2026-10-29). Put the sheet
+    /// just past the near clip plane, where nothing visible can be in front of it.
+    /// </summary>
+    static void KeepUiInFrontOfScene()
+    {
+        foreach (var c in FindObjectsByType<Canvas>())
+            if (c.renderMode == RenderMode.ScreenSpaceCamera && c.worldCamera != null)
+                c.planeDistance = c.worldCamera.nearClipPlane + 0.01f;
+    }
+
     void OnEnable()
     {
+        KeepUiInFrontOfScene();
         buttonDocument = GetComponent<UIDocument>();
 
         if(buttonDocument == null){

@@ -405,6 +405,9 @@ public class SettingsPanel
 
         content.Add(Check("Anti-aliasing", GameSettings.AntiAliasing, v => GameSettings.AntiAliasing = v, th));
 
+        content.Add(TreeOutlineSlider(th));
+        content.Add(Note("The dark outline around the trunk and branches. 100% is the original look.", th));
+
         var qNames = new List<string>(QualitySettings.names);
         int q = GameSettings.QualityLevel;
         if (q < 0)
@@ -681,6 +684,33 @@ public class SettingsPanel
         var t = new Toggle { value = value };
         t.RegisterValueChangedCallback(e => onChange(e.newValue));
         slot.Add(t);
+        return row;
+    }
+
+    /// <summary>Tree outline, Off to 200% (2026-10-29).</summary>
+    static VisualElement TreeOutlineSlider(UiTheme th)
+    {
+        var row = Row("Tree outline", th, out var slot);
+        string Text(float v) => v < 0.01f ? "Off" : $"{v * 100f:F0}%";
+
+        var pct = new Label { text = Text(GameSettings.TreeOutline) };
+        pct.style.fontSize = 11;
+        pct.style.color    = new StyleColor(th.textSub);
+        pct.style.minWidth = 40;
+        pct.style.unityTextAlign = TextAnchor.MiddleRight;
+
+        var s = new Slider(0f, GameSettings.MaxTreeOutline) { value = GameSettings.TreeOutline };
+        s.style.width = 180;
+        s.RegisterValueChangedCallback(e =>
+        {
+            // Snap near the ends so Off and 100% are easy to hit.
+            float v = e.newValue < 0.05f ? 0f : Mathf.Abs(e.newValue - 1f) < 0.05f ? 1f : e.newValue;
+            pct.text = Text(v);
+            GameSettings.TreeOutline = v;
+        });
+
+        slot.Add(s);
+        slot.Add(pct);
         return row;
     }
 

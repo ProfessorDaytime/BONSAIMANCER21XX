@@ -160,6 +160,11 @@ Shader "Custom/BarkVertexColor"
                 float  _ScarDebug;
             CBUFFER_END
 
+            // Settings ▸ Display ▸ Tree outline (2026-10-29), set with Shader.SetGlobalFloat by
+            // GameSettings: 0 = off, 1 = the material's _OutlineWidth. A global, outside the
+            // per-material buffer, so one call reaches every bark material in every scene.
+            float _BonsaiOutlineScale;
+
             struct OAttr
             {
                 float4 posOS  : POSITION;
@@ -184,12 +189,14 @@ Shader "Custom/BarkVertexColor"
                 // lit surface or the silhouette visibly separates from the bark.
                 posWS        += TreeSway(posWS, TreeFlex(IN.posOS.xyz, IN.color));
                 float3 nrmWS  = normalize(TransformObjectToWorldNormal(IN.nrmOS));
-                posWS        += nrmWS * _OutlineWidth;
+                posWS        += nrmWS * _OutlineWidth * _BonsaiOutlineScale;
                 OUT.posHCS    = TransformWorldToHClip(posWS);
                 return OUT;
             }
             half4 OutlineFrag(OVary IN) : SV_Target
             {
+                // Off draws nothing — a zero-width shell would sit exactly on the bark and flicker.
+                clip(_BonsaiOutlineScale - 0.001);
                 return _OutlineColor;
             }
             ENDHLSL
