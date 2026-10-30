@@ -232,6 +232,47 @@ public class Greenhouse : MonoBehaviour
     /// turning from September 1 to November 15, bare from then to the end of March, green again
     /// from April.
     /// </summary>
+    // Slider position → season (2026-10-29). Summer looks the same all through, so it gets almost
+    // no travel; the start-to-middle of the colour change, where the most happens, gets most of the
+    // slider; late autumn, the drop and bare winter are squeezed into the end. Pairs of
+    // (slider, season); season = colour progress × AutumnFull, then the drop, then bare.
+    static readonly (float x, float s)[] SliderCurve =
+    {
+        (0f,    0f),
+        (0.03f, 0f),                    // summer
+        (0.80f, 0.6f * AutumnFull),     // first 60% of the colour change
+        (0.93f, AutumnFull),            // the rest: late autumn
+        (0.98f, BareFrom),              // leaf drop, outermost first
+        (1f,    1f),                    // bare
+    };
+
+    static float SliderToSeason(float x)
+    {
+        for (int i = 1; i < SliderCurve.Length; i++)
+            if (x <= SliderCurve[i].x)
+            {
+                var (x0, s0) = SliderCurve[i - 1];
+                var (x1, s1) = SliderCurve[i];
+                return x1 > x0 ? Mathf.Lerp(s0, s1, (x - x0) / (x1 - x0)) : s1;
+            }
+        return 1f;
+    }
+
+    /// <summary>Inverse of <see cref="SliderToSeason"/>, for placing the handle (date sync, load).
+    /// Summer (season 0) maps to the left end.</summary>
+    static float SeasonToSlider(float season)
+    {
+        if (season <= 0f) return 0f;
+        for (int i = 1; i < SliderCurve.Length; i++)
+            if (season <= SliderCurve[i].s)
+            {
+                var (x0, s0) = SliderCurve[i - 1];
+                var (x1, s1) = SliderCurve[i];
+                return s1 > s0 ? Mathf.Lerp(x0, x1, (season - s0) / (s1 - s0)) : x1;
+            }
+        return 1f;
+    }
+
     static float SeasonForDate(System.DateTime d)
     {
         int doy = d.DayOfYear;
@@ -784,13 +825,13 @@ public class Greenhouse : MonoBehaviour
         summer.style.color = new StyleColor(th.textSub);
         summer.style.fontSize = 11;
         seasonBox.Add(summer);
-        seasonSlider = new Slider(0f, 1f) { value = season };
+        seasonSlider = new Slider(0f, 1f) { value = SeasonToSlider(season) };
         seasonSlider.style.flexGrow = 1;
         seasonSlider.style.marginLeft = seasonSlider.style.marginRight = 8;
         seasonSlider.RegisterValueChangedCallback(e =>
         {
             if (syncToDate) return;
-            season = e.newValue;
+            season = SliderToSeason(e.newValue);
             ApplySeason();
             try { PlayerPrefs.SetFloat(SeasonPrefKey, season); } catch { }
         });
@@ -814,7 +855,7 @@ public class Greenhouse : MonoBehaviour
             if (syncToDate) season = SeasonForDate(System.DateTime.Now);
             else { try { season = Mathf.Clamp01(PlayerPrefs.GetFloat(SeasonPrefKey, 0f)); } catch { } }
             seasonSlider.SetEnabled(!syncToDate);
-            seasonSlider.SetValueWithoutNotify(season);
+            seasonSlider.SetValueWithoutNotify(SeasonToSlider(season));
             ApplySeason();
             try { PlayerPrefs.SetInt(SyncPrefKey, syncToDate ? 1 : 0); } catch { }
         });
