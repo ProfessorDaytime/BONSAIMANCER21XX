@@ -1126,18 +1126,18 @@ Play-tested by the user unless marked *compile-checked*. Pushed through **v0.1.4
 - `Docs/BUSINESS_SETUP.md`: the LLC → Steam path, operating-agreement decisions, trademark notes, and the
   financials-spreadsheet prompt.
 
-**Maple leaf-out (raised 2026-10-29, from the user's reference photos of Japanese maple buds)** —
+**Maple leaf-out (raised 2026-10-29, from the user's reference photos of Japanese maple buds) — all three steps play-tested and done 2026-10-29** —
 applies to opposite-budded broadleaf species (today only Japanese Maple):
-1. ✅ *compile-checked* **Opposite, decussate leaf pairs**: a tip pair, plus a second pair halfway back on
+1. ✅ **Opposite, decussate leaf pairs**: a tip pair, plus a second pair halfway back on
    segments ≥ 0.15 (`oppositeSecondPairLength`), each pair 90° round from the last; blades rolled
    face-up. Maple leaf scale 0.02 → 0.012 (≈ a Ficus leaf's area). Fixes the "way too dense" 20-year
    maple: 1,422 leafy tips × 5 leaves at ~3× a Ficus leaf's area each.
-2. ✅ *compile-checked* **Leaves unfold** (species `leafUnfold`, Japanese Maple on): a new leaf emerges with
+2. ✅ **Leaves unfold** (species `leafUnfold`, Japanese Maple on): a new leaf emerges with
    its blade at 20% width (local Y), hanging most of the way down from its stem, spreads fully open by
    45% of its grow-in and lifts to its resting angle by 70%; wind sway follows the lifting angle.
    Young colour deep red-bronze (`leafBudBreakColor` 0.70/0.24/0.16) at 90% strength
    (`youngTintStrength`, was a fixed 65%), fading to green over the grow-in (`leafGrowDays` 14 → 18).
-3. ✅ *compile-checked* **Visible buds** (`BudVisuals`, one combined mesh on a `_Buds` child, shader
+3. ✅ **Visible buds** (`BudVisuals`, one combined mesh on a `_Buds` child, shader
    `Custom/TreeBud` with the bark's sway functions copied in — a third party to the WindSway mirror
    contract): Sep–Feb a V-pair of deep-red pointed buds at each tip that set a bud (turned 90° from its
    leaf pair) plus a smaller pair in the second leaf pair's axils; February swell (longer, fatter,
@@ -1145,7 +1145,7 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
    12 days, then they shrink away. Rebuilt on bark rebuilds (`TreeMeshBuilder.Rebuilt`) or daily while
    animating; off during Quick Start generation. Material `Resources/TreeBudMaterial` keeps the shader
    in builds.
-- ✅ *compile-checked* **Branch-end knuckles (found 2026-10-29 from a 40-year run):** (a) opposite species
+- ✅ **Branch-end knuckles (found 2026-10-29 from a 40-year run):** (a) opposite species
   forked EVERY tip into two every spring, unconditionally — tips doubled yearly at the branch ends; now
   a tip splits only with `oppositeForkChance` (0.6) × canopy vigor × tree energy × tip vigor × root
   support, else grows straight on. (b) Fusion paired each fork's two zero-length shoots (distance 0 at
@@ -1154,12 +1154,12 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
   (c) Pinching softened: a pinch gives half a trim's refinement (`pinchRefinementFactor` 0.5; refinement
   never decays and shortens future internodes) and wakes buds on 1 section below it, not 2
   (`pinchBackBudAncestors`). The 40-year run had ~95 auto pinches a year.
-- ✅ *compile-checked* **Bare canopies on old deciduous trees (all species):** a leaf that finishes its autumn
+- ✅ **Bare canopies on old deciduous trees (all species):** a leaf that finishes its autumn
   colour drops itself without updating `LeafManager.nodeLeaves`, so its tip stayed "leafy" and
   `SpawnSpringLeaves` skipped it forever after (40-year maple: 721 "leafy" tips, 34 real leaves, 99%
   health). `PruneGoneLeaves` clears dead entries each spring; spring also treats an all-gone entry as bare.
 
-- *compile-checked* **Young shoots no longer blow through the hardwood (all species):** sway youngness
+- ✅ **Young shoots no longer blow through the hardwood (all species):** sway youngness
   now accumulates along each branch from its parent (`TreeMeshBuilder.ComputeSwayYoungness`, ramp 0.3,
   stored in UV1.w; bark shader `FlexColor`), so a new shoot bends from its attachment instead of
   swinging bodily a few mm from stiff wood. Leaves, needles, wires and buds read the same value
