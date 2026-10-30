@@ -1165,6 +1165,25 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
   swinging bodily a few mm from stiff wood. Leaves, needles, wires and buds read the same value
   (`NodeSwayFlex`, `SwayColorAt`). Young leaves don't swing or flutter on their own until ~60–95% grown.
 
+**Maple leaf-out follow-ups (2026-10-29) — built, not yet play-tested:**
+- **Side buds break visibly:** a dormant side bud that wakes into a shoot (back-bud, old-wood bud,
+  style-forced bud) raises `TreeSkeleton.OnSideBudBroke`; `BudVisuals` swells a bud out of the bark
+  where the shoot leaves its parent (first 15% of 14 days), then opens it into four scales like a tip bud.
+- **Summer buds:** buds form under the leaves once a shoot stops extending — from the species'
+  `growthSlowDay` (June on the maples) on tips that have stopped, every tip once `growthStopDay`
+  passes — the same tips `SetBuds` buds on Sep 1. They start tiny and green (`budFormColor`) with a red
+  tip, grow linearly to full size by Oct 31 and ripen to `budColor` between July and October. This
+  replaces the September-only grow-in. Calendar-driven, so loads show the right size.
+- **Trident Maple** (*Acer buergerianum*): opposite budded, gets the pairs, unfolding and buds.
+  Vigorous (grow speed 0.30, back-buds and old-wood buds more freely), forgiving (repot tolerance 0.8,
+  heals faster), thirstier and hungrier; growth slows day 161 and stops day 186 (§34 table); bark type 9
+  (plates); orange autumn colour, bronze-pink new leaves, brown buds; samaras ripen in October.
+  **Uses the Japanese maple leaf model at 0.010 scale — needs its own 3-lobed leaf model.**
+  Registered in `Game001`'s species list and the Journal.
+- **Saves now restore their species (bug, all species):** loading never set `skeleton.species`, so
+  a save took whatever species the skeleton last had (on a fresh launch the scene default, Ficus).
+  `SaveManager.RestoreSpecies` looks the saved name up (`TreeSpecies.FindLoaded`) before rebuilding.
+
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.
 - The 20-year XL tree "looked the worst" for a reason the user doesn't recall (not leaf size). Candidates: densest canopy (3,417 nodes vs 2,204 in M), thickest trunk (r 0.12). Revisit in the greenhouse.

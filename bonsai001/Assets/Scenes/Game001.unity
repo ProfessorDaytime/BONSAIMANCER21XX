@@ -990,6 +990,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 4ce3cd75e9336d64993714afc3025b7d, type: 2}
   - {fileID: 11400000, guid: b7bcf17ebbff5fa4998ee69a28642756, type: 2}
   - {fileID: 11400000, guid: 383f9035fc148f348bed20e2893a85c0, type: 2}
+  - {fileID: 11400000, guid: 916680bfa9bb427281ab32b3fac2d7e6, type: 2}
   itemCatalog: {fileID: 11400000, guid: 61618cd347e581b41aa81adb600b860d, type: 2}
   tablePlatform: {fileID: 0}
 --- !u!4 &293476775 stripped

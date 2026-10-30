@@ -1270,6 +1270,7 @@ public partial class TreeSkeleton : MonoBehaviour
                 currentBranchCount++;
                 forcedBudCount++;
                 backBudCount++;
+                OnSideBudBroke?.Invoke(fLat);
                 continue;
             }
 
@@ -1294,6 +1295,7 @@ public partial class TreeSkeleton : MonoBehaviour
                 if (bbSubdivs > 1) lat.subdivisionsLeft = bbSubdivs - 1;
                 currentBranchCount++;
                 backBudCount++;
+                OnSideBudBroke?.Invoke(lat);
             }
         }
         if (backBudCount > 0)
@@ -1331,6 +1333,7 @@ public partial class TreeSkeleton : MonoBehaviour
                 if (owSubdivs > 1) lat.subdivisionsLeft = owSubdivs - 1;
                 currentBranchCount++;
                 oldWoodCount++;
+                OnSideBudBroke?.Invoke(lat);
             }
             if (oldWoodCount > 0)
                 Debug.Log($"[Bud] Old-wood buds broke={oldWoodCount} year={GameManager.year}");

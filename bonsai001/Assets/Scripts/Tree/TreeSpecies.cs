@@ -277,6 +277,9 @@ public class TreeSpecies : ScriptableObject
     public Color budColor      = new Color(0.42f, 0.09f, 0.11f);
     [Tooltip("Bud colour at the end of its February swell, and of the opening bud scales.")]
     public Color budSwellColor = new Color(0.78f, 0.30f, 0.34f);
+    [Tooltip("Colour of a bud as it forms under the leaves in summer (blushed budColor at the tip); " +
+             "it ripens to budColor by October.")]
+    public Color budFormColor  = new Color(0.40f, 0.47f, 0.16f);
 
     [Tooltip("Blade silhouette for the procedural cluster foliage (BroadLeaf species only).\n" +
              "Ovate: ficus/elm/cherry.  Lobed: maple.  Deltoid: birch.\n" +
@@ -338,6 +341,16 @@ public class TreeSpecies : ScriptableObject
     public int fruitSetMonth = 6;
     [Tooltip("Calendar month fruit is fully ripe; it then drops over the following weeks.")]
     public int fruitRipeMonth = 9;
+
+    /// <summary>The loaded species with this display name, or null. Every species the picker offers
+    /// is referenced by the game scene, so all of them are in memory whenever a save can load.</summary>
+    public static TreeSpecies FindLoaded(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        foreach (var sp in Resources.FindObjectsOfTypeAll<TreeSpecies>())
+            if (sp.speciesName == name) return sp;
+        return null;
+    }
 }
 
 /// <summary>Foliage geometry. BroadLeaf spawns leaf prefabs; the rest build procedural needle tufts (NeedleMesh).</summary>

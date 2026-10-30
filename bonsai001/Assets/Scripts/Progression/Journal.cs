@@ -87,7 +87,8 @@ public static class Journal
         Species("Ezo Spruce");          Species("Alberta Spruce");
         Species("Atlas Cedar");         Species("Japanese Cedar");
         Species("Dawn Redwood");        Species("Swamp Cypress");        Species("Juniper");
-        Species("Japanese Maple");      Species("Cherry");               Species("Wisteria");
+        Species("Japanese Maple");      Species("Trident Maple");
+        Species("Cherry");              Species("Wisteria");
         Species("Ficus");               Species("Elm");                  Species("Silver Birch");
         Species("Weeping Willow");
     }

@@ -922,6 +922,9 @@ public partial class TreeSkeleton : MonoBehaviour
     public event Action OnWireSetGold;
     /// <summary>Fired at the end of StartNewGrowingSeason each spring, after all branching and bud-break logic completes.</summary>
     public event Action OnNewGrowingSeason;
+    /// <summary>Fired in spring when a dormant side bud breaks into a new shoot (a back-bud, an
+    /// old-wood bud or a style-forced bud), with the new shoot. BudVisuals opens a bud at its base.</summary>
+    public event Action<TreeNode> OnSideBudBroke;
 
     // Tree Data
 

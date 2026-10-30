@@ -660,6 +660,22 @@ public static class SaveManager
         return false;
     }
 
+    /// <summary>Puts the save's species back on the skeleton before the tree is rebuilt. Loads used
+    /// to keep whatever species the skeleton last had — on a fresh launch the scene default, Ficus —
+    /// so a maple save came back growing as a Ficus (2026-10-29).</summary>
+    static void RestoreSpecies(TreeSkeleton skeleton, string speciesName)
+    {
+        if (string.IsNullOrEmpty(speciesName) || speciesName == skeleton.SpeciesName) return;
+        var sp = TreeSpecies.FindLoaded(speciesName);
+        if (sp == null)
+        {
+            Debug.LogWarning($"[Save] Species '{speciesName}' not found — the tree keeps {skeleton.SpeciesName}.");
+            return;
+        }
+        skeleton.species = sp;
+        skeleton.ApplySpecies();
+    }
+
     // ── Load slot ─────────────────────────────────────────────────────────────
 
     /// <summary>Loads the named slot into the skeleton. Sets ActiveSlotId on success.</summary>
@@ -697,6 +713,7 @@ public static class SaveManager
         if (data.scheduledEvents != null)
             GameManager.schedule.AddRange(data.scheduledEvents);
 
+        RestoreSpecies(skeleton, data.speciesName);
         skeleton.LoadFromSaveData(data, leafManager);
         skeleton.treeOrigin = (TreeOrigin)data.treeOrigin;
 
@@ -749,6 +766,7 @@ public static class SaveManager
         }
         Directory.CreateDirectory(OriginalSlotDir);
         var data = BuildSaveData(skeleton);
+        data.speciesName   = skeleton.SpeciesName;
         data.saveTimestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
         File.WriteAllText(OriginalSavePath, JsonUtility.ToJson(data, prettyPrint: true));
         Debug.Log($"[Save] Original backed up → {OriginalSavePath}");
@@ -778,6 +796,7 @@ public static class SaveManager
         GameManager.hour      = data.hour;
         GameManager.waterings = data.waterings;
 
+        RestoreSpecies(skeleton, data.speciesName);
         skeleton.LoadFromSaveData(data, leafManager);
         skeleton.treeOrigin = (TreeOrigin)data.treeOrigin;
         WeatherManager.Sheltered = data.sheltered;
