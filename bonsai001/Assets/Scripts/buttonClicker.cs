@@ -2892,7 +2892,7 @@ public class ButtonClicker : MonoBehaviour
         potEffectLabel.text =
             $"Root room in a {size} pot: {fullness}. The trunk thickens {thicken}.\n" +
             "Bigger pots grow faster and thicken the trunk, but grow coarser. Smaller pots slow " +
-            "growth and keep leaves small: the way to refine a tree.";
+            "growth, keep shoots short and leaves small: the way to refine a tree.";
     }
 
     void RefreshPotSizeButtons()

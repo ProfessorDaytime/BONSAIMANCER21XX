@@ -406,7 +406,7 @@ public partial class TreeSkeleton : MonoBehaviour
         // chords came out ~7× longer than back-bud shoots and the year-1 tree grew as a pole
         // several times taller than the pot.
         float childLength = baseSegLen * Mathf.Pow(decay, node.depth + 1);
-        if (!node.isRoot) childLength *= globalSegmentScale;
+        if (!node.isRoot) childLength *= BranchChordScale;   // pot size shortens shoots (2026-10-29)
 
         // Each new branch chord is divided into however many segments are needed so
         // neither the fixed branchSubdivisions count nor maxSegmentLength is exceeded.

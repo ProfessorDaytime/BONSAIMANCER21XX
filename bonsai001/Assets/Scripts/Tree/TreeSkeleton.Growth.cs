@@ -905,10 +905,13 @@ public partial class TreeSkeleton : MonoBehaviour
         // Drainage-hole escape: cache the pot + pot-bound pressure once for this growth pass.
         _holePotSoil        = GetComponent<PotSoil>();
         _holeEscapePressure = RootPressureFactor();
+        _shootPotCached     = ShootPotFactor;
+        Debug.Log($"[Tree] shoot length ×{_shootPotCached:F2} for the {_holePotSoil?.potSize} pot");
 
         foreach (var terminal in terminals)
         {
-            float baseSegLen  = (terminal.isRoot ? rootSegmentLength : branchSegmentLength) * globalSegmentScale;
+            float baseSegLen  = terminal.isRoot ? rootSegmentLength * globalSegmentScale
+                                                : branchSegmentLength * BranchChordScale;
             float decay       = terminal.isRoot ? rootSegmentLengthDecay : segmentLengthDecay;
             float chordLength = baseSegLen * Mathf.Pow(decay, terminal.depth + 1);
 
@@ -1248,7 +1251,7 @@ public partial class TreeSkeleton : MonoBehaviour
             bool styleDirected = node.preferredLateralAzimuth >= 0f && node.depth == 0;
             if (styleDirected && forcedBudCount < maxForcedBudsPerSpring && treeEnergy >= forcedBudMinEnergy)
             {
-                float fChord   = branchSegmentLength * globalSegmentScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float fChord   = branchSegmentLength * BranchChordScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
                 int   fSubdivs = SubdivsForChord(fChord);
                 float fSegLen  = fSubdivs > 1 ? fChord / fSubdivs : fChord;
                 fSegLen = Mathf.Max(fSegLen, minSegmentLength) * Mathf.Max(0.1f, 1f - apicalDominance);
@@ -1272,7 +1275,7 @@ public partial class TreeSkeleton : MonoBehaviour
                            * Mathf.Pow(branchChanceDepthDecay, node.depth);
             if (Random.value < chance)
             {
-                float chordLen    = branchSegmentLength * globalSegmentScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float chordLen    = branchSegmentLength * BranchChordScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
                 if (node.refinementLevel > 0f)
                     chordLen *= Mathf.Pow(refinementTaper, node.refinementLevel);
                 int   bbSubdivs   = SubdivsForChord(chordLen);
@@ -1310,7 +1313,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
                 if (Random.value >= oldWoodBudChance * vigorFactor) continue;
 
-                float chordLen    = branchSegmentLength * globalSegmentScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
+                float chordLen    = branchSegmentLength * BranchChordScale * Mathf.Pow(segmentLengthDecay, node.depth + 1);
                 if (node.refinementLevel > 0f)
                     chordLen *= Mathf.Pow(refinementTaper, node.refinementLevel);
                 int   owSubdivs   = SubdivsForChord(chordLen);

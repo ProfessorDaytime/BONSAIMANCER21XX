@@ -709,6 +709,30 @@ public partial class TreeSkeleton : MonoBehaviour
              "S ≈ 0.6×, M = 1×, L ≈ 1.2×, XL ≈ 1.35×. 0 = pot size doesn't matter.")]
     [SerializeField] [Range(0f, 1.5f)] float girthPotExponent = 0.6f;
 
+    [Tooltip("How strongly pot size shortens new shoots: length × PotVolumeFactor^this, capped at " +
+             "Shoot Pot Max. At 0.25, XS ≈ 0.64×, S ≈ 0.82×, M = 1×, L ≈ 1.04×, XL ≈ 1.13×. Makes a " +
+             "small-pot tree compact and dense instead of the same size but sparse. 0 disables.")]
+    [SerializeField] [Range(0f, 1f)] float shootPotExponent = 0.25f;
+    [Tooltip("Upper limit on the pot's shoot-length multiplier, so a huge pot doesn't stretch the tree.")]
+    [SerializeField] float shootPotMax = 1.15f;
+
+    /// <summary>Shoot-length multiplier for the current pot (2026-10-29). Root room limits how far
+    /// each new shoot extends: a tree in a small pot grows short internodes and stays compact.</summary>
+    public float ShootPotFactor
+    {
+        get
+        {
+            var ps = _holePotSoil != null ? _holePotSoil : GetComponent<PotSoil>();
+            if (ps == null || shootPotExponent <= 0f) return 1f;
+            return Mathf.Min(shootPotMax, Mathf.Pow(Mathf.Max(0.0001f, ps.PotVolumeFactor), shootPotExponent));
+        }
+    }
+
+    float _shootPotCached = 1f;   // ShootPotFactor for the current growing season
+
+    /// <summary>Branch chord scale: the global scale times the pot's shoot factor.</summary>
+    float BranchChordScale => globalSegmentScale * _shootPotCached;
+
     /// <summary>How fast the current pot lets the trunk thicken, relative to the M reference.</summary>
     public float GirthPotFactor
     {
