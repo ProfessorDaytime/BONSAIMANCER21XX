@@ -42,7 +42,12 @@ public class Greenhouse : MonoBehaviour
     static readonly int IdBaseColor = Shader.PropertyToID("_BaseColor");
     static readonly int IdColor     = Shader.PropertyToID("_Color");
     const string SeasonPrefKey = "GreenhouseSeason";
-    float season;                       // 0 = summer green, 1 = full autumn colour
+    const string SyncPrefKey   = "GreenhouseSeasonSync";
+    // 0 = summer green, AutumnFull = full autumn colour, past BareFrom = leaves off (every tree).
+    const float AutumnFull = 0.9f, BareFrom = 0.97f;
+    float season;
+    bool  syncToDate;
+    Slider seasonSlider;
     VisualElement seasonBox;
     readonly MaterialPropertyBlock seasonMpb = new MaterialPropertyBlock();
 
@@ -218,22 +223,42 @@ public class Greenhouse : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Slider position for a real date (northern hemisphere): summer green through August,
+    /// turning from September 1 to November 15, bare from then to the end of March, green again
+    /// from April.
+    /// </summary>
+    static float SeasonForDate(System.DateTime d)
+    {
+        int doy = d.DayOfYear;
+        int sep1 = new System.DateTime(d.Year, 9, 1).DayOfYear;
+        int nov15 = new System.DateTime(d.Year, 11, 15).DayOfYear;
+        int apr1 = new System.DateTime(d.Year, 4, 1).DayOfYear;
+        if (doy < apr1 || doy >= nov15) return 1f;
+        if (doy < sep1) return 0f;
+        return AutumnFull * (doy - sep1) / (float)(nov15 - sep1);
+    }
+
     /// <summary>Blends every deciduous tree's leaves from their saved colour toward the species'
     /// autumn colour, keeping each leaf group's lightness so the variety survives. Evergreens stay
-    /// green. Trees saved before autumn colours were stored use a generic orange-red.</summary>
+    /// green. Past <see cref="BareFrom"/> every tree's leaves are hidden, evergreens included.
+    /// Trees saved before autumn colours were stored use a generic orange-red.</summary>
     void ApplySeason()
     {
+        bool bare = season >= BareFrom;
+        float t = Mathf.Clamp01(season / AutumnFull);
         foreach (var e in entries)
         {
-            if (e.meta.evergreen) continue;
+            foreach (var (r, _) in e.leaves)
+                if (r != null) r.enabled = !bare;
+            if (bare || e.meta.evergreen) continue;
             Color fall = e.meta.autumnColor.a > 0f ? e.meta.autumnColor : new Color(0.85f, 0.35f, 0.10f);
-            float fallLuma = Mathf.Max(0.05f, Luma(fall));
             foreach (var (r, summerTint) in e.leaves)
             {
                 if (r == null) continue;
                 float k = Mathf.Clamp(Luma(summerTint) / 0.45f, 0.6f, 1.4f);
                 var target = new Color(fall.r * k, fall.g * k, fall.b * k, summerTint.a);
-                var c = Color.Lerp(summerTint, target, season);
+                var c = Color.Lerp(summerTint, target, t);
                 r.GetPropertyBlock(seasonMpb);
                 seasonMpb.SetColor(IdBaseColor, c);
                 seasonMpb.SetColor(IdColor, c);
@@ -686,13 +711,21 @@ public class Greenhouse : MonoBehaviour
         hint.pickingMode = PickingMode.Ignore;
         hud.Add(hint);
 
-        // Season slider (2026-10-29): every tree from summer green to its species' autumn colour.
-        try { season = Mathf.Clamp01(PlayerPrefs.GetFloat(SeasonPrefKey, 0f)); } catch { season = 0f; }
+        // Season slider (2026-10-29): every tree from summer green to its species' autumn colour,
+        // and at the far end, leaves off on every tree (evergreens too) for a winter view.
+        try
+        {
+            season     = Mathf.Clamp01(PlayerPrefs.GetFloat(SeasonPrefKey, 0f));
+            syncToDate = PlayerPrefs.GetInt(SyncPrefKey, 0) == 1;
+        }
+        catch { season = 0f; syncToDate = false; }
+        if (syncToDate) season = SeasonForDate(System.DateTime.Now);
         seasonBox = new VisualElement();
         seasonBox.style.position = Position.Absolute;
         seasonBox.style.right = 24; seasonBox.style.top = 48;
-        seasonBox.style.width = 300;
+        seasonBox.style.width = 380;
         seasonBox.style.flexDirection = FlexDirection.Row;
+        seasonBox.style.flexWrap = Wrap.Wrap;
         seasonBox.style.alignItems = Align.Center;
         seasonBox.style.backgroundColor = new StyleColor(th.panelBg);
         seasonBox.style.borderTopLeftRadius = seasonBox.style.borderTopRightRadius =
@@ -703,20 +736,39 @@ public class Greenhouse : MonoBehaviour
         summer.style.color = new StyleColor(th.textSub);
         summer.style.fontSize = 11;
         seasonBox.Add(summer);
-        var slider = new Slider(0f, 1f) { value = season };
-        slider.style.flexGrow = 1;
-        slider.style.marginLeft = slider.style.marginRight = 8;
-        slider.RegisterValueChangedCallback(e =>
+        seasonSlider = new Slider(0f, 1f) { value = season };
+        seasonSlider.style.flexGrow = 1;
+        seasonSlider.style.marginLeft = seasonSlider.style.marginRight = 8;
+        seasonSlider.RegisterValueChangedCallback(e =>
         {
+            if (syncToDate) return;
             season = e.newValue;
             ApplySeason();
             try { PlayerPrefs.SetFloat(SeasonPrefKey, season); } catch { }
         });
-        seasonBox.Add(slider);
-        var autumn = new Label("Autumn");
-        autumn.style.color = new StyleColor(th.textSub);
-        autumn.style.fontSize = 11;
-        seasonBox.Add(autumn);
+        seasonSlider.SetEnabled(!syncToDate);
+        seasonBox.Add(seasonSlider);
+        var winter = new Label("Autumn · Winter");
+        winter.style.color = new StyleColor(th.textSub);
+        winter.style.fontSize = 11;
+        seasonBox.Add(winter);
+
+        var sync = new Toggle("Match today's date") { value = syncToDate };
+        sync.style.width = new Length(100, LengthUnit.Percent);
+        sync.style.marginTop = 2;
+        sync.labelElement.style.color = new StyleColor(th.textSub);
+        sync.labelElement.style.fontSize = 11;
+        sync.RegisterValueChangedCallback(e =>
+        {
+            syncToDate = e.newValue;
+            if (syncToDate) season = SeasonForDate(System.DateTime.Now);
+            else { try { season = Mathf.Clamp01(PlayerPrefs.GetFloat(SeasonPrefKey, 0f)); } catch { } }
+            seasonSlider.SetEnabled(!syncToDate);
+            seasonSlider.SetValueWithoutNotify(season);
+            ApplySeason();
+            try { PlayerPrefs.SetInt(SyncPrefKey, syncToDate ? 1 : 0); } catch { }
+        });
+        seasonBox.Add(sync);
         hud.Add(seasonBox);
 
         uiRoot.Add(hud);
