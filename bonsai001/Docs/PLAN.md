@@ -1124,7 +1124,7 @@ Play-tested by the user unless marked *compile-checked*. Pushed through **v0.1.4
 
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.
-- XL pots give the biggest, coarsest leaves by design; offered to soften the leaf-size scaling.
+- The 20-year XL tree "looked the worst" for a reason the user doesn't recall (not leaf size). Candidates: densest canopy (3,417 nodes vs 2,204 in M), thickest trunk (r 0.12). Revisit in the greenhouse.
 - Quick Start orbit could end with the tree's front to the camera.
 - Auto-styler still cuts trees short at times; Stop + the final-4-years rule cover Quick Start only.
 
