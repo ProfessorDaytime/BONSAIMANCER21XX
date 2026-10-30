@@ -1203,9 +1203,16 @@ that don't sway, everything on the 1st of the month, lost on load, smooth-lit.
   away. Fertilised flowers grow a pair of samaras until the end of May (`samaraSpread` 140° Japanese,
   40° trident; Japanese summer samaras red), ripen to tan from mid-August (Japanese) / mid-September
   (trident), then let go one at a time over ~7 weeks and spin down (`SamaraSpinner`: real-time
-  helicopter spin and wind drift; Reduced motion drops them gently); 20% hang on until next spring's
-  bud break. Care Log beats at bloom, fruit set and ripening (skipped in Quick Start, but the state
+  helicopter spin and wind drift; Reduced motion drops them gently); 20% hang on through winter and
+  drop over the 3 weeks before bud break (so they're gone before the tip flowers again on Mar 1). Care Log beats at bloom, fruit set and ripening (skipped in Quick Start, but the state
   still advances so Quick Start hands over the right stage). `flowerBudChance` 0.5 / 0.4 → 0.35.
+- **Flower buds on mature trees (bug, all flowering species; found from the first play-test,
+  2026-10-29):** `SetBuds` rolled `flowerBudChance` only on tips budded for the first time, so a tip
+  that kept its bud without growing (most tips on a mature, capped tree) never flowered again: a
+  10-year Quick Start maple flowered from 2 tips the year after. Every budded tip now rolls each
+  autumn (`flower=` on the `[Bud] Buds set` log line). The species still on `FlowerManager` (cherry,
+  wisteria, fruiting conifers…) get more blossoms and fruit too. Maple flowers 1.4× larger (sepal 0.016,
+  about 1.5× a bud's length across, as on the real tree).
 
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.

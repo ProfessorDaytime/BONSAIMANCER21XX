@@ -1283,8 +1283,9 @@ public partial class TreeSkeleton : MonoBehaviour
     /// </summary>
     void SetBuds()
     {
-        int termCount = 0;
-        int latCount  = 0;
+        int termCount   = 0;
+        int latCount    = 0;
+        int flowerCount = 0;
 
         // Flowering species also set FLOWER buds in autumn — they open into blossoms at bloomMonth
         // next spring (FlowerManager). Gated on maturity so young seedlings don't bloom.
@@ -1302,11 +1303,20 @@ public partial class TreeSkeleton : MonoBehaviour
                 // stopped before completing. Resume it in spring instead of treating it
                 // as a real tip — SetBuds skips it; StartNewGrowingSeason resumes it.
                 if (node.subdivisionsLeft > 0) continue;
+
+                // Every budded tip may set a flower bud each autumn, including one that kept last
+                // year's bud without growing (a capped tip on a mature tree still leafs out from it
+                // every spring). Rolling only on newly budded tips left a 10-year Quick Start maple
+                // flowering from 2 tips (2026-10-29).
+                if (canFlower && !node.hasFlowerBud && !node.isDead && !node.isJin
+                    && UnityEngine.Random.value < species.flowerBudChance)
+                {
+                    node.hasFlowerBud = true;
+                    flowerCount++;
+                }
                 if (node.hasBud) continue;
 
                 node.hasBud = true;
-                if (canFlower && UnityEngine.Random.value < species.flowerBudChance)
-                    node.hasFlowerBud = true;
                 if (showTerminalBuds && budPrefab != null)
                 {
                     var bud = Instantiate(budPrefab, transform);
@@ -1341,7 +1351,7 @@ public partial class TreeSkeleton : MonoBehaviour
             treeEnergy = lm.ComputeTreeEnergy(allNodes, Mathf.Clamp(maxEnergyMultiplier, 1f, 3f));
             treeEnergy = Mathf.Max(0.4f, treeEnergy);  // floor: leafless trees still grow at base rate
         }
-        Debug.Log($"[Bud] Buds set | terminal={termCount} lateral={latCount} treeEnergy={treeEnergy:F2} year={GameManager.year}");
+        Debug.Log($"[Bud] Buds set | terminal={termCount} lateral={latCount} flower={flowerCount} treeEnergy={treeEnergy:F2} year={GameManager.year}");
     }
 
     // Trimming

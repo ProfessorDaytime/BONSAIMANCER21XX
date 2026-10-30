@@ -20,7 +20,7 @@ using UnityEngine.Rendering;
 /// samaras.</item>
 /// <item><b>Around fruitRipeMonth:</b> they ripen from fruitColor to fruitRipeColor, then let go one
 /// at a time over the following weeks and spin down (<see cref="SamaraSpinner"/>); a few hang on
-/// until the buds open next spring.</item>
+/// through the winter and drop in the weeks before bud break.</item>
 /// </list>
 ///
 /// Drawn with <c>Custom/TreeBud</c> two-sided (<c>_Cull</c> off: sepals and wings are single
@@ -41,12 +41,13 @@ public class FlowerVisuals : MonoBehaviour
     const float DropLead        = 15f;    // the first samaras let go this long before it ends…
     const float DropSpread      = 50f;    // …and the rest over this many days
     const float PersistShare    = 0.2f;   // the share that hang on through winter…
-    const float PersistDropDays = 20f;    // …and drop as the buds open next spring
+    const float PersistDropDays = 20f;    // …and drop over the last weeks before bud break, so they're
+                                          // gone before the tip's next flower bud is spent on Mar 1
 
     // ── Sizes (tree units) ────────────────────────────────────────────────────
-    const float PeduncleLength = 0.045f, PeduncleRadius = 0.0012f;
-    const float PedicelLength  = 0.02f,  PedicelRadius  = 0.0007f;
-    const float SepalLength    = 0.011f, SepalWidth     = 0.0065f;
+    const float PeduncleLength = 0.055f, PeduncleRadius = 0.0014f;
+    const float PedicelLength  = 0.024f, PedicelRadius  = 0.0008f;
+    const float SepalLength    = 0.016f, SepalWidth     = 0.0095f;   // a flower ~1.5× a bud's length across
     const float SeedLength     = 0.012f, SeedWidth      = 0.0075f;
     const float WingLength     = 0.05f,  WingWidth      = 0.017f;
     const float HangFlex       = 0.6f;    // the hanging end sways this much more freely than its twig
@@ -306,7 +307,7 @@ public class FlowerVisuals : MonoBehaviour
         t.ripenStart = Mathf.Max(t.fruitFull, MonthStart(sp.fruitRipeMonth, y) - RipenLead);
         t.ripenEnd   = Mathf.Max(t.ripenStart + 10f, MonthEnd(sp.fruitRipeMonth, y));
         t.end        = n.fruitMask != 0
-            ? MonthStart(3, y + 1) + PersistDropDays
+            ? MonthStart(3, y + 1)
             : t.open + FlowerStagger + OpenDays + sp.bloomDurationDays + WitherDays;
         return t;
     }
@@ -316,7 +317,7 @@ public class FlowerVisuals : MonoBehaviour
     {
         float h = Hash01(n.id, n.bloomYear, 64 + i * 2 + side);
         if (h < PersistShare)
-            return MonthStart(3, n.bloomYear + 1) + h / PersistShare * PersistDropDays;
+            return MonthStart(3, n.bloomYear + 1) - PersistDropDays + h / PersistShare * (PersistDropDays - 1f);
         return t.ripenEnd - DropLead + (h - PersistShare) / (1f - PersistShare) * DropSpread;
     }
 
