@@ -244,12 +244,13 @@ public class TreeSpecies : ScriptableObject
 
     [Tooltip("Leaf model for this species (BroadLeaf only). Empty = the LeafManager's default leaf.\n" +
              "The model's origin must be the stem tip (it's what sits on the twig) and the blade " +
-             "should run along +Z.")]
+             "should run along +Z, its width along Y and its top face along +X. A model laid out " +
+             "differently can sit, turned, as a child of the prefab root (Japanese Maple Leaf02).")]
     public GameObject leafPrefab;
     [Tooltip("Size of this species' leaf model relative to the default (Ficus) leaf model, so a " +
-             "model authored at a different scale comes out leaf-sized. The Japanese Maple model " +
-             "is ~60× the Ficus one (3.3 vs 0.056 units long) and much broader, so it uses 0.012 — about " +
-             "the same leaf area as a Ficus leaf.")]
+             "model authored at a different scale comes out leaf-sized. The Japanese Maple Leaf02 " +
+             "model is 0.061 units long and 0.047 wide, so 0.63 gives the same blade width as the " +
+             "old Leaf001 model at 0.012.")]
     public float leafModelScale = 1f;
 
     [Tooltip("In-game days for a new leaf to expand from 15% to full size after emerging.")]

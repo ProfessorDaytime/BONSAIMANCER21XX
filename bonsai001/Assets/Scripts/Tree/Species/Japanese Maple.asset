@@ -57,8 +57,8 @@ MonoBehaviour:
   matureBarkColor: {r: 0.40, g: 0.35, b: 0.28, a: 1}
   rootNewGrowthColor: {r: 0.78, g: 0.70, b: 0.55, a: 1}
   leafSpringColor: {r: 0.18, g: 0.62, b: 0.12, a: 1}
-  leafPrefab: {fileID: 349046008948968205, guid: 384e3240f85962c4da08966e92607d19, type: 3}
-  leafModelScale: 0.012
+  leafPrefab: {fileID: 4825906517203351001, guid: dd1dc47701b4463db0db3a2f357e55f6, type: 3}
+  leafModelScale: 0.63
   leafAutumnColor: {r: 0.80, g: 0.12, b: 0.08, a: 1}
   leafGrowDays: 18
   leafBudBreakColor: {r: 0.7, g: 0.24, b: 0.16, a: 1}
