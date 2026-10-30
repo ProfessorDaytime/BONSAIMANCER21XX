@@ -24,6 +24,8 @@ public class BudVisuals : MonoBehaviour
     const float OpeningDays          = 12f;
     const float SecondPairLength     = 0.15f;   // matches LeafManager.oppositeSecondPairLength
     const int   Sides                = 6;
+    const float FormStart            = 0.06f;   // size of a bud on the day it forms
+    const float FormDays             = 21f;     // days to grow to full dormant size
 
     TreeSkeleton    skeleton;
     TreeMeshBuilder bark;
@@ -89,7 +91,8 @@ public class BudVisuals : MonoBehaviour
         int day = GameManager.dayOfYear + GameManager.year * 366;
         if (day != lastDay)
         {
-            bool animating = GameManager.month == 2 || openingTips.Count > 0 || GameManager.month != lastMonth;
+            bool animating = GameManager.month == 2 || GameManager.month == 9
+                             || openingTips.Count > 0 || GameManager.month != lastMonth;
             lastDay = day; lastMonth = GameManager.month;
             if (animating) dirty = true;
         }
@@ -107,6 +110,9 @@ public class BudVisuals : MonoBehaviour
         int   month   = GameManager.month;
         bool  dormant = month >= 9 || month <= 2;
         float swell   = month == 2 ? Mathf.SmoothStep(0f, 1f, (GameManager.day - 1) / 27f) : 0f;
+        // New buds form from almost nothing over the first three weeks of September (they're set
+        // on Sep 1). Calendar-driven, so a save loaded mid-winter shows full-size buds.
+        float form    = month == 9 ? Mathf.Lerp(FormStart, 1f, Mathf.SmoothStep(0f, 1f, (GameManager.day - 1) / FormDays)) : 1f;
 
         // Spring: the buds drawn at the end of winter break open.
         if (!dormant && lastWasDormant && openingYear != GameManager.year)
@@ -127,8 +133,8 @@ public class BudVisuals : MonoBehaviour
                 if (!n.isTerminal || n.isRoot || n.isTrimmed || n.isDead || n.isJin || !n.hasBud) continue;
                 if (n.depth < 2) continue;
                 dormantTips.Add(n);
-                AddTipPair(n, swell, col);
-                if (Mathf.Min(n.length, n.targetLength) >= SecondPairLength) AddLateralPair(n, swell, col);
+                AddTipPair(n, swell, col, form);
+                if (Mathf.Min(n.length, n.targetLength) >= SecondPairLength) AddLateralPair(n, swell, col, form);
             }
         }
 
@@ -170,12 +176,12 @@ public class BudVisuals : MonoBehaviour
     static float BudWidth (TreeNode n, float swell) => Mathf.Clamp(0.005f + n.radius * 0.6f, 0.005f, 0.012f) * (1f + 0.5f * swell);
 
     /// <summary>The V-pair at the tip, between the tip's leaf pair (turned 90° from it).</summary>
-    void AddTipPair(TreeNode n, float swell, Color col)
+    void AddTipPair(TreeNode n, float swell, Color col, float form)
     {
         Vector3 axis = n.growDirection.normalized;
         Vector3 side = Side(n, BaseAzimuth(n) + 90f);
         Vector2 fx   = FlexOf(n);
-        float   len  = BudLength(n, swell), wid = BudWidth(n, swell);
+        float   len  = BudLength(n, swell) * form, wid = BudWidth(n, swell) * form;
         foreach (float s in new[] { 1f, -1f })
         {
             Vector3 dir  = (axis * Mathf.Cos(25f * Mathf.Deg2Rad) + side * s * Mathf.Sin(25f * Mathf.Deg2Rad)).normalized;
@@ -185,13 +191,13 @@ public class BudVisuals : MonoBehaviour
     }
 
     /// <summary>A smaller pair in the axils of the tip's second leaf pair, halfway back.</summary>
-    void AddLateralPair(TreeNode n, float swell, Color col)
+    void AddLateralPair(TreeNode n, float swell, Color col, float form)
     {
         Vector3 axis = n.growDirection.normalized;
         Vector3 side = Side(n, BaseAzimuth(n) + 90f);
         Vector3 at   = n.tipPosition - axis * (0.55f * Mathf.Min(n.length, n.targetLength));
         Vector2 fx   = FlexOf(n);
-        float   len  = BudLength(n, swell) * 0.7f, wid = BudWidth(n, swell) * 0.85f;
+        float   len  = BudLength(n, swell) * 0.7f * form, wid = BudWidth(n, swell) * 0.85f * form;
         foreach (float s in new[] { 1f, -1f })
         {
             Vector3 dir  = (axis * Mathf.Cos(40f * Mathf.Deg2Rad) + side * s * Mathf.Sin(40f * Mathf.Deg2Rad)).normalized;

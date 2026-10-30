@@ -69,13 +69,17 @@ public class Leaf : MonoBehaviour
     [HideInInspector] public Color youngTint = new Color(0.72f, 0.88f, 0.38f);
     [HideInInspector] public float youngTintStrength = 0.65f;
 
-    // Unfolding (2026-10-29, maple leaf-out): the leaf emerges with its fingers closed and hanging
-    // limp, then spreads open over the first part of its growth and lifts to its resting angle.
+    // Unfolding (2026-10-29, maple leaf-out): the folded leaf first pushes straight out of the bud
+    // along the shoot, then swings down to hang limp, spreads its fingers, and lifts to its resting
+    // angle. Phases are fractions of growProgress.
     [HideInInspector] public bool unfold;
     const float FOLDED_WIDTH   = 0.2f;    // blade width when it emerges, as a fraction of open
-    const float OPEN_BY        = 0.45f;   // growProgress at which it is fully spread
-    const float LIFTED_BY      = 0.7f;    // growProgress at which it has risen to its rest angle
-    Quaternion droopLocalRotation;
+    const float EMERGE_UNTIL   = 0.15f;   // pointing out of the bud along the shoot until here
+    const float HANG_BY        = 0.4f;    // then swung down to hang by here
+    const float OPEN_FROM      = 0.25f;   // fingers start to spread here
+    const float OPEN_BY        = 0.6f;    // fully spread by here
+    const float LIFTED_BY      = 0.75f;   // risen to its rest angle by here
+    Quaternion emergeLocalRotation, droopLocalRotation;
 
     float growProgress = 0f;   // 0 = just emerged, 1 = full size + full color
 
@@ -138,7 +142,8 @@ public class Leaf : MonoBehaviour
 
         windPhase         = Random.value;
         baseLocalRotation = transform.localRotation;
-        droopLocalRotation = DroopFrom(baseLocalRotation);
+        droopLocalRotation  = DroopFrom(baseLocalRotation);
+        emergeLocalRotation = EmergeFrom(baseLocalRotation);
         CacheBranchIdentity();
         // For riding the bark's vertex-shader sway: leaves are parented under the skeleton, so
         // the builder is findable here. Cached now — falling leaves may be reparented later.
@@ -368,26 +373,45 @@ public class Leaf : MonoBehaviour
         transform.localRotation = RestLocalRotation;
     }
 
-    /// <summary>The leaf's resting angle: hanging while it is young if it unfolds, lifting to
-    /// its spawn angle by <see cref="LIFTED_BY"/>.</summary>
+    /// <summary>The leaf's resting angle while it unfolds: pointing out of the bud along the shoot,
+    /// then swinging down to hang, then lifting to its spawn angle by <see cref="LIFTED_BY"/>.</summary>
     Quaternion RestLocalRotation
     {
         get
         {
             if (!unfold || growProgress >= LIFTED_BY) return baseLocalRotation;
-            float lift = Mathf.SmoothStep(0f, 1f, growProgress / LIFTED_BY);
-            return Quaternion.Slerp(droopLocalRotation, baseLocalRotation, lift);
+            if (growProgress <= EMERGE_UNTIL) return emergeLocalRotation;
+            if (growProgress <= HANG_BY)
+                return Quaternion.Slerp(emergeLocalRotation, droopLocalRotation,
+                    Mathf.SmoothStep(0f, 1f, (growProgress - EMERGE_UNTIL) / (HANG_BY - EMERGE_UNTIL)));
+            return Quaternion.Slerp(droopLocalRotation, baseLocalRotation,
+                Mathf.SmoothStep(0f, 1f, (growProgress - HANG_BY) / (LIFTED_BY - HANG_BY)));
         }
     }
 
-    /// <summary>Size for the grow-in: uniform, except an unfolding leaf starts narrow — its blade
-    /// width (local Y) opens from <see cref="FOLDED_WIDTH"/> to full by <see cref="OPEN_BY"/>.</summary>
+    /// <summary>Size for the grow-in: uniform, except an unfolding leaf stays narrow — its blade
+    /// width (local Y) at <see cref="FOLDED_WIDTH"/> — until <see cref="OPEN_FROM"/>, and is fully
+    /// spread by <see cref="OPEN_BY"/>.</summary>
     Vector3 GrowScale(float s, float progress)
     {
         var v = targetScale * s;
         if (unfold)
-            v.y *= Mathf.Lerp(FOLDED_WIDTH, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / OPEN_BY)));
+        {
+            float open = Mathf.Clamp01((progress - OPEN_FROM) / (OPEN_BY - OPEN_FROM));
+            v.y *= Mathf.Lerp(FOLDED_WIDTH, 1f, Mathf.SmoothStep(0f, 1f, open));
+        }
         return v;
+    }
+
+    /// <summary>The angle a new unfolding leaf pushes out of its bud at: the blade (local +Z) turned
+    /// to point along the shoot it grows from, keeping its roll about the blade.</summary>
+    Quaternion EmergeFrom(Quaternion rest)
+    {
+        if (!unfold || ownerNode == null) return rest;
+        Vector3 blade = rest * Vector3.forward;
+        Vector3 shoot = ownerNode.growDirection.normalized;   // tree space = this leaf's parent space
+        if (shoot.sqrMagnitude < 1e-6f) return rest;
+        return Quaternion.FromToRotation(blade, shoot) * rest;
     }
 
     /// <summary>The hanging angle a young unfolding leaf starts from: the blade (local +Z) tipped
