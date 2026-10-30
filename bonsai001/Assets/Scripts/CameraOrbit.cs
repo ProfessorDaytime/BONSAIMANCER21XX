@@ -179,8 +179,19 @@ public class CameraOrbit : MonoBehaviour
         if (verboseLog) Debug.Log($"[CameraOrbit] Initialised — target={target.name} radius={radius:F2} yaw={yaw:F1} pitch={pitch:F1} panY={panY:F2}");
     }
 
-    void OnEnable()  => GameManager.OnGameStateChanged += OnGameStateChanged;
-    void OnDisable() => GameManager.OnGameStateChanged -= OnGameStateChanged;
+    void OnEnable()
+    {
+        GameManager.OnGameStateChanged += OnGameStateChanged;
+        FocusGuard.FocusLost += OnFocusLost;
+    }
+    void OnDisable()
+    {
+        GameManager.OnGameStateChanged -= OnGameStateChanged;
+        FocusGuard.FocusLost -= OnFocusLost;
+    }
+
+    // Window lost focus mid-drag (2026-10-29): the release happens elsewhere and never arrives.
+    void OnFocusLost() { isDragging = false; isPanning = false; }
 
     void OnGameStateChanged(GameState state)
     {
@@ -239,7 +250,7 @@ public class CameraOrbit : MonoBehaviour
 
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
         {
-            bool blocked = false;
+            bool blocked = FocusGuard.SwallowingClick;   // the click that refocused the window
 
             // Don't start a drag during wire, rock-placement, tree-orient, or when tree is grabbed.
             if (GameManager.Instance != null &&

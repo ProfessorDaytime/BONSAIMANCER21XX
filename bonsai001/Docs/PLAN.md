@@ -807,6 +807,13 @@ tool cursor in `OnApplicationFocus`.
 
 **Losing and regaining focus**
 - 🔴 **Reported 2026-10-29 (a friend's Mac build):** after a while the game stopped responding to clicks — buttons did nothing. Likely focus-related; reproduce on macOS first (Cmd-Tab away and back, Mission Control, the menu bar, a second Space) and check the Player.log for exceptions at that moment.
+  - 🟡 **Guarded 2026-10-29 (`FocusGuard`, not yet tested on a Mac):** on focus loss, in-progress
+    pour / saw / wire aim / camera drag and pan end; on regain, the mouse and keyboard are reset
+    (`InputSystem.ResetDevice`) so nothing stays "held", the uGUI selection is cleared, and the
+    refocus click is swallowed for tools and camera. `[Focus] Lost/Regained` lines log the game state,
+    and in player builds every click logs `[Input] Click at (x, y) → <UI element under it>`, which
+    shows whether an invisible overlay is catching clicks. **Next report from a Mac: get the session
+    log** (Open Log Folder, or `~/Library/Application Support/WZRD HAU5/Bonsaimancer/logs`).
 - Nothing must stay "held" when focus is lost mid-action: watering-can pour, saw stroke, camera
   orbit drag, held A/D keys. On focus loss, end every in-progress drag and treat the mouse button as
   released.

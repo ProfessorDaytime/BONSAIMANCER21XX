@@ -307,6 +307,7 @@ public class TreeInteraction : MonoBehaviour
 
     void OnEnable()
     {
+        FocusGuard.FocusLost += OnFocusLost;
         RenderPipelineManager.endCameraRendering += DrawSelectionCircle;
         RenderPipelineManager.endCameraRendering += DrawGraftLines;
         RenderPipelineManager.endCameraRendering += DrawPinchMarkers;
@@ -314,6 +315,7 @@ public class TreeInteraction : MonoBehaviour
     }
     void OnDisable()
     {
+        FocusGuard.FocusLost -= OnFocusLost;
         RenderPipelineManager.endCameraRendering -= DrawSelectionCircle;
         RenderPipelineManager.endCameraRendering -= DrawGraftLines;
         RenderPipelineManager.endCameraRendering -= DrawPinchMarkers;
@@ -497,8 +499,20 @@ public class TreeInteraction : MonoBehaviour
         return DistToRay(a + t * (b - a), ray);
     }
 
+    /// <summary>Window lost focus mid-gesture (2026-10-29): end anything that relies on a held
+    /// button, so nothing is left running or half-done when the player comes back.</summary>
+    void OnFocusLost()
+    {
+        EndPour();
+        if (isSawing) CancelSaw();
+        if (wirePhase == WirePhase.Aiming) CancelWire();
+    }
+
     void Update()
     {
+        // The click that brings the window back must not trim, water or wire (FocusGuard).
+        if (FocusGuard.SwallowingClick) return;
+
         if (skeleton.root == null)
         {
             SetHighlight(null, HighlightMode.None);
