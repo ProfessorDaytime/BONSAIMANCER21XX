@@ -163,6 +163,7 @@ public class ButtonClicker : MonoBehaviour
     Toggle        calModeAutoWater, calModeAutoFert, calModeIdleOrbit, calRuleIdleToggle;
     Toggle        calModeAutoStyle;   // added in code, beside Auto-fertilize (2026-10-27)
     Toggle        calModeAutoRepot;   // added in code, after Auto-style (2026-10-29); only live while Auto-style is on
+    Toggle        calModeAutoShelter; // added in code, after Auto-repot (2026-10-29); likewise
     UnityEngine.UIElements.IntegerField calModeOrbitDelay;
     UnityEngine.UIElements.DropdownField calRuleTriggerDropdown;
     VisualElement calRuleParamRow, calRuleSpeedChips;
@@ -4355,14 +4356,16 @@ public class ButtonClicker : MonoBehaviour
 
         // Re-select the previously selected card after rebuild; auto-select first on first open
         VisualElement reselect  = null;
-        VisualElement firstCard = null;
-        TreeSpecies   firstSp   = null;
+        VisualElement firstCard = null, defaultCard = null;
+        TreeSpecies   firstSp   = null, defaultSp   = null;
         foreach (var sp in SortedSpecies())
         {
             var card = MakeSpeciesCard(sp);
             speciesListContainer.Add(card);
             if (firstCard == null) { firstCard = card; firstSp = sp; }
             if (sp == selectedSpecies) reselect = card;
+            // Japanese Maple is the default pick when nothing is chosen yet (2026-10-29).
+            if (sp.speciesName == DefaultSpeciesName) { defaultCard = card; defaultSp = sp; }
         }
 
         if (reselect != null && selectedSpecies != null)
@@ -4371,12 +4374,19 @@ public class ButtonClicker : MonoBehaviour
             reselect.style.backgroundColor = new StyleColor(UiTheme.Current.cardSel);
             SetCardBorderColor(reselect, UiTheme.Current.accent);
         }
+        else if (defaultCard != null)
+        {
+            // Nothing previously selected — Japanese Maple, if this filter shows it
+            SelectSpeciesCard(defaultSp, defaultCard);
+        }
         else if (firstCard != null)
         {
-            // Nothing previously selected — auto-select the top card
+            // …otherwise the top card
             SelectSpeciesCard(firstSp, firstCard);
         }
     }
+
+    const string DefaultSpeciesName = "Japanese Maple";
 
     VisualElement MakeSpeciesCard(TreeSpecies sp)
     {
@@ -4648,16 +4658,43 @@ public class ButtonClicker : MonoBehaviour
             m.autoRepot = evt.newValue;
             PlayModeManager.Instance.SaveModes();
         });
+
+        autoRepotLabel.style.marginRight = 16;
+        calModeAutoShelter = new Toggle();
+        calModeAutoShelter.style.marginRight = 6;
+        row.Add(calModeAutoShelter);
+        autoShelterLabel = new UnityEngine.UIElements.Label("Auto-shelter");
+        autoShelterLabel.style.color    = new StyleColor(new Color(180f / 255f, 180f / 255f, 180f / 255f));
+        autoShelterLabel.style.fontSize = 11;
+        row.Add(autoShelterLabel);
+        calModeAutoShelter.RegisterValueChangedCallback(evt =>
+        {
+            var m = PlayModeManager.Instance?.ActiveMode;
+            if (m == null || !m.autoStyle) return;
+            m.autoShelter = evt.newValue;
+            PlayModeManager.Instance.SaveModes();
+        });
     }
 
-    UnityEngine.UIElements.Label autoRepotLabel;
+    UnityEngine.UIElements.Label autoRepotLabel, autoShelterLabel;
 
+    /// <summary>Auto-repot and Auto-shelter are parts of auto-style: greyed out and shown off
+    /// while Auto-style is off.</summary>
     void RefreshAutoRepotToggle(PlayMode m)
     {
-        if (calModeAutoRepot == null || m == null) return;
-        calModeAutoRepot.SetEnabled(m.autoStyle);
-        autoRepotLabel?.SetEnabled(m.autoStyle);
-        calModeAutoRepot.SetValueWithoutNotify(m.autoStyle && m.autoRepot);
+        if (m == null) return;
+        if (calModeAutoRepot != null)
+        {
+            calModeAutoRepot.SetEnabled(m.autoStyle);
+            autoRepotLabel?.SetEnabled(m.autoStyle);
+            calModeAutoRepot.SetValueWithoutNotify(m.autoStyle && m.autoRepot);
+        }
+        if (calModeAutoShelter != null)
+        {
+            calModeAutoShelter.SetEnabled(m.autoStyle);
+            autoShelterLabel?.SetEnabled(m.autoStyle);
+            calModeAutoShelter.SetValueWithoutNotify(m.autoStyle && m.autoShelter);
+        }
     }
 
     void RefreshModesTab()

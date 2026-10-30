@@ -236,6 +236,15 @@ public class TreeSpecies : ScriptableObject
              "Maple: bright green.  Pine: dark blue-green.  Wisteria: medium green.")]
     public Color leafSpringColor = new Color(0.15f, 0.55f, 0.10f);
 
+    [Tooltip("Leaf model for this species (BroadLeaf only). Empty = the LeafManager's default leaf.\n" +
+             "The model's origin must be the stem tip (it's what sits on the twig) and the blade " +
+             "should run along +Z.")]
+    public GameObject leafPrefab;
+    [Tooltip("Size of this species' leaf model relative to the default (Ficus) leaf model, so a " +
+             "model authored at a different scale comes out leaf-sized. The Japanese Maple model " +
+             "is ~60× the Ficus one (3.3 vs 0.056 units long), so it uses 0.02.")]
+    public float leafModelScale = 1f;
+
     [Tooltip("In-game days for a new leaf to expand from 15% to full size after emerging.")]
     public float leafGrowDays = 20f;
 

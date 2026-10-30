@@ -51,6 +51,9 @@ public class PlayMode
     // Part of auto-style: it only applies while autoStyle is on. Added 2026-10-29; saved modes
     // without it keep the initializer, on.
     public bool   autoRepot = true;
+    // Whether the auto-styler moves the tree under cover against waterlogging. Also part of
+    // auto-style. Added 2026-10-29; saved modes without it keep the initializer, on.
+    public bool   autoShelter = true;
     public bool   idleOrbit;
     public float  idleOrbitDelaySecs;
     public List<SpeedRule> rules = new List<SpeedRule>();
@@ -241,7 +244,10 @@ public class PlayModeManager : MonoBehaviour
         if (styler != null && !quickStarting && styler.autoStyleEnabled != mode.autoStyle)
             styler.autoStyleEnabled = mode.autoStyle;
         if (styler != null && !quickStarting)
-            styler.autoRepot = mode.autoStyle && mode.autoRepot;
+        {
+            styler.autoRepot   = mode.autoStyle && mode.autoRepot;
+            styler.autoShelter = mode.autoStyle && mode.autoShelter;
+        }
 
         // Idle orbit
         if (mode.idleOrbit && mode.idleOrbitDelaySecs > 0)

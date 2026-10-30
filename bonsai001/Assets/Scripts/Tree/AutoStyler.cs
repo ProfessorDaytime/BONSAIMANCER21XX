@@ -80,6 +80,16 @@ public class AutoStyler : MonoBehaviour
     public int defoliateMinIntervalYears = 2;
     [Tooltip("Advance pot size (XS→S→M→L) at the style's pot-phase years each spring. Never shrinks a player-chosen pot.")]
     public bool autoRepot = true;
+    [Tooltip("Move the tree under cover when the soil is already wet and rain is falling or due " +
+             "tomorrow, and back out when it passes or the soil dries (2026-10-29). Set from the " +
+             "play mode's Auto-shelter box.")]
+    public bool autoShelter = true;
+    [Tooltip("Cover when saturation is at least this (or moisture at least Shelter Wet Moisture) and rain is falling or due.")]
+    [Range(0f, 1f)] public float shelterWetSaturation = 0.30f;
+    [Range(0f, 1f)] public float shelterWetMoisture   = 0.80f;
+    [Tooltip("Stay covered while saturation is at least this (or moisture at least Shelter Keep Moisture) — looser than going in, so it doesn't flip daily.")]
+    [Range(0f, 1f)] public float shelterKeepSaturation = 0.15f;
+    [Range(0f, 1f)] public float shelterKeepMoisture   = 0.65f;
     [Tooltip("Hands-off soil refresh: a real repot (fresh soil, degradation/saturation reset, repot stress)\n" +
              "whenever the soil has been in the pot too long — real bonsai get fresh soil every 2–5 years\n" +
              "for life. Without this the mix degrades toward 1.0 and mismatch penalties slowly starve a\n" +
@@ -296,9 +306,46 @@ public class AutoStyler : MonoBehaviour
         // toggling the Inspector checkbox mid-game takes effect immediately.
         skeleton.depthsPerYearMult = (autoStyleEnabled && fastConverge) ? 2f : 1f;
         UpdatePendingActions();
+        UpdateAutoShelter();
         UpdateWireAnimation();
         RemoveSetWires();
         RemoveIshitsukiWireIfSet();
+    }
+
+    float nextShelterCheck;
+
+    /// <summary>
+    /// Auto-shelter (2026-10-29): rain on an already-soaked pot is what waterlogs it, so cover the
+    /// tree for that and nothing else — shelter costs growth. In: soil wet (saturation or
+    /// moisture over the "wet" line) and rain now or tomorrow. Out: no rain now or tomorrow, or the
+    /// soil back under the looser "keep" line. While on, the styler owns the shelter.
+    /// </summary>
+    void UpdateAutoShelter()
+    {
+        if (!autoStyleEnabled || !autoShelter) return;
+        if (Time.unscaledTime < nextShelterCheck) return;
+        nextShelterCheck = Time.unscaledTime + 0.25f;
+
+        var wm  = WeatherManager.Instance;
+        var pot = GetComponent<PotSoil>();
+        if (wm == null || pot == null || skeleton.root == null) return;
+
+        var tomorrow = wm.Forecast(1);
+        bool rainDue = wm.IsRaining || (tomorrow.Length > 0 &&
+                       (tomorrow[0] == WeatherState.Rain || tomorrow[0] == WeatherState.Storm));
+        float sat   = pot.saturationLevel;
+        float moist = skeleton.soilMoisture;
+
+        bool cover = WeatherManager.Sheltered
+            ? rainDue && (sat >= shelterKeepSaturation || moist >= shelterKeepMoisture)
+            : rainDue && (sat >= shelterWetSaturation  || moist >= shelterWetMoisture);
+        if (cover == WeatherManager.Sheltered) return;
+
+        WeatherManager.Sheltered = cover;
+        string why = cover ? $"rain {(wm.IsRaining ? "falling" : "due tomorrow")} on wet soil"
+                           : (rainDue ? "the soil has dried" : "the rain has passed");
+        CareLog.Add("Shelter", cover ? $"Moved under cover: {why}" : $"Brought back out: {why}");
+        Debug.Log($"[AutoStyle] Shelter {(cover ? "ON" : "OFF")} — {why} (saturation {sat:P0}, moisture {moist:P0}) | year={GameManager.year} month={GameManager.month}");
     }
 
     // Day the Ishitsuki rock-binding wire first turned gold (-1 = not gold / no wire)

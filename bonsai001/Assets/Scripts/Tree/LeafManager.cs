@@ -82,7 +82,27 @@ public class LeafManager : MonoBehaviour
     float fallDebugTimer = 0f;
 
     // Shared material — one colour update drives all leaves
-    Material leafMat;
+    Material   leafMat;
+    GameObject leafMatSource;   // the prefab leafMat was copied from
+
+    /// <summary>The leaf model in use: the species' own (2026-10-29), else the default.</summary>
+    GameObject LeafPrefab =>
+        skeleton != null && skeleton.species != null && skeleton.species.leafPrefab != null
+            ? skeleton.species.leafPrefab : leafPrefab;
+
+    /// <summary>Copies the leaf material from <see cref="LeafPrefab"/>, again whenever the species
+    /// switches to a different leaf model.</summary>
+    void EnsureLeafMaterial()
+    {
+        var src = LeafPrefab;
+        if (src == null || (leafMat != null && leafMatSource == src)) return;
+        var srcRenderer = src.GetComponentInChildren<Renderer>();
+        leafMat = srcRenderer != null ? new Material(srcRenderer.sharedMaterial)
+                                      : new Material(Shader.Find("Unlit/Color"));
+        if (srcRenderer == null)
+            Debug.LogWarning("LeafManager: leaf prefab has no Renderer — using fallback unlit material.");
+        leafMatSource = src;
+    }
 
     // ── Needle foliage (conifers) ─────────────────────────────────────────────
     // A small pool of tuft meshes + one material is built per tree and shared by every
@@ -217,14 +237,7 @@ public class LeafManager : MonoBehaviour
         }
 
         // Create a shared material from the prefab's renderer so we own it
-        var srcRenderer = leafPrefab.GetComponentInChildren<Renderer>();
-        if (srcRenderer != null)
-            leafMat = new Material(srcRenderer.sharedMaterial);
-        else
-        {
-            leafMat = new Material(Shader.Find("Unlit/Color"));
-            Debug.LogWarning("LeafManager: leaf prefab has no Renderer — using fallback unlit material.");
-        }
+        EnsureLeafMaterial();
     }
 
     void OnEnable()
@@ -506,7 +519,7 @@ public class LeafManager : MonoBehaviour
 
     void SpawnSpringLeaves()
     {
-        if (leafPrefab == null || skeleton.root == null) return;
+        if (LeafPrefab == null || skeleton.root == null) return;
 
         int spawned = 0;
         foreach (var node in skeleton.allNodes)
@@ -628,7 +641,8 @@ public class LeafManager : MonoBehaviour
         Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up)
                             * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
 
-        var go = Instantiate(leafPrefab, skeleton.transform);
+        EnsureLeafMaterial();
+        var go = Instantiate(LeafPrefab, skeleton.transform);
         go.transform.localPosition = node.tipPosition + offset;
         go.transform.rotation      = rot;
         go.transform.localScale    = Vector3.zero;  // Leaf.Update() scales it in
@@ -642,7 +656,9 @@ public class LeafManager : MonoBehaviour
         var leaf          = go.GetComponent<Leaf>() ?? go.AddComponent<Leaf>();
         leaf.ownerNode    = node;
         leaf.tipOffset    = offset;
-        leaf.targetScale  = Vector3.one * seasonLeafScale;
+        float modelScale  = skeleton.species != null && skeleton.species.leafPrefab != null
+                            ? skeleton.species.leafModelScale : 1f;
+        leaf.targetScale  = Vector3.one * (seasonLeafScale * modelScale);
         if (skeleton.species != null)
         {
             leaf.springColor = skeleton.species.leafSpringColor;

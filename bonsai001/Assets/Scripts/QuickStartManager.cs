@@ -72,7 +72,8 @@ public class QuickStartManager : MonoBehaviour
             return Mathf.Clamp01((now - start) / Mathf.Max(1f, end - start));
         }
     }
-    bool  repotDuringGrow = true;   // the setup mode's Auto-repot, held for the whole grow
+    bool  repotDuringGrow = true;     // the setup mode's Auto-repot, held for the whole grow
+    bool  shelterDuringGrow = true;   // and its Auto-shelter
     int   startYear, totalYears, targetEndYear;
     float savedFastTimescale = -1f;   // >0 while we've overridden TIMESCALE_FAST for the grow
     System.Action onComplete;
@@ -117,13 +118,18 @@ public class QuickStartManager : MonoBehaviour
         // Auto-repot follows the checkbox of the mode the player set the tree up in, read before
         // the switch to Hands-Off below (2026-10-29).
         var setupMode = PlayModeManager.Instance != null ? PlayModeManager.Instance.ActiveMode : null;
-        repotDuringGrow = setupMode == null || setupMode.autoRepot;
+        repotDuringGrow   = setupMode == null || setupMode.autoRepot;
+        shelterDuringGrow = setupMode == null || setupMode.autoShelter;
         if (style != null && AutoStyler.Instance != null)
         {
             AutoStyler.Instance.style            = style;
             AutoStyler.Instance.autoStyleEnabled = true;
         }
-        if (AutoStyler.Instance != null) AutoStyler.Instance.autoRepot = repotDuringGrow;
+        if (AutoStyler.Instance != null)
+        {
+            AutoStyler.Instance.autoRepot   = repotDuringGrow;
+            AutoStyler.Instance.autoShelter = shelterDuringGrow;
+        }
 
         // Fresh tree — clear any existing, then re-init via the Water state (the path AutoRun uses).
         if (skeleton.root != null) skeleton.ClearForRestart();
