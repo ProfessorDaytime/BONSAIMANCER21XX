@@ -1122,6 +1122,19 @@ Play-tested by the user unless marked *compile-checked*. Pushed through **v0.1.4
 - `Docs/BUSINESS_SETUP.md`: the LLC → Steam path, operating-agreement decisions, trademark notes, and the
   financials-spreadsheet prompt.
 
+**Maple leaf-out (raised 2026-10-29, from the user's reference photos of Japanese maple buds)** —
+applies to opposite-budded broadleaf species (today only Japanese Maple):
+1. ✅ *compile-checked* **Opposite, decussate leaf pairs**: a tip pair, plus a second pair halfway back on
+   segments ≥ 0.15 (`oppositeSecondPairLength`), each pair 90° round from the last; blades rolled
+   face-up. Maple leaf scale 0.02 → 0.012 (≈ a Ficus leaf's area). Fixes the "way too dense" 20-year
+   maple: 1,422 leafy tips × 5 leaves at ~3× a Ficus leaf's area each.
+2. **Leaves unfold**: emerge folded and narrow, pointing up / drooping, then spread open; young colour
+   a deep red-bronze.
+3. **Visible buds**: red pointed opposite buds at tips and nodes from autumn to spring, swelling in early
+   spring, scales opening as the leaf tuft emerges. One combined mesh, not ~1,400 objects (the bud
+   prefabs are switched off in the scene, likely for that reason).
+- If the branch ends are still too twiggy after this: per-species branch budget, or less pinching.
+
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.
 - The 20-year XL tree "looked the worst" for a reason the user doesn't recall (not leaf size). Candidates: densest canopy (3,417 nodes vs 2,204 in M), thickest trunk (r 0.12). Revisit in the greenhouse.

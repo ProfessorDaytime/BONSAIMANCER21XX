@@ -242,7 +242,8 @@ public class TreeSpecies : ScriptableObject
     public GameObject leafPrefab;
     [Tooltip("Size of this species' leaf model relative to the default (Ficus) leaf model, so a " +
              "model authored at a different scale comes out leaf-sized. The Japanese Maple model " +
-             "is ~60× the Ficus one (3.3 vs 0.056 units long), so it uses 0.02.")]
+             "is ~60× the Ficus one (3.3 vs 0.056 units long) and much broader, so it uses 0.012 — about " +
+             "the same leaf area as a Ficus leaf.")]
     public float leafModelScale = 1f;
 
     [Tooltip("In-game days for a new leaf to expand from 15% to full size after emerging.")]

@@ -437,6 +437,30 @@ public class LeafManager : MonoBehaviour
 
     static float DayNow() => GameManager.dayOfYear + GameManager.year * 366f;
 
+    // ── Opposite leaf pairs (2026-10-29) ──────────────────────────────────────
+    // Maples carry their leaves in opposite pairs, each pair turned 90° from the one below
+    // (decussate): a shoot tip has one pair, a longer shoot a second pair further back — 2–4
+    // leaves, not five scattered round the tip. Applies to opposite-budded broadleaf species.
+
+    [Tooltip("Opposite-leaved species: a terminal segment at least this long carries a second leaf pair " +
+             "halfway back along it; shorter ones carry just the tip pair.")]
+    [SerializeField] float oppositeSecondPairLength = 0.15f;
+
+    bool OppositeLeaves =>
+        skeleton != null && skeleton.species != null && skeleton.species.budType == BudType.Opposite
+        && skeleton.species.foliageType == FoliageType.BroadLeaf;
+
+    /// <summary>How many leaves a tip carries: pairs for opposite species, else the per-node setting.</summary>
+    int LeafCountFor(TreeNode node)
+    {
+        if (OppositeLeaves)
+            return Mathf.Min(node.length, node.targetLength) >= oppositeSecondPairLength ? 4 : 2;
+        int count = leavesPerNodeRange > 0
+            ? Random.Range(leavesPerNode - leavesPerNodeRange, leavesPerNode + leavesPerNodeRange + 1)
+            : leavesPerNode;
+        return Mathf.Max(1, count);
+    }
+
     int UnfurlBatchSize =>
         skeleton.species != null && skeleton.species.budType == BudType.Opposite ? 2 : 1;
 
@@ -574,10 +598,7 @@ public class LeafManager : MonoBehaviour
             return;
         }
 
-        int count = leavesPerNodeRange > 0
-            ? Random.Range(leavesPerNode - leavesPerNodeRange, leavesPerNode + leavesPerNodeRange + 1)
-            : leavesPerNode;
-        count = Mathf.Max(1, count);
+        int count = LeafCountFor(node);
 
         // Register the cluster immediately (the bud gate checks nodeLeaves), spawn the
         // first batch now, and queue the rest to unfurl over the following days.
@@ -614,19 +635,28 @@ public class LeafManager : MonoBehaviour
         if (perp.sqrMagnitude < 0.01f) perp = Vector3.Cross(branchWorldDir, Vector3.right);
         perp.Normalize();
 
+        // Opposite species: this leaf's place in the tip's pair plan — pair 0 at the tip, pair 1
+        // halfway back, each pair 90° round from the last, the two leaves of a pair 180° apart.
+        bool opposite = OppositeLeaves;
+        int  index    = nodeLeaves.TryGetValue(node.id, out var existing) ? existing.Count : 0;
+        int  pair     = index / 2, side = index % 2;
+
         // Place the stem origin ON the branch: scatter back along the segment
         // (0–80% of its length from tip) with only a tiny perpendicular wobble.
-        float backFraction   = Random.Range(0f, 0.8f);
+        float backFraction   = opposite ? (pair == 0 ? 0.03f : 0.55f) + Random.Range(-0.02f, 0.02f)
+                                        : Random.Range(0f, 0.8f);
         Vector3 backOffset   = -node.growDirection * (backFraction * Mathf.Min(node.length, node.targetLength));
-        Vector3 sideJitter   = Random.insideUnitSphere * clusterRadius * 0.1f;
+        Vector3 sideJitter   = Random.insideUnitSphere * clusterRadius * (opposite ? 0.03f : 0.1f);
         sideJitter          -= Vector3.Project(sideJitter, node.growDirection);  // keep perpendicular only
         Vector3 offset       = backOffset + sideJitter;
 
         // Orient leaf outward from branch: random azimuth around branch axis,
         // high elevation (mostly perpendicular) so leaves spread sideways, then
         // blend toward Vector3.down to simulate gravity droop.
-        float   azimuth   = Random.Range(0f, 360f);
-        float   elevation = Random.Range(55f, 88f);
+        float   azimuth   = opposite
+            ? Mathf.Repeat(node.id * 137.508f, 360f) + 90f * pair + 180f * side + Random.Range(-8f, 8f)
+            : Random.Range(0f, 360f);
+        float   elevation = opposite ? Random.Range(52f, 68f) : Random.Range(55f, 88f);
         Vector3 outPerp   = Quaternion.AngleAxis(azimuth, branchWorldDir) * perp;
         Vector3 outDir    = Quaternion.AngleAxis(-elevation, Vector3.Cross(branchWorldDir, outPerp).normalized) * branchWorldDir;
         // Pads are planar: leaves fan sideways with blades to the sun — the old full-
@@ -638,8 +668,10 @@ public class LeafManager : MonoBehaviour
             0.65f).normalized;
         float   droop     = Random.Range(0.05f, 0.25f);
         outDir            = Vector3.Lerp(outDir, Vector3.down, droop).normalized;
-        Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up)
-                            * Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
+        // Roll about the stem: random for most leaves; opposite (maple) blades are rolled face-up,
+        // since the maple model's blade lies in its YZ plane and would otherwise stand on edge.
+        float roll = opposite ? 90f + Random.Range(-15f, 15f) : Random.Range(0f, 360f);
+        Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up) * Quaternion.Euler(0f, 0f, roll);
 
         EnsureLeafMaterial();
         var go = Instantiate(LeafPrefab, skeleton.transform);
@@ -1405,7 +1437,7 @@ public class LeafManager : MonoBehaviour
             {
                 if (!nodeLeaves.TryGetValue(id, out var list)) continue;
                 if (!stressNodeById.TryGetValue(id, out var node) || node.isTrimmed || node.isDead) continue;
-                for (int i = list.Count; i < leavesPerNode; i++) list.Add(SpawnSingleLeaf(node));
+                for (int i = list.Count, want = LeafCountFor(node); i < want; i++) list.Add(SpawnSingleLeaf(node));
                 listDirty = true;
             }
         stressThinned.Clear();
