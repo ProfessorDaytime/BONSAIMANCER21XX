@@ -60,15 +60,21 @@ MonoBehaviour:
   leafAutumnColor: {r: 0.85, g: 0.38, b: 0.15, a: 1}
   leafGrowDays: 15
   leafBudBreakColor: {r: 0.78, g: 0.62, b: 0.45, a: 1}
+  budColor: {r: 0.42, g: 0.24, b: 0.17, a: 1}
+  budSwellColor: {r: 0.58, g: 0.64, b: 0.34, a: 1}
   bloomType: 1
+  flowersPerCluster: 3
+  fruitSetChance: 0.2
+  flowerSpurs: 3
+  fruitName: cherries
   bloomColor: {r: 1, g: 0.78, b: 0.86, a: 1}
-  bloomMonth: 3
+  bloomMonth: 2
   bloomBeforeLeaves: 1
-  bloomDurationDays: 14
+  bloomDurationDays: 12
   floweringStartAge: 3
   flowerBudChance: 0.6
   fruitType: 1
   fruitColor: {r: 0.5, g: 0.65, b: 0.3, a: 1}
-  fruitRipeColor: {r: 0.7, g: 0.1, b: 0.12, a: 1}
-  fruitSetMonth: 5
-  fruitRipeMonth: 7
+  fruitRipeColor: {r: 0.62, g: 0.06, b: 0.12, a: 1}
+  fruitSetMonth: 4
+  fruitRipeMonth: 5

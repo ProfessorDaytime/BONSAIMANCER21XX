@@ -1184,7 +1184,7 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
   a save took whatever species the skeleton last had (on a fresh launch the scene default, Ficus).
   `SaveManager.RestoreSpecies` looks the saved name up (`TreeSpecies.FindLoaded`) before rebuilding.
 
-**Blossoms & fruit rebuild (raised 2026-10-29) — step 1 (maples) play-tested and done 2026-10-29; next: step 2, cherry:**
+**Blossoms & fruit rebuild (raised 2026-10-29) — step 1 (maples) play-tested and done 2026-10-29; step 2 (cherry) built, not yet play-tested:**
 Agreed plan: rebuild flowers and fruit the way the buds work, one species group at a time —
 1. maples, 2. cherry (winter flower-bud clusters, blossoms opening in a wave, petals drifting off
 before the leaves, cherries ripening in pairs), 3. the rest (wisteria racemes then pods, figs, juniper
@@ -1208,6 +1208,19 @@ that don't sway, everything on the 1st of the month, lost on load, smooth-lit.
   helicopter spin and wind drift; Reduced motion drops them gently); 20% hang on through winter and
   drop over the 3 weeks before bud break (so they're gone before the tip flowers again on Mar 1). Care Log beats at bloom, fruit set and ripening (skipped in Quick Start, but the state
   still advances so Quick Start hands over the right stage). `flowerBudChance` 0.5 / 0.4 → 0.35.
+- **Cherry** (`BloomType.Blossom`, step 2): each flowering twig carries `flowerSpurs` (3) spurs: one
+  at the tip and two back along the twig (into its parent if it's short), turned round it like
+  alternate buds. From Sep 1 each spur shows a rosette of 2–3 plump flower buds (`budColor`, growing
+  in over 45 days); from Feb 1 (`bloomMonth` 2) they swell green-tipped (`budSwellColor`), then pink
+  balloons push out on long stalks (Feb 11–15) and open into five notched, cupped petals with a
+  blush at the base and a stamen tuft (Feb ~16–24, a wave across the tree) on bare branches. After
+  `bloomDurationDays` (12) each petal lets go on its own over 2 days and flutters down (petal fall
+  ~Mar 2–12, as the leaves come). Fertilised flowers (`fruitSetChance` 0.2) swell into cherries on
+  stalks that hang lower as they fill, full size by the end of April, turning green → gold → red in
+  May (`fruitRipeColor` deeper red), dropping late May to mid-June. Care Log "in full bloom on bare
+  branches" / "set N cherries" (`fruitName`).
+- **Falling pieces** (`FallingPiece`, was `SamaraSpinner`): samaras spin, petals tumble and sway,
+  fruit drops. Queued and let go a few a frame, at most 150 in the air.
 - **Flower buds on mature trees (bug, all flowering species; found from the first play-test,
   2026-10-29):** `SetBuds` rolled `flowerBudChance` only on tips budded for the first time, so a tip
   that kept its bud without growing (most tips on a mature, capped tree) never flowered again: a

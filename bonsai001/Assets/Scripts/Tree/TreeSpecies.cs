@@ -324,6 +324,11 @@ public class TreeSpecies : ScriptableObject
     [Range(0f, 1f)] public float fruitSetChance = 0.3f;
     [Tooltip("Angle between the two wings of a samara pair, in degrees: ~140 Japanese maple, ~40 trident.")]
     [Range(0f, 180f)] public float samaraSpread = 120f;
+    [Tooltip("Blossom species: flower spurs on each flowering twig, one at the tip and the rest back " +
+             "along it; each carries flowersPerCluster flowers.")]
+    [Range(1, 4)] public int flowerSpurs = 1;
+    [Tooltip("What the Care Log calls the fruit, plural (\"cherries\"). Empty = named by fruit type.")]
+    public string fruitName = "";
     [Tooltip("Blossom / petal colour.")]
     public Color bloomColor = new Color(1f, 0.78f, 0.86f);   // cherry pink
     [Tooltip("Calendar month flowers open (1–12). Cherry/plum ~3–4.")]
