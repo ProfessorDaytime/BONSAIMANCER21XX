@@ -57,6 +57,21 @@ public class QuickStartManager : MonoBehaviour
         ? Mathf.Clamp01((GameManager.year - startYear) / (float)totalYears) : 0f;
 
     bool  generating;
+    int   startMonth = 1, startDay = 1;
+
+    /// <summary>Progress through the grow by date, down to the day — smooth enough to drive the
+    /// camera, unlike <see cref="Progress"/> which steps once a year.</summary>
+    float FineProgress
+    {
+        get
+        {
+            if (!generating || totalYears <= 0) return 0f;
+            float now   = GameManager.year * 12f + (GameManager.month - 1) + (GameManager.day - 1) / 30f;
+            float start = startYear * 12f + (startMonth - 1) + (startDay - 1) / 30f;
+            float end   = targetEndYear * 12f;   // Update finishes at the turn of targetEndYear
+            return Mathf.Clamp01((now - start) / Mathf.Max(1f, end - start));
+        }
+    }
     bool  repotDuringGrow = true;   // the setup mode's Auto-repot, held for the whole grow
     int   startYear, totalYears, targetEndYear;
     float savedFastTimescale = -1f;   // >0 while we've overridden TIMESCALE_FAST for the grow
@@ -90,6 +105,8 @@ public class QuickStartManager : MonoBehaviour
 
         generating    = true;
         startYear     = GameManager.year;
+        startMonth    = GameManager.month;
+        startDay      = GameManager.day;
         totalYears    = ageYears;
         targetEndYear = startYear + ageYears;   // set BEFORE any yield so Update() can't finish in the setup frame
 
@@ -119,6 +136,7 @@ public class QuickStartManager : MonoBehaviour
         Time.timeScale = 1f;
         gm.UpdateGameState(gm.StateForMonth(GameManager.month));
         cameraOrbit?.SetCinematicMode(true);
+        cameraOrbit?.BeginOrbitOnce();   // one full turn over the whole grow
 
         var pm = PlayModeManager.Instance;
         if (pm != null)
@@ -142,6 +160,7 @@ public class QuickStartManager : MonoBehaviour
     void Update()
     {
         if (!generating || GameManager.Instance == null) return;
+        cameraOrbit?.SetOrbitOnceProgress(FineProgress);
         bool aged = GameManager.year >= targetEndYear;
         bool died = GameManager.Instance.state == GameState.TreeDead;
         if (aged || died) Finish(died);
@@ -161,6 +180,7 @@ public class QuickStartManager : MonoBehaviour
         generating = false;
 
         var gm = GameManager.Instance;
+        cameraOrbit?.EndOrbitOnce();
         cameraOrbit?.SetCinematicMode(false);
         if (savedFastTimescale > 0f) { GameManager.TIMESCALE_FAST = savedFastTimescale; savedFastTimescale = -1f; }
         gm?.SetSpeedMode(GameManager.SpeedMode.Med);

@@ -106,6 +106,10 @@ public class CameraOrbit : MonoBehaviour
     [SerializeField] bool verboseLog = false;
 
     bool  cinematicActive;
+    // Quick Start drives the orbit (2026-10-29): exactly one full turn over the whole grow.
+    // Negative = off, the normal constant-speed orbit.
+    float orbitOnceProgress = -1f;
+    float orbitOnceStartYaw;
     float cinematicElevPhase;
     float cinematicBasePitch;  // pitch captured when cinematic mode was entered
     float cinematicSavedPanY;  // panY to restore when cinematic mode exits
@@ -344,8 +348,18 @@ public class CameraOrbit : MonoBehaviour
                 panY += dp;
             }
 
-            float effectiveYawSpeed = GameManager.canTrim ? cinematicYawSpeed * 0.5f : cinematicYawSpeed;
-            yaw += effectiveYawSpeed * Time.unscaledDeltaTime;
+            if (orbitOnceProgress >= 0f)
+            {
+                // Glide toward the angle for the grow's progress, so a jump in the calendar
+                // doesn't jerk the camera.
+                float target = orbitOnceStartYaw + 360f * orbitOnceProgress;
+                yaw = Mathf.Lerp(yaw, target, 1f - Mathf.Exp(-3f * Time.unscaledDeltaTime));
+            }
+            else
+            {
+                float effectiveYawSpeed = GameManager.canTrim ? cinematicYawSpeed * 0.5f : cinematicYawSpeed;
+                yaw += effectiveYawSpeed * Time.unscaledDeltaTime;
+            }
             cinematicElevPhase += Time.unscaledDeltaTime / cinematicElevPeriod * Mathf.PI * 2f;
             pitch = cinematicBasePitch + Mathf.Sin(cinematicElevPhase) * cinematicElevAmpl;
             // Enforce cinematicMinPitch — never let elevation drift below the floor
@@ -453,6 +467,24 @@ public class CameraOrbit : MonoBehaviour
     /// Enable or disable cinematic mode programmatically (same effect as pressing C).
     /// Called by AutoRunManager to start recording without keyboard input.
     /// </summary>
+    /// <summary>
+    /// Makes the cinematic orbit turn exactly once over something with a known length (Quick
+    /// Start): call <see cref="BeginOrbitOnce"/> when it starts, feed 0→1 progress to
+    /// <see cref="SetOrbitOnceProgress"/> while it runs, and <see cref="EndOrbitOnce"/> at the end.
+    /// </summary>
+    public void BeginOrbitOnce()
+    {
+        orbitOnceStartYaw = yaw;
+        orbitOnceProgress = 0f;
+    }
+
+    public void SetOrbitOnceProgress(float progress01)
+    {
+        if (orbitOnceProgress >= 0f) orbitOnceProgress = Mathf.Clamp01(progress01);
+    }
+
+    public void EndOrbitOnce() => orbitOnceProgress = -1f;
+
     public void SetCinematicMode(bool active)
     {
         if (cinematicActive == active) return;
