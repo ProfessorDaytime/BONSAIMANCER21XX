@@ -695,7 +695,7 @@ public class AutoStyler : MonoBehaviour
     /// fires in early spring so Repot's good-timing window applies.</summary>
     void AdvancePotPhase()
     {
-        if (!autoRepot) return;
+        if (!autoRepot || !skeleton.autoRepot) return;   // the player's Auto-repot checkbox
         var potSoil = GetComponent<PotSoil>();
         if (potSoil == null || skeleton.plantingYear < 0) return;
 
@@ -709,8 +709,7 @@ public class AutoStyler : MonoBehaviour
                    : treeYear >= phases[0] ? PotSoil.PotSize.S
                    :                         PotSoil.PotSize.XS;
 
-        // The player can keep a tree in one pot for life (2026-10-29); it still gets fresh soil.
-        bool sizeUp = !skeleton.keepInOnePot && (int)target > (int)potSoil.potSize;
+        bool sizeUp = (int)target > (int)potSoil.potSize;
 
         // Soil refresh due? seasonsSinceRepot ticks once per growing season (≈ once per
         // in-game year). Young trees get fresh soil more often than mature ones.

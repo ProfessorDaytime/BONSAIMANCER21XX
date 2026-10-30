@@ -162,6 +162,7 @@ public class ButtonClicker : MonoBehaviour
     Button        calAddRuleButton, calModeResetButton, calRuleConfirmButton, calRuleCancelButton;
     Toggle        calModeAutoWater, calModeAutoFert, calModeIdleOrbit, calRuleIdleToggle;
     Toggle        calModeAutoStyle;   // added in code, beside Auto-fertilize (2026-10-27)
+    Toggle        calModeAutoRepot;   // added in code, after Auto-style (2026-10-29); per TREE, not per mode
     UnityEngine.UIElements.IntegerField calModeOrbitDelay;
     UnityEngine.UIElements.DropdownField calRuleTriggerDropdown;
     VisualElement calRuleParamRow, calRuleSpeedChips;
@@ -3402,21 +3403,6 @@ public class ButtonClicker : MonoBehaviour
         field.RegisterCallback<AttachToPanelEvent>(_ =>
             field.SetValueWithoutNotify(skeleton != null ? skeleton.treeName : ""));
         box.Add(field);
-
-        // Keep in one pot (2026-10-29): per tree, saved with it.
-        var onePot = new Toggle("Keep this tree in one pot (auto-style and Quick Start never move it to a bigger pot)")
-        {
-            value = skeleton != null && skeleton.keepInOnePot,
-        };
-        onePot.style.marginTop = 6;
-        onePot.style.color = new StyleColor(th.textMain);
-        onePot.labelElement.style.whiteSpace = WhiteSpace.Normal;
-        onePot.labelElement.style.minWidth = 0;
-        onePot.labelElement.style.flexShrink = 1;
-        onePot.RegisterValueChangedCallback(e => { if (skeleton != null) skeleton.keepInOnePot = e.newValue; });
-        onePot.RegisterCallback<AttachToPanelEvent>(_ =>
-            onePot.SetValueWithoutNotify(skeleton != null && skeleton.keepInOnePot));
-        box.Add(onePot);
         return box;
     }
 
@@ -3431,7 +3417,7 @@ public class ButtonClicker : MonoBehaviour
         if (qsSection != null && modes != null) modes.Insert(0, qsSection);
 
         // A new tree starts unnamed; name it here or later in Settings ▸ Game.
-        if (skeleton != null) { skeleton.treeName = ""; skeleton.keepInOnePot = false; }
+        if (skeleton != null) { skeleton.treeName = ""; skeleton.autoRepot = true; }
         // Show the new tree's pot from the start, not the last game's until the first watering.
         if (skeleton != null && skeleton.root == null) skeleton.ResetPotForNewTree();
 
@@ -4619,6 +4605,19 @@ public class ButtonClicker : MonoBehaviour
             m.autoStyle = evt.newValue;
             PlayModeManager.Instance.SaveModes();
         });
+
+        // Auto-repot sits with the other auto-care boxes but belongs to the TREE (saved with it),
+        // so a tree kept in one pot stays that way whichever play mode is active.
+        label.style.marginRight = 16;
+        calModeAutoRepot = new Toggle();
+        calModeAutoRepot.style.marginRight = 6;
+        calModeAutoRepot.SetValueWithoutNotify(skeleton == null || skeleton.autoRepot);
+        row.Add(calModeAutoRepot);
+        var repotLabel = new UnityEngine.UIElements.Label("Auto-repot");
+        repotLabel.style.color    = new StyleColor(new Color(180f / 255f, 180f / 255f, 180f / 255f));
+        repotLabel.style.fontSize = 11;
+        row.Add(repotLabel);
+        calModeAutoRepot.RegisterValueChangedCallback(evt => { if (skeleton != null) skeleton.autoRepot = evt.newValue; });
     }
 
     void RefreshModesTab()
@@ -4667,6 +4666,7 @@ public class ButtonClicker : MonoBehaviour
         if (calModeAutoWater  != null) calModeAutoWater.SetValueWithoutNotify(m.autoWater);
         if (calModeAutoFert   != null) calModeAutoFert.SetValueWithoutNotify(m.autoFertilize);
         if (calModeAutoStyle  != null) calModeAutoStyle.SetValueWithoutNotify(m.autoStyle);
+        if (calModeAutoRepot  != null) calModeAutoRepot.SetValueWithoutNotify(skeleton == null || skeleton.autoRepot);
         if (calModeIdleOrbit  != null) calModeIdleOrbit.SetValueWithoutNotify(m.idleOrbit);
         if (calModeOrbitDelay != null) calModeOrbitDelay.SetValueWithoutNotify((int)m.idleOrbitDelaySecs);
 
