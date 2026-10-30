@@ -82,27 +82,51 @@ public class LeafManager : MonoBehaviour
     float fallDebugTimer = 0f;
 
     // Shared material — one colour update drives all leaves
-    Material   leafMat;
-    GameObject leafMatSource;   // the prefab leafMat was copied from
+    // One material per leaf model (2026-10-30): each carries its own model's midrib for the spring
+    // fold, and leaves sharing a model and material draw instanced. leafMat is the first one made,
+    // and doubles as the "materials are ready" flag Update checks.
+    readonly Dictionary<GameObject, Material> leafMats = new Dictionary<GameObject, Material>();
+    Material leafMat;
 
-    /// <summary>The leaf model in use: the species' own (2026-10-29), else the default.</summary>
+    /// <summary>The main leaf model in use: the species' own (2026-10-29), else the default.</summary>
     GameObject LeafPrefab =>
         skeleton != null && skeleton.species != null && skeleton.species.leafPrefab != null
             ? skeleton.species.leafPrefab : leafPrefab;
 
-    /// <summary>Copies the leaf material from <see cref="LeafPrefab"/>, again whenever the species
-    /// switches to a different leaf model.</summary>
+    /// <summary>The model for a twig's <paramref name="index"/>th leaf: the main one or one of the
+    /// species' variants, picked by twig and index so a reloaded tree wears the same leaves.</summary>
+    GameObject PickLeafPrefab(TreeNode node, int index)
+    {
+        var main = LeafPrefab;
+        var sp   = skeleton != null ? skeleton.species : null;
+        if (sp == null || sp.leafPrefab == null || sp.leafVariants == null || sp.leafVariants.Length == 0)
+            return main;
+        uint h = (uint)node.id * 2654435761u ^ (uint)index * 40503u;
+        int  k = (int)((h ^ (h >> 15)) % (uint)(sp.leafVariants.Length + 1));
+        return k == 0 || sp.leafVariants[k - 1] == null ? main : sp.leafVariants[k - 1];
+    }
+
     void EnsureLeafMaterial()
     {
         var src = LeafPrefab;
-        if (src == null || (leafMat != null && leafMatSource == src)) return;
+        if (src != null) LeafMatFor(src);
+    }
+
+    /// <summary>The leaf material for a model: a copy of the model's blade material (renderer slot
+    /// 0) with the model's midrib found, made once per model.</summary>
+    Material LeafMatFor(GameObject src)
+    {
+        if (leafMats.TryGetValue(src, out var mat)) return mat;
         var srcRenderer = src.GetComponentInChildren<Renderer>();
-        leafMat = srcRenderer != null ? new Material(srcRenderer.sharedMaterial)
-                                      : new Material(Shader.Find("Unlit/Color"));
+        mat = srcRenderer != null ? new Material(srcRenderer.sharedMaterial)
+                                  : new Material(Shader.Find("Unlit/Color"));
         if (srcRenderer == null)
             Debug.LogWarning("LeafManager: leaf prefab has no Renderer — using fallback unlit material.");
-        leafMatSource = src;
-        FindMidrib(leafMat, src);
+        mat.enableInstancing = true;
+        FindMidrib(mat, src);
+        leafMats[src] = mat;
+        if (leafMat == null) leafMat = mat;
+        return mat;
     }
 
     static readonly int IdFoldOrigin = Shader.PropertyToID("_FoldOrigin");
@@ -110,52 +134,21 @@ public class LeafManager : MonoBehaviour
     static readonly int IdFoldUp     = Shader.PropertyToID("_FoldUp");
     static readonly int IdFoldAngle  = Shader.PropertyToID("_FoldAngle");
 
-    /// <summary>For the leaf shader's spring fold (2026-10-30): finds the blade's midrib in the leaf
-    /// model's mesh space — from where the stalk meets the blade to the blade point farthest from
-    /// there, the main lobe's tip — and the way the blade's top faces. The blade is submesh 0 (the
-    /// slot leafMat takes) and the stalk, if any, submesh 1. Needs Read/Write on the model; without
+    /// <summary>For the leaf shader's spring fold (2026-10-30): stores the model's midrib
+    /// (<see cref="LeafModel.TryMidrib"/>) on its material. Needs Read/Write on the model; without
     /// it the fold is switched off (_FoldAngle 0) and the leaf unfolds by width alone.</summary>
     static void FindMidrib(Material mat, GameObject prefab)
     {
         if (!mat.HasProperty(IdFoldAxis)) return;
-        var mf   = prefab.GetComponentInChildren<MeshFilter>();
-        var mesh = mf != null ? mf.sharedMesh : null;
-        if (mesh == null || !mesh.isReadable || mesh.normals.Length == 0) { mat.SetFloat(IdFoldAngle, 0f); return; }
-
-        var verts   = mesh.vertices;
-        var normals = mesh.normals;
-        var blade   = mesh.GetTriangles(0);
-
-        // The model's origin is the stalk's twig end, so the stalk's far end is the junction;
-        // with no stalk, the blade point nearest the origin.
-        Vector3 junction = Vector3.zero;
-        if (mesh.subMeshCount > 1)
+        var mf = prefab.GetComponentInChildren<MeshFilter>();
+        if (mf == null || !LeafModel.TryMidrib(mf.sharedMesh, out var junction, out var axis, out var up))
         {
-            float best = -1f;
-            foreach (int i in mesh.GetTriangles(1))
-                if (verts[i].sqrMagnitude > best) { best = verts[i].sqrMagnitude; junction = verts[i]; }
+            mat.SetFloat(IdFoldAngle, 0f);
+            return;
         }
-        else
-        {
-            float best = float.MaxValue;
-            foreach (int i in blade)
-                if (verts[i].sqrMagnitude < best) { best = verts[i].sqrMagnitude; junction = verts[i]; }
-        }
-
-        Vector3 tip = junction, up = Vector3.zero;
-        float   far = 0f;
-        foreach (int i in blade)
-        {
-            float d = (verts[i] - junction).sqrMagnitude;
-            if (d > far) { far = d; tip = verts[i]; }
-            up += normals[i];
-        }
-        Vector3 axis = Vector3.ProjectOnPlane(tip - junction, up);
-        if (up.sqrMagnitude < 1e-12f || axis.sqrMagnitude < 1e-12f) { mat.SetFloat(IdFoldAngle, 0f); return; }
-
         mat.SetVector(IdFoldOrigin, junction);
-        mat.SetVector(IdFoldAxis,   axis.normalized);
-        mat.SetVector(IdFoldUp,     up.normalized);
+        mat.SetVector(IdFoldAxis,   axis);
+        mat.SetVector(IdFoldUp,     up);
     }
 
     // ── Needle foliage (conifers) ─────────────────────────────────────────────
@@ -732,15 +725,16 @@ public class LeafManager : MonoBehaviour
         float roll = opposite ? 90f + Random.Range(-15f, 15f) : Random.Range(0f, 360f);
         Quaternion rot    = Quaternion.LookRotation(outDir, Vector3.up) * Quaternion.Euler(0f, 0f, roll);
 
-        EnsureLeafMaterial();
-        var go = Instantiate(LeafPrefab, skeleton.transform);
+        var model = PickLeafPrefab(node, index);
+        var mat   = LeafMatFor(model);
+        var go    = Instantiate(model, skeleton.transform);
         go.transform.localPosition = node.tipPosition + offset;
         go.transform.rotation      = rot;
         go.transform.localScale    = Vector3.zero;  // Leaf.Update() scales it in
 
-        // Apply shared material to all renderers in the prefab hierarchy
+        // Apply the model's shared material to all renderers in the prefab hierarchy
         foreach (var r in go.GetComponentsInChildren<Renderer>())
-            r.sharedMaterial = leafMat;
+            r.sharedMaterial = mat;
 
         // Use existing Leaf component if the prefab already has one (avoids duplicate
         // components fighting each other — the second one would reset localPosition every frame)

@@ -247,6 +247,10 @@ public class TreeSpecies : ScriptableObject
              "should run along +Z, its width along Y and its top face along +X. A model laid out " +
              "differently can sit, turned, as a child of the prefab root (Japanese Maple Leaf02).")]
     public GameObject leafPrefab;
+    [Tooltip("More leaf models for this species (2026-10-30): each leaf picks one of leafPrefab and " +
+             "these, steadily per twig, so a canopy isn't one leaf repeated. They share " +
+             "leafModelScale, so make them at the same size. Bonsai ▸ Import Leaf Model adds them.")]
+    public GameObject[] leafVariants;
     [Tooltip("Size of this species' leaf model relative to the default (Ficus) leaf model, so a " +
              "model authored at a different scale comes out leaf-sized. The Japanese Maple Leaf02 " +
              "model is 0.061 units long and 0.047 wide, so 0.63 gives the same blade width as the " +
