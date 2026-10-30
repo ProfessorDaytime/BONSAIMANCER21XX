@@ -895,6 +895,8 @@ public partial class TreeSkeleton : MonoBehaviour
             else currentBranchCount++;
         }
 
+        ApplyAnnualThickening();
+
         // Vigor: lateral chances scale down as the tree approaches the branch node cap.
         // Floors at 0.05 so old-wood / back-bud growth never stops completely on a living tree.
         float vigorFactor = Mathf.Max(0.05f, 1f - (float)currentBranchCount / EffectiveMaxBranchNodes);
@@ -1417,4 +1419,36 @@ public partial class TreeSkeleton : MonoBehaviour
             EvaluateTreeDeath();
     }
 
+
+    /// <summary>
+    /// Spring growth ring (2026-10-29): every living, non-terminal branch node thickens by
+    /// <c>annualRingWidth × (its radius / trunk radius)</c>, scaled by the pot
+    /// (<see cref="GirthPotFactor"/>), last year's leaf energy, root support and the node's health.
+    /// Written into <c>minRadius</c>, the ratchet the pipe model already respects, so thickening is
+    /// permanent and parents stay at least as thick as their children. Tips are left alone so new
+    /// shoots stay fine.
+    /// </summary>
+    void ApplyAnnualThickening()
+    {
+        if (annualRingWidth <= 0f || root == null || root.radius <= 0f) return;
+
+        float energy  = Mathf.Clamp(treeEnergy, 0.4f, 1.5f);
+        float support = RootSupportFactor();
+        float pot     = GirthPotFactor;
+        float ring    = annualRingWidth * pot * energy * support;
+        if (ring <= 0f) return;
+
+        float trunkBefore = root.radius;
+        foreach (var n in allNodes)
+        {
+            if (n.isRoot || n.isTrimmed || n.isDead || n.isDeadwood || n.isJin || n.isTerminal) continue;
+            float add = ring * (n.radius / trunkBefore) * Mathf.Clamp01(n.health);
+            if (add <= 0f) continue;
+            n.minRadius = Mathf.Max(n.minRadius, n.radius) + add;
+        }
+        RecalculateRadii(root);
+        meshBuilder.SetDirty();
+        Debug.Log($"[Girth] ring={ring:F5} (pot×{pot:F2} energy×{energy:F2} support×{support:F2}) " +
+                  $"trunk r {trunkBefore:F4} → {root.radius:F4} | year={GameManager.year}");
+    }
 }

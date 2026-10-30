@@ -688,6 +688,59 @@ public partial class TreeSkeleton : MonoBehaviour
              "ramification to read as a tree.")]
     [SerializeField] int minScaledBranchNodes = 150;
 
+    // ── Annual thickening (2026-10-29) ────────────────────────────────────────
+    // Before this, girth came ONLY from the pipe model: a node is as thick as the branches it
+    // carries. So a pruned tree never fattened, and pot size changed how big a tree got but not
+    // how thick its trunk became — the opposite of real practice, where a grow box or big pot
+    // fattens the trunk fast and a small pot nearly stops it. Each spring every living branch
+    // now lays down a growth ring, scaled by pot size, last year's leaf energy and root support.
+
+    [Tooltip("Growth ring added to the TRUNK BASE each spring, world units, in the reference (M) pot " +
+             "at full vigour. Other wood gets the same ring scaled by its radius relative to the " +
+             "trunk, so the trunk thickens steadily (linearly, not compounding) and twigs barely do. " +
+             "0 disables.")]
+    [SerializeField] float annualRingWidth = 0.0015f;
+
+    [Tooltip("How strongly pot size scales the ring: ring × PotVolumeFactor^this. At 0.6, XS ≈ 0.35×, " +
+             "S ≈ 0.6×, M = 1×, L ≈ 1.2×, XL ≈ 1.35×. 0 = pot size doesn't matter.")]
+    [SerializeField] [Range(0f, 1.5f)] float girthPotExponent = 0.6f;
+
+    /// <summary>How fast the current pot lets the trunk thicken, relative to the M reference.</summary>
+    public float GirthPotFactor
+    {
+        get
+        {
+            var ps = _holePotSoil != null ? _holePotSoil : GetComponent<PotSoil>();
+            return ps == null ? 1f : Mathf.Pow(Mathf.Max(0.0001f, ps.PotVolumeFactor), girthPotExponent);
+        }
+    }
+
+    /// <summary>Thickening rate a pot of <paramref name="size"/> would give, relative to M.</summary>
+    public float GirthFactorFor(PotSoil.PotSize size) =>
+        Mathf.Pow(Mathf.Max(0.0001f, VolumeFactorFor(size)), girthPotExponent);
+
+    /// <summary>Canopy budget a pot of <paramref name="size"/> would give.</summary>
+    public int BranchCapacityFor(PotSoil.PotSize size)
+    {
+        if (!potVolumeLimitsGrowth) return maxBranchNodes;
+        float f = Mathf.Pow(Mathf.Max(0.0001f, VolumeFactorFor(size)), rootCapVolumeExponent);
+        return Mathf.Clamp(Mathf.RoundToInt(maxBranchNodes * f), minScaledBranchNodes, maxBranchNodes * 2);
+    }
+
+    static float VolumeFactorFor(PotSoil.PotSize size) =>
+        PotSoil.SoilVolumeOf(size) / Mathf.Max(0.0001f, PotSoil.SoilVolumeOf(PotSoil.RootBudgetReferenceSize));
+
+    /// <summary>Live branch nodes (not roots, not trimmed) — the canopy the pot has to carry.</summary>
+    public int LiveBranchCount
+    {
+        get
+        {
+            int n = 0;
+            foreach (var x in allNodes) if (!x.isTrimmed && !x.isRoot) n++;
+            return n;
+        }
+    }
+
     /// <summary>Growth throttle as the canopy approaches what its pot can carry, 1 → floor.
     /// Measured against the pot's own branch budget rather than a root:shoot node ratio — that
     /// first attempt calibrated `rootsPerBranchNode` from a YOUNG tree (roots outnumber branches

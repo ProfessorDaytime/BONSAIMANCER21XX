@@ -1193,6 +1193,7 @@ public class ButtonClicker : MonoBehaviour
                     pendingSoilPreset  = null;
                     pendingRepotOnRock = false;
                     if (potSizeLabel != null) potSizeLabel.text = $"Current: {potSoil.potSize}";
+                    RefreshPotEffectLabel(potSoil.potSize);
                     RefreshPotSizeButtons();
                     RefreshSoilPresetButtons();
                     RefreshRepotRockToggle();
@@ -2850,7 +2851,47 @@ public class ButtonClicker : MonoBehaviour
         pendingPotSize = size;
         if (potSizeLabel != null)
             potSizeLabel.text = $"Current: {size}";
+        RefreshPotEffectLabel(size);
         RefreshPotSizeButtons();
+    }
+
+    Label potEffectLabel;
+
+    /// <summary>
+    /// Under the pot size in the repot panel (2026-10-29): what the chosen pot does to growth. Pot
+    /// size has driven root room, canopy size, leaf size and (now) trunk thickening since August,
+    /// but nothing told the player.
+    /// </summary>
+    void RefreshPotEffectLabel(PotSoil.PotSize size)
+    {
+        if (potSizeLabel == null || potSizeLabel.parent == null || skeleton == null) return;
+        if (potEffectLabel == null)
+        {
+            potEffectLabel = new Label { name = "PotEffectLabel" };
+            potEffectLabel.style.whiteSpace = WhiteSpace.Normal;
+            potEffectLabel.style.fontSize = 11;
+            potEffectLabel.style.marginTop = 2;
+            potEffectLabel.style.marginBottom = 6;
+            potEffectLabel.style.color = new StyleColor(UiTheme.Current.textSub);
+            var parent = potSizeLabel.parent;
+            parent.Insert(parent.IndexOf(potSizeLabel) + 1, potEffectLabel);
+        }
+
+        int branches = skeleton.LiveBranchCount;
+        int cap      = Mathf.Max(1, skeleton.BranchCapacityFor(size));
+        int full     = Mathf.RoundToInt(100f * branches / cap);
+        float girth  = skeleton.GirthFactorFor(size);
+        string thicken = girth < 0.5f ? "very slowly"
+                       : girth < 0.9f ? "slowly"
+                       : girth <= 1.1f ? "at a normal rate"
+                       : "quickly";
+        string fullness = full >= 100 ? "full: growth has slowed right down"
+                        : full >= 70  ? $"{full}% full: growth is slowing"
+                        :               $"{full}% full";
+        potEffectLabel.text =
+            $"Root room in a {size} pot: {fullness}. The trunk thickens {thicken}.\n" +
+            "Bigger pots grow faster and thicken the trunk, but grow coarser. Smaller pots slow " +
+            "growth and keep leaves small: the way to refine a tree.";
     }
 
     void RefreshPotSizeButtons()
