@@ -1249,6 +1249,15 @@ that don't sway, everything on the 1st of the month, lost on load, smooth-lit.
     `fruitSize`. Care Log lines for each kind ("is in bloom: N racemes hanging", "catkins are out",
     "is bearing N cones", "bursting into fluff").
   - Not yet: conifer pollen cones in spring, Juniper's two-year berries, a 3-lobed Trident leaf.
+- **Cherry and wisteria play-tested 2026-10-30** ("looks really good"); the rest not yet.
+- **Art pipeline (raised 2026-10-30):** the user will model leaves for every species and the flower /
+  fruit parts in Blender. `Bonsai ▸ Export Flower and Fruit Shapes (OBJ)` writes every procedural shape
+  (parts at the origin where they attach, plus posed twigs) with vertex colours and a README of sizes,
+  vertex counts and conventions to Documents/Bonsaimancer Exports. Next on the code side: let
+  `FlowerVisuals` take authored part meshes per species (the game keeps assembling and animating
+  them), make the leaf material draw both faces (Leaf / Leaf Stem cull back faces today), and allow
+  several leaf variants per species. Budgets: leaves ~60–150 verts (the Japanese maple leaf is 730,
+  the Ficus leaves 21–37), petals and sepals 4–16, fruit 20–40, cones 80–200.
 - **Flower buds on mature trees (bug, all flowering species; found from the first play-test,
   2026-10-29):** `SetBuds` rolled `flowerBudChance` only on tips budded for the first time, so a tip
   that kept its bud without growing (most tips on a mature, capped tree) never flowered again: a

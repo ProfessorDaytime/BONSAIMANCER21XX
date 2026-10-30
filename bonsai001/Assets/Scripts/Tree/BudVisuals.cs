@@ -329,6 +329,29 @@ public class BudVisuals : MonoBehaviour
         }
     }
 
+#if UNITY_EDITOR
+    /// <summary>Editor export (Bonsai ▸ Export Flower and Fruit Shapes): a tip's dormant bud pairs,
+    /// or its bud scales opening at <paramref name="p"/>, built on a stand-in twig. Works on a
+    /// component that never woke, so no mesh object is needed.</summary>
+    internal Mesh BuildReference(TreeNode n, TreeSpecies sp, bool opening, float p)
+    {
+        verts.Clear(); normals.Clear(); colors.Clear(); flex.Clear(); tris.Clear();
+        if (opening) AddTipOpening(n, p, sp.budSwellColor);
+        else
+        {
+            AddTipPair(n, 0f, sp.budColor, Lighter(sp.budColor), 1f);
+            AddLateralPair(n, 0f, sp.budColor, Lighter(sp.budColor), 1f);
+        }
+        var m = new Mesh { name = opening ? "BudOpening" : "BudsDormant" };
+        m.SetVertices(verts);
+        m.SetNormals(normals);
+        m.SetColors(colors);
+        m.SetTriangles(tris, 0);
+        m.RecalculateBounds();
+        return m;
+    }
+#endif
+
     /// <summary>Sway data for the twig a bud sits on, as the bark mesh carries it at that tip.</summary>
     Vector2 FlexOf(TreeNode n)
     {
