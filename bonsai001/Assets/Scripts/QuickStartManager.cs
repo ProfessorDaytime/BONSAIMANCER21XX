@@ -57,6 +57,7 @@ public class QuickStartManager : MonoBehaviour
         ? Mathf.Clamp01((GameManager.year - startYear) / (float)totalYears) : 0f;
 
     bool  generating;
+    const int EndMonth = 6;   // June
     int   startMonth = 1, startDay = 1;
 
     /// <summary>Progress through the grow by date, down to the day — smooth enough to drive the
@@ -68,7 +69,7 @@ public class QuickStartManager : MonoBehaviour
             if (!generating || totalYears <= 0) return 0f;
             float now   = GameManager.year * 12f + (GameManager.month - 1) + (GameManager.day - 1) / 30f;
             float start = startYear * 12f + (startMonth - 1) + (startDay - 1) / 30f;
-            float end   = targetEndYear * 12f;   // Update finishes at the turn of targetEndYear
+            float end   = targetEndYear * 12f + (EndMonth - 1);   // Update finishes on June 1 of targetEndYear
             return Mathf.Clamp01((now - start) / Mathf.Max(1f, end - start));
         }
     }
@@ -167,7 +168,10 @@ public class QuickStartManager : MonoBehaviour
     {
         if (!generating || GameManager.Instance == null) return;
         cameraOrbit?.SetOrbitOnceProgress(FineProgress);
-        bool aged = GameManager.year >= targetEndYear;
+        // Finish on June 1 (2026-10-29): the tree is handed over in full summer leaf, its best look,
+        // instead of bare in January.
+        bool aged = GameManager.year > targetEndYear
+                 || (GameManager.year == targetEndYear && GameManager.month >= EndMonth);
         bool died = GameManager.Instance.state == GameState.TreeDead;
         if (aged || died) Finish(died);
     }

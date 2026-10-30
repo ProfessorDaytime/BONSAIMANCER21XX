@@ -26,6 +26,9 @@ public static class MenuTreeLibrary
         public int    treeAge;
         public string savedUtc;   // ISO 8601, sorts newest first as a string
         public bool   favorite;   // marked in the greenhouse; what favourites do is still open
+        // For the greenhouse season slider (2026-10-29). Trees saved before then have none: alpha 0.
+        public Color  autumnColor;
+        public bool   evergreen;
     }
 
     const string PinnedKey = "MenuTreePinned";
@@ -102,6 +105,8 @@ public static class MenuTreeLibrary
                 treeName    = skeleton.treeName,
                 speciesName = skeleton.SpeciesName,
                 treeAge     = GameManager.year - skeleton.SaveStartYear,
+                autumnColor = skeleton.species != null ? skeleton.species.leafAutumnColor : default,
+                evergreen   = skeleton.species != null && skeleton.species.evergreen,
                 savedUtc    = DateTime.UtcNow.ToString("o"),
             };
             File.WriteAllText(MetaPath(slotId), JsonUtility.ToJson(meta, true));

@@ -36,7 +36,15 @@ public class Greenhouse : MonoBehaviour
         public float      height;
         public bool       hasSave;
         public Collider   pick;
+        public List<(MeshRenderer r, Color summer)> leaves = new List<(MeshRenderer, Color)>();
     }
+
+    static readonly int IdBaseColor = Shader.PropertyToID("_BaseColor");
+    static readonly int IdColor     = Shader.PropertyToID("_Color");
+    const string SeasonPrefKey = "GreenhouseSeason";
+    float season;                       // 0 = summer green, 1 = full autumn colour
+    VisualElement seasonBox;
+    readonly MaterialPropertyBlock seasonMpb = new MaterialPropertyBlock();
 
     readonly List<Entry> entries = new List<Entry>();
     readonly Dictionary<Collider, Entry> byCollider = new Dictionary<Collider, Entry>();
@@ -111,6 +119,7 @@ public class Greenhouse : MonoBehaviour
                 pivotLocal = snap.pivotLocal,
                 hasSave    = saves.Contains(metas[i].slotId),
             });
+            CollectLeaves(entries[entries.Count - 1]);
         }
 
         loadingLabel.style.display = DisplayStyle.None;
@@ -134,6 +143,7 @@ public class Greenhouse : MonoBehaviour
         }
         spacing = Mathf.Max(2.5f, widest + 1.2f);
         Layout();
+        ApplySeason();
         BuildHouse((entries.Count + 1) / 2, tallest);
 
         ready = true;
@@ -187,6 +197,52 @@ public class Greenhouse : MonoBehaviour
             byCollider[e.pick] = e;
         }
     }
+
+    /// <summary>Remembers each leaf part's saved (summer) tint. Leaves are the parts that carry a
+    /// tint; bark, pot and table don't.</summary>
+    void CollectLeaves(Entry e)
+    {
+        foreach (var r in e.tree.GetComponentsInChildren<MeshRenderer>())
+        {
+            if (!r.HasPropertyBlock()) continue;
+            r.GetPropertyBlock(seasonMpb);
+            if (mpbHas(seasonMpb, IdBaseColor, out var c) || mpbHas(seasonMpb, IdColor, out c))
+                e.leaves.Add((r, c));
+        }
+
+        static bool mpbHas(MaterialPropertyBlock b, int id, out Color c)
+        {
+            bool has = b.HasColor(id);
+            c = has ? b.GetColor(id) : default;
+            return has;
+        }
+    }
+
+    /// <summary>Blends every deciduous tree's leaves from their saved colour toward the species'
+    /// autumn colour, keeping each leaf group's lightness so the variety survives. Evergreens stay
+    /// green. Trees saved before autumn colours were stored use a generic orange-red.</summary>
+    void ApplySeason()
+    {
+        foreach (var e in entries)
+        {
+            if (e.meta.evergreen) continue;
+            Color fall = e.meta.autumnColor.a > 0f ? e.meta.autumnColor : new Color(0.85f, 0.35f, 0.10f);
+            float fallLuma = Mathf.Max(0.05f, Luma(fall));
+            foreach (var (r, summerTint) in e.leaves)
+            {
+                if (r == null) continue;
+                float k = Mathf.Clamp(Luma(summerTint) / 0.45f, 0.6f, 1.4f);
+                var target = new Color(fall.r * k, fall.g * k, fall.b * k, summerTint.a);
+                var c = Color.Lerp(summerTint, target, season);
+                r.GetPropertyBlock(seasonMpb);
+                seasonMpb.SetColor(IdBaseColor, c);
+                seasonMpb.SetColor(IdColor, c);
+                r.SetPropertyBlock(seasonMpb);
+            }
+        }
+    }
+
+    static float Luma(Color c) => 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
 
     static Bounds Bounds(GameObject go)
     {
@@ -406,7 +462,7 @@ public class Greenhouse : MonoBehaviour
         // The menu's own full-screen root is pickable everywhere, so only count the greenhouse's
         // buttons and card as "the UI".
         for (var v = panel.Pick(p); v != null; v = v.parent)
-            if (v is Button || v == card) return true;
+            if (v is Button || v == card || v == seasonBox) return true;
         return false;
     }
 
@@ -629,6 +685,39 @@ public class Greenhouse : MonoBehaviour
         hint.style.color = new StyleColor(th.textSub);
         hint.pickingMode = PickingMode.Ignore;
         hud.Add(hint);
+
+        // Season slider (2026-10-29): every tree from summer green to its species' autumn colour.
+        try { season = Mathf.Clamp01(PlayerPrefs.GetFloat(SeasonPrefKey, 0f)); } catch { season = 0f; }
+        seasonBox = new VisualElement();
+        seasonBox.style.position = Position.Absolute;
+        seasonBox.style.right = 24; seasonBox.style.top = 48;
+        seasonBox.style.width = 300;
+        seasonBox.style.flexDirection = FlexDirection.Row;
+        seasonBox.style.alignItems = Align.Center;
+        seasonBox.style.backgroundColor = new StyleColor(th.panelBg);
+        seasonBox.style.borderTopLeftRadius = seasonBox.style.borderTopRightRadius =
+        seasonBox.style.borderBottomLeftRadius = seasonBox.style.borderBottomRightRadius = 6;
+        seasonBox.style.paddingLeft = seasonBox.style.paddingRight = 10;
+        seasonBox.style.paddingTop = seasonBox.style.paddingBottom = 4;
+        var summer = new Label("Summer");
+        summer.style.color = new StyleColor(th.textSub);
+        summer.style.fontSize = 11;
+        seasonBox.Add(summer);
+        var slider = new Slider(0f, 1f) { value = season };
+        slider.style.flexGrow = 1;
+        slider.style.marginLeft = slider.style.marginRight = 8;
+        slider.RegisterValueChangedCallback(e =>
+        {
+            season = e.newValue;
+            ApplySeason();
+            try { PlayerPrefs.SetFloat(SeasonPrefKey, season); } catch { }
+        });
+        seasonBox.Add(slider);
+        var autumn = new Label("Autumn");
+        autumn.style.color = new StyleColor(th.textSub);
+        autumn.style.fontSize = 11;
+        seasonBox.Add(autumn);
+        hud.Add(seasonBox);
 
         uiRoot.Add(hud);
     }

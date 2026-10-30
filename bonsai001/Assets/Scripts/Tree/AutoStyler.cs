@@ -84,12 +84,10 @@ public class AutoStyler : MonoBehaviour
              "tomorrow, and back out when it passes or the soil dries (2026-10-29). Set from the " +
              "play mode's Auto-shelter box.")]
     public bool autoShelter = true;
-    [Tooltip("Cover when saturation is at least this (or moisture at least Shelter Wet Moisture) and rain is falling or due.")]
+    [Tooltip("Cover when soil saturation is at least this and rain is falling or due.")]
     [Range(0f, 1f)] public float shelterWetSaturation = 0.30f;
-    [Range(0f, 1f)] public float shelterWetMoisture   = 0.80f;
-    [Tooltip("Stay covered while saturation is at least this (or moisture at least Shelter Keep Moisture) — looser than going in, so it doesn't flip daily.")]
+    [Tooltip("Stay covered while saturation is at least this — looser than going in, so it doesn't flip daily.")]
     [Range(0f, 1f)] public float shelterKeepSaturation = 0.15f;
-    [Range(0f, 1f)] public float shelterKeepMoisture   = 0.65f;
     [Tooltip("Hands-off soil refresh: a real repot (fresh soil, degradation/saturation reset, repot stress)\n" +
              "whenever the soil has been in the pot too long — real bonsai get fresh soil every 2–5 years\n" +
              "for life. Without this the mix degrades toward 1.0 and mismatch penalties slowly starve a\n" +
@@ -336,9 +334,12 @@ public class AutoStyler : MonoBehaviour
         float sat   = pot.saturationLevel;
         float moist = skeleton.soilMoisture;
 
+        // Saturation only: moisture is 100% after every watering, and covering for that flipped the
+        // shelter on and off all winter with saturation at 0% (2026-10-29 log). Waterlogging IS
+        // saturation.
         bool cover = WeatherManager.Sheltered
-            ? rainDue && (sat >= shelterKeepSaturation || moist >= shelterKeepMoisture)
-            : rainDue && (sat >= shelterWetSaturation  || moist >= shelterWetMoisture);
+            ? rainDue && sat >= shelterKeepSaturation
+            : rainDue && sat >= shelterWetSaturation;
         if (cover == WeatherManager.Sheltered) return;
 
         WeatherManager.Sheltered = cover;
