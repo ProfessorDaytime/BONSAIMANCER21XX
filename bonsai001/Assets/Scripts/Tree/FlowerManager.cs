@@ -8,6 +8,9 @@ using UnityEngine;
 /// bloomDurationDays; at fruitSetMonth fruit sets (green) at the same sites, recolours to ripe at
 /// fruitRipeMonth, then drops. Fruit-only species (figs, cones, berries) skip the bloom. All
 /// geometry + materials are code-generated — no art. Attach to the bonsai GameObject.
+///
+/// Superseded by <see cref="FlowerVisuals"/> (2026-10-29), which now handles every species that
+/// flowers or fruits, so this skips them all. Left in place because the scene still references it.
 /// </summary>
 public class FlowerManager : MonoBehaviour
 {

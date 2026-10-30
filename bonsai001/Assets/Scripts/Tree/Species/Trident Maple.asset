@@ -84,3 +84,4 @@ MonoBehaviour:
   fruitRipeColor: {r: 0.66, g: 0.5, b: 0.32, a: 1}
   fruitSetMonth: 5
   fruitRipeMonth: 10
+  fruitPersist: 0.2

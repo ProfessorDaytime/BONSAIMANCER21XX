@@ -13,7 +13,7 @@ Pending work in recommended priority order. Detailed specs are under "Pending �
 | ✅ | **UI — Themeable In-Game UI Rebuild** | ✅ **done 2026-06-15** (verified in-game — settings/pause, tooltips, calendar, stat panels, toolbars, species select all follow the theme). `UiThemePainter` (palette painter; captures originals from `resolvedStyle`, classifies → palette, contrast guard, functional denylist) + buttonClicker themes its UI from `UiTheme` on show + on `OnThemeChanged`: **stage 1** settings/pause + tooltips (explicit) + calendar; **stage 2** stat panels (Care Log / Tree Health / Auto Style / Root Health, via `ThemePanel`); **stage 3** whole-root walk (`ThemeRoot` → toolbar, date, corner controls) skipping self-themed overlays. `SetTabStyle`/species-card selection theme-driven. **`GameUiThemer` retired** (now an empty deprecated component — remove from the scene). Remaining = polish/edge cases as found. Original rebuild context (toolbar, Care Log, Tree Health, Auto Style, Root Health, Settings/pause, tooltips, calendar, date) **from scratch in C#** as code-built UI Toolkit panels that read `UiTheme.Current` and repaint on `OnThemeChanged` — the same pattern as the already-themeable menus (species select, shop, Journal, Customize, AP HUD). Replaces the hardcoded-colour `ButtonUI.uxml` markup so **all** UI follows the active theme. Retires the fragile `GameUiThemer` overlay once the rebuilt panels self-theme. Preserve all existing behaviour/wiring. See "Pending — Detailed Specs" → *Themeable In-Game UI Rebuild*. |
 | ✅ | **H — Item Selection Menus** | ✅ done (pots / rocks / tables). GroundCover (moss & grass) folds into Decoration. See Completed This Phase. |
 | ✅ | **20 — Multi-Tree / Quick-Start** | ✅ done — Quick-Start generator + tree shelf with save-before-switch. See Completed This Phase. |
-| — | **Flower / Blossom & Fruit System** | 🔧 **Rebuilding on the bud system since 2026-10-29** (`FlowerVisuals`: swaying, saved, calendar-driven; step 1 maples done, see "Blossoms & fruit rebuild"; next: cherry). ✅ core built 2026-06-14 — `FlowerManager` (flowers + fruit lifecycle), 14/17 species configured (all conifers cone). Showier blossom geometry ✅ (rounded cupped petals, 2026-06-15). Follow-ups: Azalea/Magnolia species, birch/willow catkins, ficus stylized bloom. See Completed This Phase. |
+| — | **Flower / Blossom & Fruit System** | 🔧 **Rebuilding on the bud system since 2026-10-29** (`FlowerVisuals`: swaying, saved, calendar-driven; maples done, cherry and every other species built, see "Blossoms & fruit rebuild"). ✅ core built 2026-06-14 — `FlowerManager` (flowers + fruit lifecycle), 14/17 species configured (all conifers cone). Showier blossom geometry ✅ (rounded cupped petals, 2026-06-15). Follow-ups: Azalea/Magnolia species, birch/willow catkins, ficus stylized bloom. See Completed This Phase. |
 | — | **Needle Foliage (conifers)** | ✅ built 2026-06-14 — procedural needle-tuft meshes (`NeedleMesh`), one tuft per branch tip, 4 foliage types, evergreen persistence + deciduous-conifer drop. 10 species wired. See Completed This Phase. |
 | ✅ | **19 — Gamification & Tutorial Progression** | ✅ core complete 2026-06-14 (`Docs/PROGRESSION_DESIGN.md`) — all 4 slices built: economy + zen core, cosmetic shop, Career/Sandbox gating + mode toggle, and the Journal/Encyclopedia (Achievements + Techniques/Phenomena/Species) with real milestone hooks (trim/wire/repot/bloom/fruit/survival). Remaining = ongoing balance tuning + optional richer tutorials. |
 | ✅ | **21 — Decoration & Cosmetic Unlockables** | ✅ **done 2026-06-15** — all 4 cosmetic categories via the AP shop: Backgrounds, UI Themes (+ full game-UI theming), Music, and **Decoration placeables** (`DecorationManager` places a figurine/accent beside the tree; prefab or built-in procedural "Stone Lantern"; equipped-state persisted). `CustomizeManager` + ⚙ menu drive all four. See `Docs/PROGRESSION_DESIGN.md` §7. |
@@ -1184,7 +1184,7 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
   a save took whatever species the skeleton last had (on a fresh launch the scene default, Ficus).
   `SaveManager.RestoreSpecies` looks the saved name up (`TreeSpecies.FindLoaded`) before rebuilding.
 
-**Blossoms & fruit rebuild (raised 2026-10-29) — step 1 (maples) play-tested and done 2026-10-29; step 2 (cherry) built, not yet play-tested:**
+**Blossoms & fruit rebuild (raised 2026-10-29) — step 1 (maples) play-tested and done 2026-10-29; steps 2 (cherry) and 3 (everyone else) built, not yet play-tested:**
 Agreed plan: rebuild flowers and fruit the way the buds work, one species group at a time —
 1. maples, 2. cherry (winter flower-bud clusters, blossoms opening in a wave, petals drifting off
 before the leaves, cherries ripening in pairs), 3. the rest (wisteria racemes then pods, figs, juniper
@@ -1221,6 +1221,34 @@ that don't sway, everything on the 1st of the month, lost on load, smooth-lit.
   branches" / "set N cherries" (`fruitName`).
 - **Falling pieces** (`FallingPiece`, was `SamaraSpinner`): samaras spin, petals tumble and sway,
   fruit drops. Queued and let go a few a frame, at most 150 in the air.
+- **Everyone else** (step 3; `FlowerManager` now idle, every flowering or fruiting species is drawn
+  by `FlowerVisuals`, split into core / `.Kinds` / `.Shapes` partial files). All but the maples sit on
+  flower spurs (`flowerSpurs`), whose winter buds show from Sep 1 for the flowering kinds:
+  - **Wisteria** (Raceme): fat single winter buds; racemes lengthen out of them from Apr 6–10
+    (~0.16 long), their pea florets (keel + banner) opening from the top down, holding 14 days, about
+    half dropping a lilac petal to flutter down. 35% of racemes set one or two velvety pods (new
+    `FruitType.Pod`) that hang through summer, brown in October, 60% kept into winter.
+  - **Elm** (new `BloomType.Tuft`, now flowering): tiny dark-red tufts along bare twigs in mid-February;
+    60% become round papery samaras (new `FruitType.RoundSamara`: a disc with the seed darker in the
+    middle) through March, ripening tan in April and drifting down late April to mid-May.
+  - **Silver Birch** (Catkin, now flowering): stiff brown catkins out all winter (from the autumn
+    flower buds) lengthen, loosen and go golden in March, then drop; 35% are female and fill out into
+    hanging seed catkins (Cone, `coneShape` Hanging) that ripen brown in September, some into winter.
+  - **Weeping Willow** (Catkin, now flowering): yellow-green catkins with the leaves in March; half
+    become seed catkins that fatten and turn white in May and burst into fluff (new `FruitType.Fluff`,
+    fluff pieces flutter off).
+  - **Figs** (Ficus): sessile pear-shaped figs in pairs along the twig, appearing late May, purple by
+    September, dropping into October. **Juniper**: small berries on short stalks along the twig tips,
+    green to blue by October, 70% kept through winter.
+  - **Cones** (new `coneShape`, `fruitSize`): a scaly core with rings of scales, sitting just behind
+    the tip. Pines Ovoid, angled down, opening their scales as they ripen in November; spruces
+    Hanging; Atlas Cedar Upright barrels on top of the branch; Japanese Cedar, Dawn Redwood and Swamp
+    Cypress small Round cones on short stalks. Conifer `flowerBudChance` 0.35–0.4 → 0.2 (cones on a
+    fifth of tips).
+  - New species fields `fruitPersist` (share kept through winter; the maples' 0.2 moved here) and
+    `fruitSize`. Care Log lines for each kind ("is in bloom: N racemes hanging", "catkins are out",
+    "is bearing N cones", "bursting into fluff").
+  - Not yet: conifer pollen cones in spring, Juniper's two-year berries, a 3-lobed Trident leaf.
 - **Flower buds on mature trees (bug, all flowering species; found from the first play-test,
   2026-10-29):** `SetBuds` rolled `flowerBudChance` only on tips budded for the first time, so a tip
   that kept its bud without growing (most tips on a mature, capped tree) never flowered again: a

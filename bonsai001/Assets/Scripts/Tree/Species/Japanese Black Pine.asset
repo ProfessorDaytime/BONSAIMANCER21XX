@@ -70,4 +70,11 @@ MonoBehaviour:
   fruitSetMonth: 5
   fruitRipeMonth: 11
   floweringStartAge: 5
-  flowerBudChance: 0.4
+  flowerBudChance: 0.2
+  coneShape: 0
+  flowersPerCluster: 2
+  fruitSetChance: 0.6
+  fruitSize: 1
+  fruitPersist: 0.5
+  flowerSpurs: 1
+  fruitName: cones

@@ -315,17 +315,18 @@ public class TreeSpecies : ScriptableObject
 
     // ── Flowering & Fruit ───────────────────────────────────────────────────────
     [Header("Flowering & Fruit")]
-    [Tooltip("What this species blooms as. None = no flowers. Corymb (the maples) is drawn with its " +
-             "fruit by FlowerVisuals; the others by FlowerManager.")]
+    [Tooltip("What this species blooms as (FlowerVisuals draws flowers and fruit). None = no showy " +
+             "flowers; a fruiting species then just bears its fruit (figs, berries, cones).")]
     public BloomType bloomType = BloomType.None;
-    [Tooltip("Flowers in each Corymb cluster, give or take 30%.")]
-    [Range(2, 16)] public int flowersPerCluster = 8;
-    [Tooltip("Share of a Corymb cluster's flowers that set fruit, less on a tree short of energy.")]
+    [Tooltip("Flowers per cluster or spur, give or take 30%: maple flowers, cherry blossoms, elm tufts, " +
+             "catkins, or the fruit of a fruit-only species. Raceme: florets on each raceme.")]
+    [Range(1, 24)] public int flowersPerCluster = 8;
+    [Tooltip("Share of flowers that set fruit (a Raceme: of racemes), less on a tree short of energy.")]
     [Range(0f, 1f)] public float fruitSetChance = 0.3f;
     [Tooltip("Angle between the two wings of a samara pair, in degrees: ~140 Japanese maple, ~40 trident.")]
     [Range(0f, 180f)] public float samaraSpread = 120f;
-    [Tooltip("Blossom species: flower spurs on each flowering twig, one at the tip and the rest back " +
-             "along it; each carries flowersPerCluster flowers.")]
+    [Tooltip("Flower spurs on each flowering twig (all but Corymb), one at the tip and the rest back " +
+             "along it; each carries flowersPerCluster flowers (a Raceme: one raceme).")]
     [Range(1, 4)] public int flowerSpurs = 1;
     [Tooltip("What the Care Log calls the fruit, plural (\"cherries\"). Empty = named by fruit type.")]
     public string fruitName = "";
@@ -353,6 +354,13 @@ public class TreeSpecies : ScriptableObject
     public int fruitSetMonth = 6;
     [Tooltip("Calendar month fruit is fully ripe; it then drops over the following weeks.")]
     public int fruitRipeMonth = 9;
+    [Tooltip("Share of ripe fruit that hangs on through winter, dropping before the buds break.")]
+    [Range(0f, 1f)] public float fruitPersist = 0f;
+    [Tooltip("Size of this species' fruit relative to the base size for its fruit type.")]
+    public float fruitSize = 1f;
+    [Tooltip("Cone shape (fruitType Cone): Ovoid pines, Hanging spruces and birch seed catkins, " +
+             "Upright cedars, Round cypresses.")]
+    public ConeShape coneShape = ConeShape.Ovoid;
 
     /// <summary>The loaded species with this display name, or null. Every species the picker offers
     /// is referenced by the game scene, so all of them are in memory whenever a save can load.</summary>
@@ -368,9 +376,16 @@ public class TreeSpecies : ScriptableObject
 /// <summary>Foliage geometry. BroadLeaf spawns leaf prefabs; the rest build procedural needle tufts (NeedleMesh).</summary>
 public enum FoliageType { BroadLeaf, PineFascicle, SpruceRadial, FeatheryFrond, Scale }
 
-/// <summary>Flower geometry for a species' bloom. Showy, transient (bloom → petal drop). Corymb: small
-/// flowers on drooping stalks that come out of the bud with the leaves (maples; FlowerVisuals).</summary>
-public enum BloomType { None, Blossom, Raceme, Catkin, Corymb }
+/// <summary>Flower geometry for a species' bloom (FlowerVisuals). Blossom: five-petalled, on spurs
+/// (cherry). Raceme: long hanging spikes of pea flowers (wisteria). Catkin: slender hanging catkins
+/// (birch, willow). Corymb: small flowers on drooping stalks that come out of the bud with the
+/// leaves (maples). Tuft: tiny tufts along bare twigs (elm).</summary>
+public enum BloomType { None, Blossom, Raceme, Catkin, Corymb, Tuft }
 
-/// <summary>Fruit geometry for a species (FlowerManager). Sets after bloom, ripens, then drops.</summary>
-public enum FruitType { None, Berry, Fig, Samara, Cone, Pome }
+/// <summary>Fruit geometry for a species (FlowerVisuals). Sets after bloom, ripens, then drops. Samara:
+/// a winged pair (maples). Pod: a long velvety pod (wisteria). RoundSamara: a flat disc with the seed
+/// in the middle (elm). Fluff: a catkin that bursts into white seed fluff (willow).</summary>
+public enum FruitType { None, Berry, Fig, Samara, Cone, Pome, Pod, RoundSamara, Fluff }
+
+/// <summary>Cone shapes for <see cref="FruitType.Cone"/>.</summary>
+public enum ConeShape { Ovoid, Hanging, Upright, Round }

@@ -68,3 +68,8 @@ MonoBehaviour:
   fruitRipeMonth: 9
   floweringStartAge: 3
   flowerBudChance: 0.5
+  flowersPerCluster: 2
+  flowerSpurs: 3
+  fruitSetChance: 0.75
+  fruitSize: 0.6
+  fruitName: figs

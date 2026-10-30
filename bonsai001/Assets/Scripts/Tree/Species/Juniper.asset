@@ -66,8 +66,14 @@ MonoBehaviour:
   leafBudBreakColor: {r: 0.55, g: 0.72, b: 0.45, a: 1}
   fruitType: 1
   fruitColor: {r: 0.45, g: 0.55, b: 0.35, a: 1}
-  fruitRipeColor: {r: 0.25, g: 0.35, b: 0.6, a: 1}
+  fruitRipeColor: {r: 0.28, g: 0.36, b: 0.58, a: 1}
   fruitSetMonth: 5
   fruitRipeMonth: 10
   floweringStartAge: 4
   flowerBudChance: 0.4
+  flowersPerCluster: 3
+  flowerSpurs: 2
+  fruitSetChance: 0.7
+  fruitSize: 0.55
+  fruitPersist: 0.7
+  fruitName: berries
