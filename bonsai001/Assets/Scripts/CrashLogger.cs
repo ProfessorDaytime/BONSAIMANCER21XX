@@ -39,6 +39,12 @@ public class CrashLogger : MonoBehaviour
     /// otherwise fill the disk; past this the file is closed with a final note.</summary>
     const long MaxBytes = 8L * 1024 * 1024;
 
+    /// <summary>Hard ceiling. Past <see cref="MaxBytes"/> only the lines that diagnose a broken
+    /// session are still written — errors, [Focus], [Input] (2026-10-29): this game logs heavily,
+    /// and a long session could otherwise hit the cap before the moment that matters.</summary>
+    const long HardMaxBytes = 12L * 1024 * 1024;
+    bool essentialOnly;
+
     // ── State ─────────────────────────────────────────────────────────────────
 
     static CrashLogger instance;
@@ -131,6 +137,8 @@ public class CrashLogger : MonoBehaviour
         if (stopped) return;
 
         bool severe = type == LogType.Error || type == LogType.Exception || type == LogType.Assert;
+        if (essentialOnly && !severe && !message.StartsWith("[Focus]") && !message.StartsWith("[Input]"))
+            return;
 
         buffer.Append('[').Append(DateTime.Now.ToString("HH:mm:ss")).Append("] ")
               .Append(Abbrev(type)).Append(' ').AppendLine(message);
@@ -163,10 +171,17 @@ public class CrashLogger : MonoBehaviour
             File.AppendAllText(CurrentLogPath, text);
 
             bytesWritten += Encoding.UTF8.GetByteCount(text);
-            if (bytesWritten > MaxBytes)
+            if (bytesWritten > MaxBytes && !essentialOnly)
+            {
+                essentialOnly = true;
+                File.AppendAllText(CurrentLogPath,
+                    $"\n[{DateTime.Now:HH:mm:ss}] --- log size cap ({MaxBytes / 1024 / 1024} MB) reached; " +
+                    "from here only errors, [Focus] and [Input] lines are written ---\n");
+            }
+            if (bytesWritten > HardMaxBytes)
             {
                 File.AppendAllText(CurrentLogPath,
-                    $"\n[{DateTime.Now:HH:mm:ss}] --- log size cap ({MaxBytes / 1024 / 1024} MB) " +
+                    $"\n[{DateTime.Now:HH:mm:ss}] --- hard log cap ({HardMaxBytes / 1024 / 1024} MB) " +
                     "reached; logging stopped for this session ---\n");
                 Application.logMessageReceived -= OnLog;
                 stopped = true;
