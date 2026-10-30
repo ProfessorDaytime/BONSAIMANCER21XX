@@ -209,12 +209,15 @@ public class Leaf : MonoBehaviour
                 // Only the component across the blade swings it; along-blade wind just compresses.
                 Vector3 lateral = Vector3.ProjectOnPlane(swayW, bladeDirW);
                 Quaternion swung = restWorld;
-                if (lateral.sqrMagnitude > 1e-10f)
+                // A young leaf is stiff and tucked against its shoot: it rides the twig and only
+                // starts swinging and fluttering on its own once it's mostly grown (2026-10-29).
+                float own = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 0.95f, growProgress));
+                if (lateral.sqrMagnitude > 1e-10f && own > 0f)
                 {
                     // Displacement → angle about the attachment, using the blade as the lever arm.
                     float arm   = Mathf.Max(0.01f, targetScale.z);
-                    float angle = Mathf.Min(maxSwingDeg,
-                                            Mathf.Rad2Deg * Mathf.Atan2(lateral.magnitude, arm));
+                    float angle = own * Mathf.Min(maxSwingDeg,
+                                                  Mathf.Rad2Deg * Mathf.Atan2(lateral.magnitude, arm));
                     Vector3 axis = Vector3.Cross(bladeDirW, lateral.normalized);
                     if (axis.sqrMagnitude > 1e-10f)
                         swung = Quaternion.AngleAxis(angle, axis.normalized) * restWorld;
@@ -223,7 +226,7 @@ public class Leaf : MonoBehaviour
                 // Per-leaf flutter on top: a twist about the leaf's own axes, still pivoting at
                 // the stem, so individual leaves shimmer within the branch's shared motion.
                 float w = Mathf.Sin(Time.time * (2.1f + windPhase * 1.7f) + windPhase * 11f)
-                          * 6f * wind.GustLevel;
+                          * 6f * wind.GustLevel * own;
                 transform.rotation = swung * Quaternion.Euler(w, 0f, w * 0.7f);
             }
             else

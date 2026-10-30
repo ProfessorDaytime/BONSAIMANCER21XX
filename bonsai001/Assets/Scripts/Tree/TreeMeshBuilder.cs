@@ -193,13 +193,50 @@ public class TreeMeshBuilder : MonoBehaviour
 
     public void SetDirty() => isDirty = true;
 
+    // ── Continuous sway youngness (2026-10-29) ────────────────────────────────
+    // Sway used to read each vertex's own youngness, so a new shoot counted as fully flexible a few
+    // millimetres from the stiff wood it grew from: in a storm its first ring stayed put and the
+    // next swung up to branchSwayMax away, throwing young shoots through the hardwood at odd angles.
+    // Now youngness ACCUMULATES along each branch from its parent — a shoot bends from where it is
+    // attached, more the longer it is — and every vertex carries it in UV1.w. NodeSwayFlex and
+    // SwayColorAt (leaves, needles, wires, buds) read the same value, so riders stay attached.
+
+    [Tooltip("Length of young wood over which sway builds from rigid (where a shoot joins older " +
+             "wood) to fully flexible.")]
+    [SerializeField] float flexRampLength = 0.3f;
+
+    readonly Dictionary<TreeNode, float> youngAtTip = new Dictionary<TreeNode, float>();
+    float vtxFlex;   // youngness written to the vertices being added right now
+    Vector4 FlexUV => new Vector4(0f, 0f, 0f, vtxFlex);
+
+    void ComputeSwayYoungness()
+    {
+        youngAtTip.Clear();
+        if (skeleton.root == null) return;
+        var stack = new Stack<TreeNode>();
+        stack.Push(skeleton.root);
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            float parentY = n.parent != null && youngAtTip.TryGetValue(n.parent, out var py) ? py : 0f;
+            float stiff   = GrowthColor(n, n.tipRadius, false).a;
+            youngAtTip[n] = Mathf.Clamp01(parentY + (1f - stiff) * Mathf.Max(0f, n.length)
+                                                   / Mathf.Max(0.01f, flexRampLength));
+            foreach (var c in n.children) stack.Push(c);
+        }
+    }
+
+    /// <summary>Accumulated sway youngness at a node's tip (0 rigid … 1 fully flexible).</summary>
+    float YoungAt(TreeNode n) =>
+        youngAtTip.TryGetValue(n, out var y) ? y : 1f - GrowthColor(n, n.tipRadius, false).a;
+
     /// <summary>Raised after every bark mesh rebuild — things drawn on the branches (BudVisuals)
     /// follow growth, wiring and cuts from here (2026-10-29).</summary>
     public event System.Action Rebuilt;
 
     /// <summary>The vertex colour the bark mesh carries at a node's tip: r = isRoot, a = the
     /// stiffness blend the sway shader reads. Things that must sway with that tip use it.</summary>
-    public Color SwayColorAt(TreeNode node) => GrowthColor(node, node.tipRadius, false);
+    public Color SwayColorAt(TreeNode node) => new Color(node.isRoot ? 1f : 0f, 0f, 0f, 1f - YoungAt(node));
 
     /// <summary>
     /// Pushes the current species' bark colors to the MeshRenderer's material.
@@ -322,7 +359,10 @@ public class TreeMeshBuilder : MonoBehaviour
 
         // Traverse the node graph depth-first.
         // -1 signals "generate a base ring for me" (only the root node needs this).
+        ComputeSwayYoungness();
+        vtxFlex = 0f;
         ProcessNode(skeleton.root, -1, 0f, Vector3.zero, Vector3.zero);
+        vtxFlex = 0f;   // the trunk-base and underground caps are rigid
 
         // Seal the trunk base with an underground cylinder stub in all modes.
         // In Ishitsuki the rock sits in a pot of soil — the stub provides visual grounding
@@ -546,6 +586,7 @@ public class TreeMeshBuilder : MonoBehaviour
         if (baseRingStart < 0)
         {
             baseRingStart = vertices.Count;
+            vtxFlex = node.parent != null ? YoungAt(node.parent) : 0f;
             AddRing(node.worldPosition, axisUp, frameRight, node.radius, cumulativeHeight, baseColor, scar);
         }
 
@@ -590,6 +631,7 @@ public class TreeMeshBuilder : MonoBehaviour
                     Color   ringC   = Color.Lerp(baseColor, tipColor, ringT);
 
                     int newRing = vertices.Count;
+                    vtxFlex = Mathf.Lerp(node.parent != null ? YoungAt(node.parent) : 0f, YoungAt(node), ringT);
                     AddRing(ringPos, bendDir, bendFrame, ringR, ringH, ringC, scar);
 
                     // Connect the previous ring to this bend ring
@@ -621,6 +663,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
         float tipHeight    = cumulativeHeight + node.length;
         int   tipRingStart = vertices.Count;
+        vtxFlex = YoungAt(node);
         AddRing(node.tipPosition, axisUp, frameRight, node.tipRadius, tipHeight, tipColor, scar);
 
         // Quads (currentBase -> tip)
@@ -668,6 +711,8 @@ public class TreeMeshBuilder : MonoBehaviour
             ProcessNode(child, childBase, tipHeight, frameRight, axisUp);
         }
 
+        vtxFlex = YoungAt(node);   // children overwrote it; caps and wound discs ride this tip
+
         // Classify the wound by whether the branch CONTINUES past it. If a child still renders,
         // the cut took a lateral off the SIDE → callus disc lying flat on the bark. If nothing
         // continues, the branch was shortened to a stub → cut FACE on the open end, facing along
@@ -714,7 +759,7 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(center);
         uvs.Add(new Vector2(0.5f, heightV * 0.4f));
         colors.Add(col);
-        scarUVs.Add(Vector4.zero);
+        scarUVs.Add(FlexUV);
 
         for (int i = 0; i < ringSegments; i++)
         {
@@ -764,7 +809,7 @@ public class TreeMeshBuilder : MonoBehaviour
             float a = (float)i / ringSegments * Mathf.PI * 2f;
             vertices.Add(baseC + (p1 * Mathf.Cos(a) + p2 * Mathf.Sin(a)) * baseR);
             uvs.Add(new Vector2((float)i / ringSegments, 0f));
-            colors.Add(barkCol); scarUVs.Add(Vector4.zero);
+            colors.Add(barkCol); scarUVs.Add(FlexUV);
         }
         int endStart = vertices.Count;
         for (int i = 0; i <= ringSegments; i++)
@@ -772,7 +817,7 @@ public class TreeMeshBuilder : MonoBehaviour
             float a = (float)i / ringSegments * Mathf.PI * 2f;
             vertices.Add(endC + (p1 * Mathf.Cos(a) + p2 * Mathf.Sin(a)) * endR);
             uvs.Add(new Vector2((float)i / ringSegments, 1f));
-            colors.Add(barkCol); scarUVs.Add(Vector4.zero);
+            colors.Add(barkCol); scarUVs.Add(FlexUV);
         }
 
         // Side faces — outward winding matches the trunk's own (b0,e0,b1)/(b1,e0,e1).
@@ -822,7 +867,7 @@ public class TreeMeshBuilder : MonoBehaviour
 
         int c = vertices.Count;
         vertices.Add(center + normal * dome); uvs.Add(new Vector2(0.5f, 0.5f));
-        colors.Add(new Color(0f, centerG, pasteB, blendA)); scarUVs.Add(Vector4.zero);
+        colors.Add(new Color(0f, centerG, pasteB, blendA)); scarUVs.Add(FlexUV);
 
         int inner = vertices.Count;
         for (int i = 0; i <= ringSegments; i++)
@@ -830,7 +875,7 @@ public class TreeMeshBuilder : MonoBehaviour
             float a = (float)i / ringSegments * Mathf.PI * 2f;
             vertices.Add(center + normal * dome * 0.45f + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * (radius * 0.5f));
             uvs.Add(new Vector2((float)i / ringSegments, 0.5f));
-            colors.Add(new Color(0f, innerG, pasteB, blendA)); scarUVs.Add(Vector4.zero);
+            colors.Add(new Color(0f, innerG, pasteB, blendA)); scarUVs.Add(FlexUV);
         }
         int outer = vertices.Count;
         for (int i = 0; i <= ringSegments; i++)
@@ -838,7 +883,7 @@ public class TreeMeshBuilder : MonoBehaviour
             float a = (float)i / ringSegments * Mathf.PI * 2f;
             vertices.Add(center + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * radius);
             uvs.Add(new Vector2((float)i / ringSegments, 0.5f));
-            colors.Add(new Color(0f, outerG, pasteB, blendA)); scarUVs.Add(Vector4.zero);
+            colors.Add(new Color(0f, outerG, pasteB, blendA)); scarUVs.Add(FlexUV);
         }
 
         // Winding verified by cross product so RecalculateNormals faces the disc along +normal
@@ -916,7 +961,7 @@ public class TreeMeshBuilder : MonoBehaviour
             vertices.Add(pos);
             uvs.Add(new Vector2(t, heightV * 0.4f));
             colors.Add(rimCol);
-            scarUVs.Add(Vector4.zero);
+            scarUVs.Add(FlexUV);
         }
 
         // Connect the outer tip ring to the swell ring (a thin band)
@@ -953,7 +998,7 @@ public class TreeMeshBuilder : MonoBehaviour
                 vertices.Add(pos);
                 uvs.Add(new Vector2(t, heightV * 0.4f));
                 colors.Add(innerCol);
-                scarUVs.Add(Vector4.zero);
+                scarUVs.Add(FlexUV);
             }
 
             // Band from swell ring → inner ring
@@ -972,7 +1017,7 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(faceCenter);
         uvs.Add(new Vector2(0.5f, heightV * 0.4f));
         colors.Add(faceCol);
-        scarUVs.Add(Vector4.zero);
+        scarUVs.Add(FlexUV);
 
         for (int i = 0; i < ringSegments; i++)
         {
@@ -1055,7 +1100,7 @@ public class TreeMeshBuilder : MonoBehaviour
             vertices.Add(localPos);
             uvs.Add(new Vector2(t, heightV * barkVTilingScale));
             colors.Add(vertexColor);
-            scarUVs.Add(scar);
+            scarUVs.Add(new Vector4(scar.x, scar.y, scar.z, vtxFlex));
         }
     }
 
@@ -1099,8 +1144,7 @@ public class TreeMeshBuilder : MonoBehaviour
     public float NodeSwayFlex(TreeNode node)
     {
         if (node == null) return 0f;
-        Color c = GrowthColor(node, node.tipRadius, false);
-        return WindSway.Flex(c.a, node.isRoot ? 1f : 0f, node.tipPosition);
+        return WindSway.Flex(1f - YoungAt(node), node.isRoot ? 1f : 0f, node.tipPosition);
     }
 
     Color GrowthColor(TreeNode node, float radius, bool isExposed)
@@ -1150,7 +1194,7 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(root.worldPosition);
         uvs.Add(new Vector2(0.5f, 0f));
         colors.Add(color);
-        scarUVs.Add(Vector4.zero);
+        scarUVs.Add(FlexUV);
 
         for (int i = 0; i < ringSegments; i++)
         {
@@ -1192,7 +1236,7 @@ public class TreeMeshBuilder : MonoBehaviour
             vertices.Add(pos);
             uvs.Add(new Vector2(t, undergroundDepth * 0.4f));
             colors.Add(color);
-            scarUVs.Add(Vector4.zero);
+            scarUVs.Add(FlexUV);
         }
 
         // Cylinder walls: same winding as ProcessNode (lower ring = b, upper ring = t → outward normals)
@@ -1209,7 +1253,7 @@ public class TreeMeshBuilder : MonoBehaviour
         vertices.Add(botCenter);
         uvs.Add(new Vector2(0.5f, undergroundDepth * 0.4f));
         colors.Add(color);
-        scarUVs.Add(Vector4.zero);
+        scarUVs.Add(FlexUV);
         for (int i = 0; i < ringSegments; i++)
         {
             int r0 = botRingStart + i, r1 = botRingStart + i + 1;

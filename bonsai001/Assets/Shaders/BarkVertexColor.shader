@@ -99,6 +99,12 @@ Shader "Custom/BarkVertexColor"
             return (1.0 - col.r) * anchor * max(youngness, reach);
         }
 
+        // Sway stiffness for a bark vertex (2026-10-29): r = isRoot from the colour as before, but the
+        // youngness now comes from UV1.w, which TreeMeshBuilder accumulates ALONG each branch from
+        // its parent — a new shoot bends from where it joins the old wood instead of swinging bodily
+        // a few millimetres from it (storm sway threw young shoots through the hardwood).
+        float4 FlexColor(half4 col, float4 scar) { return float4(col.r, 0, 0, 1.0 - scar.w); }
+
         float3 TreeSway(float3 restWS, float flex)
         {
             float t     = _TreeWindB.x;
@@ -170,6 +176,7 @@ Shader "Custom/BarkVertexColor"
                 float4 posOS  : POSITION;
                 float3 nrmOS  : NORMAL;
                 half4  color  : COLOR;      // r = isRoot, a = barkBlend — drives sway flex
+                float4 scar   : TEXCOORD1;  // w = continuous sway youngness
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
             struct OVary
@@ -187,7 +194,7 @@ Shader "Custom/BarkVertexColor"
                 float3 posWS  = TransformObjectToWorld(IN.posOS.xyz);
                 // Sway BEFORE the inflate — the outline must ride the same bend as the
                 // lit surface or the silhouette visibly separates from the bark.
-                posWS        += TreeSway(posWS, TreeFlex(IN.posOS.xyz, IN.color));
+                posWS        += TreeSway(posWS, TreeFlex(IN.posOS.xyz, FlexColor(IN.color, IN.scar)));
                 float3 nrmWS  = normalize(TransformObjectToWorldNormal(IN.nrmOS));
                 posWS        += nrmWS * _OutlineWidth * _BonsaiOutlineScale;
                 OUT.posHCS    = TransformWorldToHClip(posWS);
@@ -441,7 +448,7 @@ Shader "Custom/BarkVertexColor"
                 // position, then the displacement moves the vertex. Lighting/shadow coords
                 // downstream use the swayed position so the bent tree self-shadows correctly.
                 float3 posWS = TransformObjectToWorld(IN.positionOS.xyz);
-                posWS       += TreeSway(posWS, TreeFlex(IN.positionOS.xyz, IN.color));
+                posWS       += TreeSway(posWS, TreeFlex(IN.positionOS.xyz, FlexColor(IN.color, IN.scar)));
 
                 OUT.positionHCS = TransformWorldToHClip(posWS);
                 OUT.positionWS  = posWS;
@@ -626,7 +633,7 @@ Shader "Custom/BarkVertexColor"
 
             float3 _LightDirection;
 
-            struct ShadowAttr { float4 posOS : POSITION; float3 nrmOS : NORMAL; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct ShadowAttr { float4 posOS : POSITION; float3 nrmOS : NORMAL; half4 color : COLOR; float4 scar : TEXCOORD1; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct ShadowVary { float4 posHCS : SV_POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };
 
             ShadowVary ShadowVert(ShadowAttr IN)
@@ -635,7 +642,7 @@ Shader "Custom/BarkVertexColor"
                 UNITY_SETUP_INSTANCE_ID(IN);
                 UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
                 float3 posWS = TransformObjectToWorld(IN.posOS.xyz);
-                posWS       += TreeSway(posWS, TreeFlex(IN.posOS.xyz, IN.color));   // shadow follows the bend
+                posWS       += TreeSway(posWS, TreeFlex(IN.posOS.xyz, FlexColor(IN.color, IN.scar)));   // shadow follows the bend
                 float3 nrmWS = TransformObjectToWorldNormal(IN.nrmOS);
                 OUT.posHCS   = TransformWorldToHClip(ApplyShadowBias(posWS, nrmWS, _LightDirection));
                 return OUT;
@@ -687,7 +694,7 @@ Shader "Custom/BarkVertexColor"
                 float  _ScarDebug;
             CBUFFER_END
 
-            struct DepthAttr { float4 posOS : POSITION; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct DepthAttr { float4 posOS : POSITION; half4 color : COLOR; float4 scar : TEXCOORD1; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct DepthVary { float4 posHCS : SV_POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };
 
             DepthVary DepthVert(DepthAttr IN)
@@ -696,7 +703,7 @@ Shader "Custom/BarkVertexColor"
                 UNITY_SETUP_INSTANCE_ID(IN);
                 UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
                 float3 posWS = TransformObjectToWorld(IN.posOS.xyz);
-                posWS       += TreeSway(posWS, TreeFlex(IN.posOS.xyz, IN.color));   // depth prepass must match ForwardLit
+                posWS       += TreeSway(posWS, TreeFlex(IN.posOS.xyz, FlexColor(IN.color, IN.scar)));   // depth prepass must match ForwardLit
                 OUT.posHCS   = TransformWorldToHClip(posWS);
                 return OUT;
             }

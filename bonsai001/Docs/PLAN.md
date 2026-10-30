@@ -1159,6 +1159,12 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
   `SpawnSpringLeaves` skipped it forever after (40-year maple: 721 "leafy" tips, 34 real leaves, 99%
   health). `PruneGoneLeaves` clears dead entries each spring; spring also treats an all-gone entry as bare.
 
+- *compile-checked* **Young shoots no longer blow through the hardwood (all species):** sway youngness
+  now accumulates along each branch from its parent (`TreeMeshBuilder.ComputeSwayYoungness`, ramp 0.3,
+  stored in UV1.w; bark shader `FlexColor`), so a new shoot bends from its attachment instead of
+  swinging bodily a few mm from stiff wood. Leaves, needles, wires and buds read the same value
+  (`NodeSwayFlex`, `SwayColorAt`). Young leaves don't swing or flutter on their own until ~60–95% grown.
+
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.
 - The 20-year XL tree "looked the worst" for a reason the user doesn't recall (not leaf size). Candidates: densest canopy (3,417 nodes vs 2,204 in M), thickest trunk (r 0.12). Revisit in the greenhouse.
