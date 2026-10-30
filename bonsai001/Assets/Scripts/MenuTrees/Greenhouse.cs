@@ -238,11 +238,14 @@ public class Greenhouse : MonoBehaviour
     // (slider, season); season = colour progress × AutumnFull, then the drop, then bare.
     static readonly (float x, float s)[] SliderCurve =
     {
+        // Retuned from play-test screenshots: the first half of the colour progress barely shows
+        // (only the outer leaves have begun), so it's over by 7% of the slider.
         (0f,    0f),
-        (0.03f, 0f),                    // summer
-        (0.80f, 0.6f * AutumnFull),     // first 60% of the colour change
-        (0.93f, AutumnFull),            // the rest: late autumn
-        (0.98f, BareFrom),              // leaf drop, outermost first
+        (0.02f, 0f),                    // summer
+        (0.07f, 0.51f * AutumnFull),    // first half of the colour progress, mostly invisible
+        (0.75f, 0.85f * AutumnFull),    // the visible change: most of the slider
+        (0.90f, AutumnFull),            // late autumn
+        (0.97f, BareFrom),              // leaf drop, outermost first
         (1f,    1f),                    // bare
     };
 
