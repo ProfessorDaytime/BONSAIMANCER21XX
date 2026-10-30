@@ -3402,6 +3402,21 @@ public class ButtonClicker : MonoBehaviour
         field.RegisterCallback<AttachToPanelEvent>(_ =>
             field.SetValueWithoutNotify(skeleton != null ? skeleton.treeName : ""));
         box.Add(field);
+
+        // Keep in one pot (2026-10-29): per tree, saved with it.
+        var onePot = new Toggle("Keep this tree in one pot (auto-style and Quick Start never move it to a bigger pot)")
+        {
+            value = skeleton != null && skeleton.keepInOnePot,
+        };
+        onePot.style.marginTop = 6;
+        onePot.style.color = new StyleColor(th.textMain);
+        onePot.labelElement.style.whiteSpace = WhiteSpace.Normal;
+        onePot.labelElement.style.minWidth = 0;
+        onePot.labelElement.style.flexShrink = 1;
+        onePot.RegisterValueChangedCallback(e => { if (skeleton != null) skeleton.keepInOnePot = e.newValue; });
+        onePot.RegisterCallback<AttachToPanelEvent>(_ =>
+            onePot.SetValueWithoutNotify(skeleton != null && skeleton.keepInOnePot));
+        box.Add(onePot);
         return box;
     }
 
@@ -3416,7 +3431,7 @@ public class ButtonClicker : MonoBehaviour
         if (qsSection != null && modes != null) modes.Insert(0, qsSection);
 
         // A new tree starts unnamed; name it here or later in Settings ▸ Game.
-        if (skeleton != null) skeleton.treeName = "";
+        if (skeleton != null) { skeleton.treeName = ""; skeleton.keepInOnePot = false; }
         // Show the new tree's pot from the start, not the last game's until the first watering.
         if (skeleton != null && skeleton.root == null) skeleton.ResetPotForNewTree();
 

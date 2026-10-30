@@ -148,6 +148,10 @@ public partial class TreeSkeleton : MonoBehaviour
              "name: the slot is a file, this is the tree. Shown on the HUD and the save cards.")]
     public string treeName = "";
 
+    /// <summary>Player's choice for this tree (2026-10-29): the auto-styler and Quick Start never
+    /// move it to a bigger pot. Soil is still refreshed in the same pot. Saved with the tree.</summary>
+    public bool keepInOnePot;
+
     /// <summary>The tree's name, or null when it hasn't been given one.</summary>
     public string DisplayName => string.IsNullOrWhiteSpace(treeName) ? null : treeName.Trim();
 
@@ -1084,6 +1088,7 @@ public partial class TreeSkeleton : MonoBehaviour
         isIshitsukiMode        = data.isIshitsukiMode;
         treeOrigin             = (TreeOrigin)data.treeOrigin;
         treeName               = data.treeName ?? "";
+        keepInOnePot           = data.keepInOnePot;
         plantingNormal         = new Vector3(data.planNX, data.planNY, data.planNZ);
         plantingSurfacePoint   = new Vector3(data.planPX, data.planPY, data.planPZ);
         // Migrate saves that stored plantingSurfacePoint at world origin (0,0,0) while

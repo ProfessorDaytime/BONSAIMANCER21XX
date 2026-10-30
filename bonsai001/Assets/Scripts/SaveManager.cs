@@ -194,6 +194,7 @@ public class SaveData
     // Save identity (written by SaveSlot; blank on old saves)
     public string saveName;
     public string treeName;     // the tree's own name, separate from the slot name (2026-10-27; blank on old saves)
+    public bool   keepInOnePot; // auto-styler never pots up (2026-10-29; false on old saves)
     public int    treeOrigin;   // TreeOrigin cast to int
     public string speciesName;
     public string saveTimestamp;
@@ -858,6 +859,7 @@ public static class SaveManager
             lastGrownYear   = skeleton.SaveLastGrownYear,
             isIshitsukiMode = skeleton.isIshitsukiMode,
             treeName        = skeleton.treeName,
+            keepInOnePot    = skeleton.keepInOnePot,
 
             careLog = CareLog.Snapshot(),
 

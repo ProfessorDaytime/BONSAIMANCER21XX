@@ -709,7 +709,8 @@ public class AutoStyler : MonoBehaviour
                    : treeYear >= phases[0] ? PotSoil.PotSize.S
                    :                         PotSoil.PotSize.XS;
 
-        bool sizeUp = (int)target > (int)potSoil.potSize;
+        // The player can keep a tree in one pot for life (2026-10-29); it still gets fresh soil.
+        bool sizeUp = !skeleton.keepInOnePot && (int)target > (int)potSoil.potSize;
 
         // Soil refresh due? seasonsSinceRepot ticks once per growing season (≈ once per
         // in-game year). Young trees get fresh soil more often than mature ones.

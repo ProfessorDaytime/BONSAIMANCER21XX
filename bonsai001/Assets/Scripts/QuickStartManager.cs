@@ -191,7 +191,8 @@ public class QuickStartManager : MonoBehaviour
             // Mirrors the AutoStyler's XS→S→M→L phase thresholds (6 / 13 / 26 yr) in case its
             // spring pot-advance didn't fire during the fast-grow, and clears the soil degradation
             // that built up over the decade.
-            var size = totalYears >= 26 ? PotSoil.PotSize.L
+            var size = skeleton.keepInOnePot ? potSoil.potSize   // the player chose one pot for life
+                     : totalYears >= 26 ? PotSoil.PotSize.L
                      : totalYears >= 13 ? PotSoil.PotSize.M
                      : totalYears >= 6  ? PotSoil.PotSize.S
                      :                    PotSoil.PotSize.XS;
