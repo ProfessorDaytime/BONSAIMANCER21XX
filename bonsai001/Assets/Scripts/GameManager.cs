@@ -746,8 +746,9 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    /// <summary>States that are a menu or dialog over the paused game.</summary>
-    static bool IsOverlayState(GameState s) =>
+    /// <summary>States that are a menu or dialog over the paused game. Public since 2026-10-29:
+    /// the tree tools stand down in these too.</summary>
+    public static bool IsOverlayState(GameState s) =>
         s == GameState.GamePause || s == GameState.CalendarOpen || s == GameState.TipPause ||
         s == GameState.LoadMenu  || s == GameState.AirLayerSever;
 
@@ -810,9 +811,11 @@ public class GameManager : MonoBehaviour
     /// </summary>
     public void ExitTipPause()
     {
-        if (state != GameState.TipPause) return;
+        // Always clear the text: if the game has already left TipPause (2026-10-29: the dismiss
+        // click had started a wire), a stale title would bring the tooltip back on the next TipPause.
         TooltipTitle = "";
         TooltipBody  = "";
+        if (state != GameState.TipPause) return;
         GameState restore = (preTipPauseState == GameState.TipPause ||
                              preTipPauseState == GameState.SpeciesSelect)
             ? GameState.Idle : preTipPauseState;

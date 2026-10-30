@@ -513,6 +513,15 @@ public class TreeInteraction : MonoBehaviour
         // The click that brings the window back must not trim, water or wire (FocusGuard).
         if (FocusGuard.SwallowingClick) return;
 
+        // Nothing on the tree while a menu, dialog or tooltip is open, and no press that lands on
+        // the interface (2026-10-29). UI buttons fire on release but the tools act on press, so
+        // pressing a tooltip's OK or the pause menu's Quit Game also started a wire on the tree
+        // underneath — and the wire then "restored" the tooltip state after every wire.
+        var gm = GameManager.Instance;
+        if (gm != null && GameManager.IsOverlayState(gm.state)) return;
+        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && CursorManager.PointerOverUI())
+            return;
+
         if (skeleton.root == null)
         {
             SetHighlight(null, HighlightMode.None);
@@ -1169,6 +1178,9 @@ public class TreeInteraction : MonoBehaviour
         wireTarget   = node;
         wirePhase    = WirePhase.Aiming;
         preWireState = GameManager.Instance.state;
+        // Never come back to a menu or dialog state when the wire is done.
+        if (GameManager.IsOverlayState(preWireState))
+            preWireState = GameManager.Instance.StateForMonth(GameManager.month);
 
         Debug.Log($"[Wire] StartWireAim node={node.id} depth={node.depth} | preWireState={preWireState} | canWire={GameManager.canWire}");
 
