@@ -279,6 +279,7 @@ public class LeafManager : MonoBehaviour
             defoliationFactor = Mathf.Max(0f, defoliationFactor - 0.2f);  // decays ~1 full defoliation per 5 seasons
             ComputeSeasonLeafScale();
             CleanupOrphanedLeaves();
+            PruneGoneLeaves();
             SpawnSpringLeaves();
         }
 
@@ -552,7 +553,11 @@ public class LeafManager : MonoBehaviour
             if (!node.isTerminal)          continue;
             if (node.isRoot)               continue;  // roots never get leaves
             if (node.depth < minLeafDepth) continue;
-            if (nodeLeaves.ContainsKey(node.id)) continue;  // already has leaves
+            if (nodeLeaves.TryGetValue(node.id, out var had))
+            {
+                if (HasLiveLeaf(had)) continue;   // already has leaves
+                nodeLeaves.Remove(node.id);        // only gone leaves left: treat as bare
+            }
             if (stressBare.Contains(node.id))    continue;  // dropped its leaves to stress this year
 
             // Bud gate: old-wood nodes only get leaves if they set a bud last autumn.
@@ -1162,6 +1167,35 @@ public class LeafManager : MonoBehaviour
 
         foreach (int id in toRemove)
             StartFallingCluster(id);
+    }
+
+    static bool HasLiveLeaf(List<GameObject> list)
+    {
+        foreach (var go in list) if (go != null) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Drops tracking entries whose leaves are all gone (2026-10-29). A leaf that finishes its
+    /// autumn colour drops itself (<c>Leaf.StartFalling</c>) without telling this manager, so its
+    /// tip stayed listed as leafy and SpawnSpringLeaves skipped it every spring after. At Quick
+    /// Start speed most leaves fall that way: a 40-year maple was down to 34 real leaves across
+    /// 721 "leafy" tips, and the bare tips piled up year on year.
+    /// </summary>
+    void PruneGoneLeaves()
+    {
+        List<int> empty = null;
+        foreach (var kv in nodeLeaves)
+        {
+            kv.Value.RemoveAll(go => go == null);
+            if (kv.Value.Count == 0) (empty ??= new List<int>()).Add(kv.Key);
+        }
+        if (empty != null)
+        {
+            foreach (int id in empty) nodeLeaves.Remove(id);
+            Debug.Log($"[Leaves] Pruned {empty.Count} tips whose leaves had all fallen | year={GameManager.year}");
+        }
+        listDirty = true;
     }
 
     // Starts the fall animation on all leaves in a cluster, then removes the cluster

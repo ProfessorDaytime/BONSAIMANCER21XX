@@ -1142,6 +1142,10 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
   (c) Pinching softened: a pinch gives half a trim's refinement (`pinchRefinementFactor` 0.5; refinement
   never decays and shortens future internodes) and wakes buds on 1 section below it, not 2
   (`pinchBackBudAncestors`). The 40-year run had ~95 auto pinches a year.
+- ✅ *compile-checked* **Bare canopies on old deciduous trees (all species):** a leaf that finishes its autumn
+  colour drops itself without updating `LeafManager.nodeLeaves`, so its tip stayed "leafy" and
+  `SpawnSpringLeaves` skipped it forever after (40-year maple: 721 "leafy" tips, 34 real leaves, 99%
+  health). `PruneGoneLeaves` clears dead entries each spring; spring also treats an all-gone entry as bare.
 
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.
