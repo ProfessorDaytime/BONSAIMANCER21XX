@@ -273,6 +273,11 @@ public class TreeSpecies : ScriptableObject
              "Leaves run spring-colour → THIS → dried (darkened) before falling.")]
     public Color leafAutumnColor = new Color(0.85f, 0.55f, 0.12f);
 
+    [Tooltip("Dormant bud colour (opposite-budded broadleaf species draw buds, 2026-10-29).")]
+    public Color budColor      = new Color(0.42f, 0.09f, 0.11f);
+    [Tooltip("Bud colour at the end of its February swell, and of the opening bud scales.")]
+    public Color budSwellColor = new Color(0.78f, 0.30f, 0.34f);
+
     [Tooltip("Blade silhouette for the procedural cluster foliage (BroadLeaf species only).\n" +
              "Ovate: ficus/elm/cherry.  Lobed: maple.  Deltoid: birch.\n" +
              "Lanceolate: willow.  Pinnate: wisteria.")]

@@ -4,7 +4,7 @@ using UnityEngine;
 /// CPU mirror of the branch-sway wind field.
 ///
 /// ══════════════════════════════════════════════════════════════════════════════════════
-///  MIRROR CONTRACT — this file and the HLSLINCLUDE block in BarkVertexColor.shader
+///  MIRROR CONTRACT — this file, TreeBud.shader and the HLSLINCLUDE block in BarkVertexColor.shader
 ///  (TreeFlex / TreeSway) implement the SAME two functions with the SAME constants.
 ///  Any change here must be made there in the same commit, and vice versa. If they drift,
 ///  leaves and wires detach from the bark they ride — the bark bends on the GPU while the

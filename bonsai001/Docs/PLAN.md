@@ -1137,9 +1137,14 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
    45% of its grow-in and lifts to its resting angle by 70%; wind sway follows the lifting angle.
    Young colour deep red-bronze (`leafBudBreakColor` 0.70/0.24/0.16) at 90% strength
    (`youngTintStrength`, was a fixed 65%), fading to green over the grow-in (`leafGrowDays` 14 → 18).
-3. **Visible buds**: red pointed opposite buds at tips and nodes from autumn to spring, swelling in early
-   spring, scales opening as the leaf tuft emerges. One combined mesh, not ~1,400 objects (the bud
-   prefabs are switched off in the scene, likely for that reason).
+3. ✅ *compile-checked* **Visible buds** (`BudVisuals`, one combined mesh on a `_Buds` child, shader
+   `Custom/TreeBud` with the bark's sway functions copied in — a third party to the WindSway mirror
+   contract): Sep–Feb a V-pair of deep-red pointed buds at each tip that set a bud (turned 90° from its
+   leaf pair) plus a smaller pair in the second leaf pair's axils; February swell (longer, fatter,
+   pinker: `budColor` → `budSwellColor`); early March each tip bud opens into four spreading scales over
+   12 days, then they shrink away. Rebuilt on bark rebuilds (`TreeMeshBuilder.Rebuilt`) or daily while
+   animating; off during Quick Start generation. Material `Resources/TreeBudMaterial` keeps the shader
+   in builds.
 - ✅ *compile-checked* **Branch-end knuckles (found 2026-10-29 from a 40-year run):** (a) opposite species
   forked EVERY tip into two every spring, unconditionally — tips doubled yearly at the branch ends; now
   a tip splits only with `oppositeForkChance` (0.6) × canopy vigor × tree energy × tip vigor × root

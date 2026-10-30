@@ -193,6 +193,14 @@ public class TreeMeshBuilder : MonoBehaviour
 
     public void SetDirty() => isDirty = true;
 
+    /// <summary>Raised after every bark mesh rebuild — things drawn on the branches (BudVisuals)
+    /// follow growth, wiring and cuts from here (2026-10-29).</summary>
+    public event System.Action Rebuilt;
+
+    /// <summary>The vertex colour the bark mesh carries at a node's tip: r = isRoot, a = the
+    /// stiffness blend the sway shader reads. Things that must sway with that tip use it.</summary>
+    public Color SwayColorAt(TreeNode node) => GrowthColor(node, node.tipRadius, false);
+
     /// <summary>
     /// Pushes the current species' bark colors to the MeshRenderer's material.
     /// Safe to call any time species changes (species select, load, etc.).
@@ -238,6 +246,7 @@ public class TreeMeshBuilder : MonoBehaviour
         if (!isDirty) return;
         BuildMesh();
         isDirty = false;
+        Rebuilt?.Invoke();
     }
 
     // Mesh Construction

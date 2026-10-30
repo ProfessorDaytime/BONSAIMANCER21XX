@@ -1446,6 +1446,7 @@ public partial class TreeSkeleton : MonoBehaviour
             wm.SetPotBounds(new Vector3(transform.position.x, plantingSurfacePoint.y, transform.position.z), weedSpawnRadius);
 
         leafMgr = GetComponent<LeafManager>();
+        if (GetComponent<BudVisuals>() == null) gameObject.AddComponent<BudVisuals>();   // maple buds (2026-10-29)
     }
 
     /// <summary>
