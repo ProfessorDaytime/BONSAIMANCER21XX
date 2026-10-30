@@ -1,6 +1,6 @@
 # BONSAIMANCER — Development Plan
 
-Last updated: 2026-10-12 · **R1 (Main Menu + launch flow), R2 (Settings) and R5's four code items built** — see Release Prep below; both compile-verified against the real package assemblies. · **New section: "Release Prep — Playable Test Build & Store Launch"** (R0–R8) — the front-of-house shell (build identity, main menu, settings, menu showcase tree, tool cursors, test-build hygiene) plus the Steam store/marketing/admin asset pipeline. R0 and the save-schema version are blocking and semi-irreversible; do them before any build leaves this machine. · Prior: 2026-08-24 — **Pot pipeline shipped** (queue #3): all 6 sizes authored + `PotDimensions` calibrated to real mesh bounds + `PotSoil` renders authored meshes with a catalog override. Unit convention settled as game-feel, not real-world. · Prior: **Fable 5 Work Orders** section (time-boxed audit — see below). · Flower/fruit system (all 9 conifers cone), needle foliage for conifers, plus the H item menus and Quick-Start/Multi-Tree from earlier this phase. See "Completed This Phase" below for the full list and the Completed Items Log at the bottom for prior phases.
+Last updated: 2026-10-29 · **v0.1.4 pushed.** Since 2026-10-12: menu trees saved on quit + the **greenhouse** (R3b/R3c, with season slider and OBJ export); **pot size drives growth** (trunk thickening, shoot length); **Quick Start** made safe and watchable (nothing dies, Stop button, one camera orbit, ends June 1); the **saw** made a real gesture; save/load restores leaves; **FocusGuard** for focus loss (R5b). Full list: "Completed This Phase (Oct 2026)" below. · Prior: 2026-10-12 — Release Prep section (R0–R8) added; R1, R2 and R5 code items built.
 
 ---
 
@@ -24,13 +24,13 @@ Pending work in recommended priority order. Detailed specs are under "Pending �
 | 3 | **Tipping — branch weight vs pot stability** | ✅ **built 2026-08-24** — `TreeSkeleton.Stability.cs` (new partial). Analytic moment balance, deliberately NOT rigid-body physics (the mesh rebuilds constantly and a real collider would fight the growth system). Canopy mass = wood volume πr²ℓ × density + foliage via the existing `leafMassEach`, with segment mass acting at the midpoint and foliage at the tip; ballast = pot shell + soil + held water; both resolved about the pot's **base** edge (`FootprintRadius` = rim × taper — a tapered pot pivots on its narrow base, which is exactly why wide shallow bonsai pots are stable). Soil mass comes from the **existing 7-component mix** at real bulk densities, so free-draining pumice/perlite is lightest and tippiest while sand/akadama is heavy and stable, and `saturatedWaterFraction` 0.40 makes a watered pot ~1.5× its dry weight. Warning **lean** ramps in below `leanWarnRatio` before an outright tip; tipping takes the pot and soil over with the tree (`PotSoil.TipVisuals`, separate scene objects); repotting calls `RightTree()`. Anchor wire (`AnchorWireSet`) multiplies the righting moment — no UI yet, that's the follow-up. Evaluated each season + on init. **Stability stats are live in the Tree Health panel** (code-built rows: Stability word + ratio, Pot ballast wet/dry, Canopy load + reach). **Remaining:** tune `tipSafetyFactor`/`woodMassDensity` against real runs, add an anchor-wire tool button, and decide whether tipping damages the tree or is purely recoverable. *Original spec below.* A tree whose canopy outgrows its pot should **fall over**. Real bonsai physics: the pot+soil mass and footprint resist the canopy's overturning moment, and an unbalanced or over-large tree in a small pot topples — which is exactly why wide shallow pots exist and why growers wire trees INTO the pot. Compute the canopy's centre of mass + total branch mass (`ComputeLeafLoad` already exists for leaf weight; extend to wood via node radius×length), take the moment about the pot's rim edge, and compare against the righting moment from pot mass × base radius (`PotDimensions` + `PotTaper` give the real footprint). Exceeding it = tip. **The counterweight is the SOIL, and it must be modelled dry vs wet** (2026-08-24): soil volume is the exact frustum `(πh/3)(R²+Rr+r²)`; dry mass = volume × bulk density derived from the **existing 7-component mix** (real bulk g/cm³ — akadama 0.7, pumice 0.5, lava 0.9, organic 0.3, sand 1.6, kanuma 0.6, perlite 0.1); wet mass adds `volume × waterFraction × moisture`. Bonsai substrate holds ~40% water by volume, so a freshly watered pot runs **~1.5× its dry weight** — watering genuinely stabilises the tree, and a dry pot is the one that goes over. This gives the soil-mix sliders a second meaning and a real trade-off: free-draining pumice/perlite mixes are best for roots but **lightest and tippiest**, while sand/akadama mixes are heavy and stable. Ties into the existing `moisture`/`waterRetention`/`saturationLevel` state at no extra cost. Design questions: soft warning (visible lean, "your tree is unstable" tell) before an outright topple; whether toppling damages the tree or is just recoverable; **anchor wire** as the counter-move (real practice — the tie-down through the drainage holes, which the `DrainageHole` system already models); heavier pot / wider pot / slab as the other counters. Ties into repot sizing decisions and gives the pot-size choice real gameplay stakes instead of being cosmetic. **Files:** `Tree/TreeSkeleton.Health.cs` (or a new `Stability.cs`), `Tree/PotSoil.cs` (mass/footprint), `TreeMeshBuilder` (lean transform). |
 | 3 | **Branch sway — vertex-shader wind on the bark mesh** | ✅ **built 2026-08-24** — the bark now bends, zero rebuild cost, all FOUR shader passes displaced identically (ForwardLit + Outline + ShadowCaster + DepthOnly — miss one and the silhouette/shadow detaches from the bark). **Key design deviation from the spec: flex is DERIVED, not baked.** The mesh already carries everything needed — `color.a` (GrowthColor = max(radius-blend, age-blend), a true thin-and-young stiffness proxy), `color.r` (root ⇒ rigid), and object-space position (height pins the base; horizontal *reach* lets aged-but-thin outer branchwood sway even though its bark reads mature). That killed the planned per-vertex bake and the ~10-site append-threading it required. **MIRROR CONTRACT:** `TreeFlex`/`TreeSway` live in an HLSLINCLUDE block in `BarkVertexColor.shader` and are mirrored constant-for-constant in `WindSway.cs`; `WindManager` publishes ONE canonical wind state per frame (shader globals `_TreeWindA/B` + C# `Canon*` statics) so GPU bark and CPU riders sample the identical field — phase comes from rest world position, so the field is continuous (no tearing) and any anchored object can compute its exact local displacement. Riders wired: **leaves/needle tufts** (`Leaf` adds the node's sway to its anchor via `TreeMeshBuilder.NodeSwayFlex` — the stem stays welded to the *moving* twig) and **wires** (`WireRenderer` helix, eased base→tip; the styler wires young shoots, exactly where flex peaks). **Wound stubs/discs now inherit their node's bark-blend alpha** instead of hardcoded mature — flex derives from alpha, so a mature-alpha disc on a young branch stayed pinned while the branch bent around it (side effect, correct: stubs on young wood show young bark). Sway amplitude rides `WindManager.strength`, which **Weather already drives** — storms visibly thrash the tree. Tunables on WindManager: `branchSwayMax` 0.22, `swayHeightRef` 1.2, `swayReachInner` 0.35, `swayReachSpan` 1.2. **Known non-riders:** flowers/fruit (never tracked their node, pre-existing), GL tool overlays + hover markers (drawn at rest pose; collider is rest pose too — hitboxes unchanged). **Verify in-editor:** storm via TippingTestMode or WeatherManager force — bark, outline, shadow, leaves and wire must all move as one. |
 | 3 | **Weather — wind load, rain, and the stability loop** | 🔧 **core built 2026-08-24** — `WeatherManager` (singleton): 5 states (Clear/Overcast/Rain/Storm/Heat) rolled on **seasonally weighted** odds (summer = heat + thunderstorms, autumn/winter = wet and gales, spring changeable), spells averaging ~4 in-game days, advanced on day boundaries so it keeps pace at any timescale. Drives **existing** systems rather than parallel ones: settles `WindManager.strength` toward a per-state level (Clear 0.18 → Storm 1.0), which the stability system already reads as wind **load**; scales soil drying via `DryingMultiplier` (heat 2.2×, rain 0.25×, **plus a wind term** — wind strips a pot faster than sun and is a classic bonsai killer); and `ApplyRain` waters the tree for free, riding the **same fixed-step clock** as the drain it opposes so the two cannot desync at speed. Prolonged rain on poor drainage raises `saturationLevel`, giving the soil mix and drainage holes a weather cost they never had. **Setup: add a `WeatherManager` component.** **Remaining:** visuals (rain particles, sky/light per state), frost/freeze dieback for tender species, snow load as static branch weight, a forecast UI tell so the player can water before a storm, and shelter as a counter-move. *Original spec below.* 🆕 raised 2026-08-24. Feeds the same physics as **Tipping** above; build them together. Wind already exists **visually** (`WindManager`, F6 — gust Perlin, wandering direction, canopy sway) but exerts no force and nothing else reacts to sky conditions. **Wind load:** the canopy is a sail — lateral force ∝ gust² × canopy frontal area (derivable from the leaf census / mesh bounds, and dropping in winter for deciduous species) applied as an extra overturning moment at the canopy's centre of mass, added to the static branch-weight moment. A gust is what actually tips a top-heavy tree; the static case alone rarely does. **The loop that makes this interesting:** a storm brings wind (tipping force) *and* rain (soil soaks → up to ~1.5× dry weight → more righting moment), so weather both threatens and stabilises — and the danger case is the **dry pot in high wind**, which is exactly what growers guard against. Deciduous trees also shed their sail in autumn, so a winter storm is survivable where a summer one is not. **Weather states:** Clear / Overcast / Rain / Storm / Heat, seasonally weighted, driving: rain → `moisture` + `saturationLevel` (free watering, and waterlogging risk if drainage is poor — ties into `HoleDrainageFactor`); sun + heat + wind → faster drying and transpiration (wind dries a pot much faster than still air, a classic bonsai killer); frost/freeze → dieback risk for tender species; optional snow load as extra static weight on branches. **Player counters:** water before a storm, move to a heavier/wider pot, anchor wire through the drainage holes, or shelter the tree. **Thigmomorphogenesis — the tree fights back** *(raised 2026-08-24)*: real trees respond to repeated mechanical stress by growing reaction wood and extra root mass on the loaded side, thickening the trunk base, and staying shorter — it is why sheltered, staked nursery stock blows over when planted out, and why growers deliberately flex saplings. Today root direction is purely `growDirection·inertia + radial·rootRadialWeight + down·rootGravityWeight + noise` with **no stress term at all** (verified 2026-08-24; the only special cases are air-layer roots and Ishitsuki). Add a wind-history bias so roots preferentially extend along the prevailing wind axis and loaded nodes thicken faster. That feeds straight back into `PotSoil.FootprintRadius` and the stability balance, so a wind-exposed tree **anchors itself and grows genuinely harder to tip over seasons** — a real feedback loop, and it gives a sheltered tree a hidden fragility the player can be caught out by. **Scope:** new `WeatherManager` (state machine + seasonal weighting) driving `WindManager` gust strength; force hookup in the stability system; `PotSoil` moisture/saturation input. **Files:** new `WeatherManager.cs`, `WindManager.cs`, `Tree/PotSoil.cs`, stability system, `Tree/LeafManager.cs` (frontal area). |
-| 1 | **Release Prep — R0 Build identity** | 🔧 **mostly done 2026-10-12** — identity complete (`WZRDHAU5` / `Bonsaimancer` / `0.1.0` / `com.wzrdhau5.bonsaimancer`), `resizableWindow` enabled for R2's Windowed mode, and the dead files deleted (`_Recovery/` + 4 unreferenced scripts, ~1.3 MB). **Two small items left**: the pixel-art icon needs to go on Default Icon with Point filtering (not new art), and the Unity splash is still enabled. |
+| 🔧 | **Release Prep — R0 Build identity** | 🔧 identity done: company **`WZRD HAU5`** (renamed 2026-10-29; dev saves copied across), `Bonsaimancer`, version scheme release.build.update (v0.1.4, tagged). **Icon:** fine as is for now (user, 2026-10-29). **Splash:** stays until a paid Unity licence. |
 | ✅ | **Release Prep — R5 test-build hygiene** | 🔧 **4 of 7 built 2026-10-12** — save `schemaVersion` + migration ladder + load-failure reasons surfaced at all 4 call sites; onboarding tooltips back on as a persisted setting with a replay button; `BonsaiDebug` single dev-surface switch (F1 readout, dev pause tabs, GL gizmos, tipping harness, per-click logs); `CrashLogger` session logs + "Open Log Folder". Compile-verified, 0 errors. Remaining 3 are hands-on: death-loop walkthrough, perf floor, build on another machine. |
-| 1 | **Release Prep — R5b Windows, focus and platforms** | 🆕 raised 2026-10-28. Must run on a **second monitor**, survive **losing and regaining focus**, and work on **Windows, macOS and Linux**. See R5b under Release Prep. |
+| 1 | **Release Prep — R5b Windows, focus and platforms** | 🟡 a friend's **Mac build stopped responding to clicks**; `FocusGuard` (2026-10-29) ends held gestures on focus loss, resets input on regain, swallows the refocus click and logs clicks in builds. Verified in the editor with the saw. Waiting on a Mac session log. Second-monitor choice and platform builds still open. |
 | ✅ | **Release Prep — R1 Main Menu + launch flow** | ✅ **built 2026-10-12** — `MainMenuUI` (themed UI Toolkit menu: Play / New Tree / Settings / Credits / Quit + version), `SaveSelectPanel` (one card implementation, now used by *both* the menu and the in-game pause menu — 168 lines of duplicate removed from `buttonClicker`), `SaveManager.PendingLaunch` handoff, `LoadingScreen` with real `AsyncOperation.progress`, music fade instead of destroying the AudioManager. One Unity step left: run **Bonsai ▸ Set Up Main Menu Scene**. |
 | ✅ | **Release Prep — R2 Settings Menu** | ✅ **built 2026-10-12** — `GameSettings` (single owner of the `set.*` keys, applies on load + every scene load) + `SettingsPanel` (5 tabs, hosted from **both** the main menu and the pause menu). Colour-blind highlight palettes (Okabe–Ito), reduced motion, real display/quality/audio controls, read-only key reference. `FullscreenPrompt` retired. Remaining: UI/text scale, high-contrast, key rebinding, an AudioMixer. |
-| 1 | **Release Prep — R3 Menu showcase tree** | 🆕 raised 2026-10-12. Author a tree in-game, bake it to a static prefab via an editor tool, display it non-interactable behind the main menu. Gotcha: wind flex is derived from object-space position, so combine in the tree root's local space. |
-| 1 | **Release Prep — R4 Tool cursors** | 🆕 raised 2026-10-12. Zero `Cursor.` calls in the project today. `ToolManager.ActiveTool` (13 tools) + `TreeInteraction`'s existing hover state give idle/valid/invalid per tool for free. |
+| ✅ | **Release Prep — R3 Menu showcase tree** | ✅ built 2026-10-27 (editor bake, the default tree). **R3b** player-saved menu trees on quit and **R3c** the greenhouse built 2026-10-29 and play-tested. See R3b / R3c. |
+| 🟡 | **Release Prep — R4 Tool cursors** | 🟡 first pass 2026-10-27: trimmer + watering can art; the watering can became a tool. Other tools need cursor art from the user. |
 | 2 | **Release Prep — R6–R8 Steam page, marketing, admin** | 🆕 raised 2026-10-12. Capsule/screenshots/trailer/descriptions, press kit + socials + demo, Steamworks SDK + SteamCMD + IARC + banking. Steam Direct starts a 30-day clock — submit early. |
 | 4 | **K — Additional AutoStyler Styles** | **Lowest priority.** Blocked on user (descriptions + reference images). Chokkan / Shakan / cascade / windswept / broom / literati. |
 
@@ -633,6 +633,19 @@ assets: they are shipped art.
 - **Placeholder art:** `Greenhouse.BuildHouse` makes the building from primitives — paved floor and
   aisle, white frame, faint glass (Sprites/Default, always in a build). Replace that one method for
   real art.
+- **Play-tested 2026-10-29:** moving around, export and the building all good. Fixed on the way: export
+  skipped unreadable leaves (now via the readable copies); a `MaterialPropertyBlock` made in a field
+  initializer threw on open.
+- **Season slider (2026-10-29), greenhouse only:** Summer → Autumn → Winter for every tree at once.
+  Deciduous leaves blend to the species' `leafAutumnColor` (now stored in each tree's meta.json), keeping
+  each leaf group's lightness. **Outside-in:** `MenuTreeBuilder` scores leaf exposure (0.55 × height in the
+  canopy + 0.45 × distance out from the trunk) into 5 bands, kept apart when merging (`MenuTreeLeaf`);
+  exposed leaves turn first, interior lags by up to 0.7 and starts duller (yellow-orange), deepening to
+  the full colour by the end. Sources: DuPage Forest Preserve, Morton Arboretum. Slider travel tuned
+  from screenshots (`Greenhouse.SliderCurve`): summer 0–2 %, first half of the change by 7 %, visible
+  change to 72 %, the rest to 99.99 % with every leaf on, **bare only at 100 %** (evergreens too).
+  **Match today's date** drives it from the real date (northern hemisphere). The season panel and the
+  tree card both minimise (card to the name only). States remembered in PlayerPrefs.
 
 ---
 
@@ -1051,6 +1064,69 @@ No ambient motion exists today; every screenshot reads static. You already have 
 - **Consequence:** `PotSoil.SeasonTick` keeps degrading soil toward `soilDegradation → 1.0`, drifting drainage/retention off the species' preferred values and stacking soil-mismatch nutrient penalties. A mature tree is slowly starved in dead soil it can never escape — the probable cause of the ~40% avg-health plateau seen alongside F1 (moisture fine, but "the tree is struggling"). Real bonsai are root-pruned + given fresh soil every **2–5 years for their whole life**.
 - **Fix:** add a genuine periodic repot to the auto-care cycle — when `seasonsSinceRepot` exceeds a species/style interval (≈ every 2–4 yr, lengthening as the tree matures), call `PotSoil.Repot()` in early spring (month 2–4 for the good-timing bonus) with a species-appropriate `SoilPreset`, taking the normal repot stress and triggering a root-prune. Keep the existing size-advancement (pass `sizeChanged` only when a size step is also due). Log it to the CareLog. Verify `seasonsSinceRepot` cycles back to 0 and mature-tree avg health recovers over a long run.
 - **Scope:** `AutoStyler.AdvancePotPhase` (or a new `PeriodicRepot` alongside it), `PotSoil.Repot`. **Files:** `Tree/AutoStyler.cs`, `Tree/PotSoil.cs`.
+
+---
+
+## Completed This Phase (Oct 2026)
+
+Play-tested by the user unless marked *compile-checked*. Pushed through **v0.1.4**.
+
+**Quick Start**
+- **15-year option** (ages 5 / 10 / 15 / 20 / 40).
+- **No major auto-style cuts in the final 4 years** (`QuickStartManager.InNoMajorCutWindow`,
+  `AutoStyler.majorCutNodes` = 6), so the tree isn't handed over freshly chopped.
+- **Nothing sickens or dies while generating** (`QuickStartManager.Protected`): `ApplyDamage` is a no-op,
+  fungal load is cleared, leaf-stress symptoms pause, `KillTree` and drought death are ignored. Found
+  because a 40-year Maple lost its leader in year 15 to repot stress + root rot, and dieback dropped
+  1,759 of 2,600 nodes.
+- **Stop button** ("Stop growing here · age N of M") hands the tree over at its current age.
+- **One full camera orbit** over the whole grow (`CameraOrbit` orbit-once mode, fed by date to the day).
+- **Ends on June 1** of the target year, in full leaf.
+- Grows in the chosen **starting pot**; Auto-repot and Auto-shelter follow the mode the tree was set up in.
+
+**Pot size → growth** (queue row above has the detail)
+- Yearly **growth ring** scaled by pot, leaf energy, root support and health (`ApplyAnnualThickening`).
+- **Shorter shoots in small pots** (`ShootPotFactor`, XS ≈ 0.64×, XL ≈ 1.13×). Measured 10- and 20-year runs
+  per pot: XS went from the same size as XL but sparse to compact (width 2.08 → 1.29).
+- Repot panel explains each pot size.
+- **Starting pot** dropdown (XS–XL) on the new-game screen (`TreeSkeleton.StartingPotSize`).
+- **Auto-repot** and **Auto-shelter** checkboxes beside Auto-style, per play mode, only live while
+  Auto-style is on. Auto-shelter covers when rain is falling or due tomorrow and saturation ≥ 30 %, uncovers
+  under 15 % or when the rain passes (saturation only: moisture is 100 % after every watering).
+
+**Tools**
+- **Saw** is a gesture: strokes across the branch as it appears on screen, a synthesised rasp per stroke
+  (or a "Saw" SFX if added), sawdust while moving and splinters at each reversal (`SawEffects`). It never
+  cuts in one click: 2 back-and-forths for the thinnest twig to 10 at trunk thickness. Cancelled cleanly
+  on focus loss.
+- **Clippers refuse thick wood**: limit = max(0.02, 35 % of the trunk base radius)
+  (`TreeSkeleton.SawRadiusThreshold`), with a banner pointing to the saw.
+- HUD names every tool in the A/D cycle (Promote, "Jin (deadwood)"); inspect card text 13 → 16 px.
+
+**Tree, leaves, saves**
+- **Trunk no longer fattens at the top**: `TreeNode.tipRadius` counted root children, so the first trunk
+  segment flared to the thickest root.
+- **Loading restores leaves**: `hasLeaves` was never set, so every load came up bare until spring; it's now
+  recorded on save, and old saves leaf every live tip in leaf season. Restored leaves get this season's
+  size (they were 0.25 instead of ~620, invisible) and appear full-grown.
+- **Ficus is evergreen.**
+- **Per-species leaf model** (`TreeSpecies.leafPrefab`, `leafModelScale`): Japanese Maple uses
+  "Japanese Maple Leaf001 Variant" at 0.02 (the model is ~60× the Ficus one; stem tip already at the
+  origin). **Japanese Maple is the default species pick.**
+
+**Menu, greenhouse, quitting** — R3b / R3c above: menu trees saved on quit (50 max, delete prompt),
+**Quit Game** button, the greenhouse with play / pin / favourite / OBJ export / delete, the season slider.
+
+**Platform / build**
+- `FocusGuard` (R5b). Company name **WZRD HAU5**. Version scheme release.build.update, tagged per push.
+- `Docs/BUSINESS_SETUP.md`: the LLC → Steam path, operating-agreement decisions, trademark notes, and the
+  financials-spreadsheet prompt.
+
+**Open from these sessions**
+- Mac click failure: needs a session log from a Mac build.
+- XL pots give the biggest, coarsest leaves by design; offered to soften the leaf-size scaling.
+- Quick Start orbit could end with the tree's front to the camera.
+- Auto-styler still cuts trees short at times; Stop + the final-4-years rule cover Quick Start only.
 
 ---
 
