@@ -5,8 +5,8 @@
 // the main light and ambient only.
 // The colour comes from _BaseColor, which Leaf sets per leaf through a MaterialPropertyBlock.
 //
-// Spring unfold: the blade folds along its midrib, each half turned up by _FoldAngle × _Fold
-// (upper faces together, as a maple leaf leaves the bud). Leaf sets _Fold per leaf; LeafManager
+// Spring unfold: the blade folds along its midrib, each half turned down by _FoldAngle × _Fold
+// (undersides together, as a maple leaf leaves the bud). Leaf sets _Fold per leaf; LeafManager
 // finds the midrib in the model and stores it in object space in _FoldOrigin/_FoldAxis/_FoldUp,
 // or sets _FoldAngle to 0 when the model can't be read.
 Shader "Custom/TreeLeaf"
@@ -14,7 +14,8 @@ Shader "Custom/TreeLeaf"
     Properties
     {
         _BaseColor        ("Colour",                         Color)       = (0.2, 0.55, 0.12, 1)
-        _Wrap             ("Light Wrap",                     Range(0, 1)) = 0.25
+        _Wrap             ("Light Wrap",                     Range(0, 1)) = 0.35
+        _ShadowFill       ("Sun Left in Shadow",             Range(0, 1)) = 0.45
         _Translucency     ("Translucency",                   Range(0, 2)) = 0.7
         _TranslucencyTint ("Translucency Tint",              Color)       = (1.0, 1.15, 0.55, 1)
         _ForwardScatter   ("Glow Looking Toward the Sun",    Range(0, 4)) = 1.5
@@ -44,6 +45,7 @@ Shader "Custom/TreeLeaf"
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseColor;
             float  _Wrap;
+            float  _ShadowFill;
             float  _Translucency;
             float4 _TranslucencyTint;
             float  _ForwardScatter;
@@ -57,12 +59,12 @@ Shader "Custom/TreeLeaf"
         CBUFFER_END
 
         // Turns each half of the blade about the midrib line, the +w half by +θ and the −w half
-        // by −θ, so both rise toward _FoldUp. Every pass folds, so shadows and depth match.
+        // by −θ, so both droop away from _FoldUp. Every pass folds, so shadows and depth match.
         void Fold(inout float3 posOS, inout float3 nrmOS)
         {
             if (_Fold <= 0.0) return;
             float3 a  = normalize(_FoldAxis.xyz);
-            float3 w  = normalize(cross(_FoldUp.xyz, a));   // a × w = up: +θ lifts the +w half
+            float3 w  = normalize(cross(a, _FoldUp.xyz));   // a × w = −up: +θ lowers the +w half
             float3 d  = posOS - _FoldOrigin.xyz;
             float  th = radians(_FoldAngle) * _Fold * (dot(d, w) >= 0.0 ? 1.0 : -1.0);
             float  c  = cos(th), s = sin(th);
@@ -115,7 +117,9 @@ Shader "Custom/TreeLeaf"
             // leaf on the side facing away, and a soft sheen.
             half3 LeafLight(Light light, float3 n, float3 v, half3 albedo)
             {
-                half  atten   = light.distanceAttenuation * light.shadowAttenuation;
+                // A shaded leaf keeps _ShadowFill of the sun: light scattered through the canopy
+                // above it, so shadow darkens a leaf without blacking it out.
+                half  atten   = light.distanceAttenuation * lerp(_ShadowFill, 1.0, light.shadowAttenuation);
                 float ndl     = dot(n, light.direction);
                 half  diffuse = saturate((ndl + _Wrap) / (1.0 + _Wrap));
                 half  toward  = pow(saturate(dot(v, -light.direction)), 4.0);
