@@ -243,14 +243,14 @@ public class Greenhouse : MonoBehaviour
         (0f,    0f),
         (0.02f, 0f),                    // summer
         (0.07f, 0.51f * AutumnFull),    // first half of the colour progress, mostly invisible
-        (0.75f, 0.85f * AutumnFull),    // the visible change: most of the slider
-        (0.90f, AutumnFull),            // late autumn
-        (0.97f, BareFrom),              // leaf drop, outermost first
-        (1f,    1f),                    // bare
+        (0.72f, 0.957f * AutumnFull),   // the visible change, to deep late autumn
+        (0.9999f, AutumnFull),          // the last of the colour; every leaf still on
+        (1f,    1f),                    // bare only at the very end
     };
 
     static float SliderToSeason(float x)
     {
+        if (x >= 1f) return 1f;   // only the very end is bare
         for (int i = 1; i < SliderCurve.Length; i++)
             if (x <= SliderCurve[i].x)
             {
