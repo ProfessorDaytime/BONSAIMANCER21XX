@@ -2416,6 +2416,112 @@ public BudBreakType budBreakType = BudBreakType.Leaf;
 
 ---
 
+## Modding (long-term goal, planned 2026-10-30)
+
+**Goal:** players can make their own foliage, pots, tables, rocks, backgrounds, music and more,
+and either **replace** built-in content or **add** to it, without installing Unity. Not
+scheduled; this section records the shape, so new systems are built to fit it.
+
+### Constraints that decide the design
+- **A built game can't import FBX.** Mod models are **glTF / GLB** (Blender exports it
+  natively), loaded at runtime with **glTFast** (Unity's own package).
+- **Players can't make prefabs or ScriptableObjects.** A mod's settings are **JSON**, read at
+  runtime into the same classes the game uses (`TreeSpecies`, `ItemDefinition`, …), as
+  runtime-created instances.
+- **Asset bundles** (full Unity content) need Unity to make. Offer them later as an
+  advanced route, not as the main one.
+- Textures are PNG, sounds are OGG/WAV, loaded at runtime.
+
+### Mod layout
+```
+<persistent data>/Mods/<mod id>/
+    mod.json            id, name, author, version, game version, load order hint
+    species/<id>.json   a TreeSpecies (all fields optional; omitted = "inherit" when replacing)
+    items/<id>.json     an ItemDefinition: pot, rock, ground cover, table, decoration,
+                        background, music, UI theme
+    leaves/<id>.glb + <id>.json   a leaf model and its settings (species, main/variant)
+    models/, textures/, audio/    anything the JSON points at
+```
+- **Ids are namespaced** (`seth.tokoname_round`) so mods can't collide. A built-in entry has a
+  bare id (`japanese_maple`).
+- **To replace something**, a mod uses the built-in id (`"replaces": "japanese_maple"`). Later
+  mods in the load order win. **To add**, it uses a new id.
+- A mod that fails to load is skipped with a message on the mods screen. It never stops the
+  game from starting.
+
+### The core: one registry, everything looked up by id
+Today, content is reached in several ways:
+
+| Content | How it's found now | Saved as |
+|---|---|---|
+| Species | `buttonClicker.availableSpecies` + `Journal` list (scene refs); `TreeSpecies.FindLoaded(name)` | species **name** ✓ |
+| Catalog items (pots, rocks, cover, tables, decorations, backgrounds, music, themes) | `ItemCatalog` asset (scene ref), `ItemDefinition.Id` | equipped background, music, theme and decoration by **id** ✓ |
+| A tree's pot | `PotSoil.potSize` enum + `sizePotPrefabs` / a chosen catalog pot | **size only** ✗ (which pot isn't saved) |
+| Leaf models | `TreeSpecies.leafPrefab` / `leafVariants`; LeafManager default | via species |
+| Styles | `QuickStartManager.styles` (scene list) | — |
+| Flowers, fruit, buds, needles, bark, placeholder pot | **built in code** (FlowerVisuals, BudVisuals, LeafManager tufts, bark shader) | — |
+
+Step one is a `ContentRegistry` that holds built-in content and mods by id, with one lookup per
+kind. Every place in the left column then asks it instead of keeping its own list.
+
+### Per system
+- **Species:** already data, and saved by name. Give each a stable `id` separate from its
+  display name (so renaming doesn't break saves), and a JSON reader/writer. The species
+  picker and Journal read the registry.
+- **Leaves:** `LeafModel` (midrib, span, lay-flat turn) is already plain runtime code. Move the
+  prefab-building half of `LeafImporter` to runtime as well: GLB → mesh → root+child object
+  with the same turn and scale. The editor importer and mods then share it.
+- **Pots:** save the chosen pot's **item id** with the tree, not just its size. A mod pot needs
+  its model, plus the size class (soil volume and root budget) and the hole layout the soil
+  system uses (`HoleWorldLayout`), which today comes from the size enum. Decide whether a mod
+  pot may set its own soil volume.
+- **Tables, rocks, ground cover, decorations, backgrounds, music, themes:** already
+  `ItemDefinition`s keyed by id, with apply-handlers. They mainly need the JSON reader and
+  runtime model, texture and audio loading. Check the table swap, since the tree's scene
+  object *is* the table prefab root (see the scene-structure memory).
+- **Flowers, fruit and buds:** the code-built shapes need an "authored part" hook: a species
+  (or mod) supplies part meshes, such as a petal, samara, cone scale or fig, that
+  FlowerVisuals places and animates in place of its generated ones. This is the same hook
+  wanted for Seth's own models, so build it once for both. Part conventions are in the
+  flower-shape export's README.
+- **Needles, bark:** later. Needle tufts could take an authored tuft mesh per species; bark
+  could take texture sets (already a planned art item).
+- **Scripting (new behaviour, not just content):** out of scope for now. Content-only mods
+  cover the stated goal. Revisit if wanted (sandboxed Lua, or C# via BepInEx-style loading —
+  each with security implications).
+
+### Order of work
+1. **Registry + ids:** `ContentRegistry`, a stable id on species, save the pot item id. No
+   mod loading yet; built-in content is just routed through ids. Pays off even without mods.
+2. **JSON for definitions:** read and write `TreeSpecies` and `ItemDefinition` as JSON. Add a
+   "dump built-ins to JSON" editor command, which doubles as modding documentation and
+   templates.
+3. **Runtime asset loading:** glTFast for models, PNG textures, OGG audio. Runtime leaf build
+   from GLB.
+4. **Mod loader + mods screen:** scan the Mods folder, order, enable/disable, report errors.
+   Replace-or-add by id.
+5. **Authored flower/fruit parts:** the FlowerVisuals part hook (also used for built-in art).
+6. **Steam Workshop:** upload and subscribe through Steamworks (Facepunch.Steamworks or
+   Steamworks.NET). Subscribed items land in the Mods folder flow from step 4. Last, once
+   local mods work.
+
+### Habits until then
+- New content is reached **by id through a lookup**, never by a scene reference only one script
+  holds.
+- Sizes, colours and timings live **in data** (species and item fields), not in code constants,
+  when a modder might want to change them.
+- Anything the editor tools compute about a model (like the leaf midrib and turn) lives in
+  runtime code the editor calls, so it works on a GLB at runtime too.
+
+### Open questions
+- Mods that change gameplay numbers (growth rates, prices, AP costs): allowed freely, or flagged
+  as "changes balance"?
+- Achievements and progression with mods on: disabled, or allowed?
+- Sharing a tree that wears modded content: the save records ids, so a missing mod has to fall
+  back (default pot, built-in species of the same kind) rather than fail to load.
+
+---
+
 ## Backlog
 
 Future features not yet scheduled. Expand to read the spec.
