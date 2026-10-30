@@ -66,6 +66,8 @@ public class SaveNode
     // Bud
     public bool hasBud;
     public bool hasFlowerBud;
+    public int  bloomYear;   // 0 in old saves = never flowered
+    public int  fruitMask;
     public bool backBudStimulated;
     public float preferredLateralAzimuth = -1f;  // initializer = "no preference" for saves predating the field
 
@@ -935,6 +937,8 @@ public static class SaveManager
 
             hasBud              = node.hasBud,
             hasFlowerBud        = node.hasFlowerBud,
+            bloomYear           = node.bloomYear,
+            fruitMask           = node.fruitMask,
             backBudStimulated   = node.backBudStimulated,
             preferredLateralAzimuth = node.preferredLateralAzimuth,
             isTrimCutPoint      = node.isTrimCutPoint,

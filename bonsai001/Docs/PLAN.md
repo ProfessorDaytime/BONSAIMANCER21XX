@@ -13,7 +13,7 @@ Pending work in recommended priority order. Detailed specs are under "Pending �
 | ✅ | **UI — Themeable In-Game UI Rebuild** | ✅ **done 2026-06-15** (verified in-game — settings/pause, tooltips, calendar, stat panels, toolbars, species select all follow the theme). `UiThemePainter` (palette painter; captures originals from `resolvedStyle`, classifies → palette, contrast guard, functional denylist) + buttonClicker themes its UI from `UiTheme` on show + on `OnThemeChanged`: **stage 1** settings/pause + tooltips (explicit) + calendar; **stage 2** stat panels (Care Log / Tree Health / Auto Style / Root Health, via `ThemePanel`); **stage 3** whole-root walk (`ThemeRoot` → toolbar, date, corner controls) skipping self-themed overlays. `SetTabStyle`/species-card selection theme-driven. **`GameUiThemer` retired** (now an empty deprecated component — remove from the scene). Remaining = polish/edge cases as found. Original rebuild context (toolbar, Care Log, Tree Health, Auto Style, Root Health, Settings/pause, tooltips, calendar, date) **from scratch in C#** as code-built UI Toolkit panels that read `UiTheme.Current` and repaint on `OnThemeChanged` — the same pattern as the already-themeable menus (species select, shop, Journal, Customize, AP HUD). Replaces the hardcoded-colour `ButtonUI.uxml` markup so **all** UI follows the active theme. Retires the fragile `GameUiThemer` overlay once the rebuilt panels self-theme. Preserve all existing behaviour/wiring. See "Pending — Detailed Specs" → *Themeable In-Game UI Rebuild*. |
 | ✅ | **H — Item Selection Menus** | ✅ done (pots / rocks / tables). GroundCover (moss & grass) folds into Decoration. See Completed This Phase. |
 | ✅ | **20 — Multi-Tree / Quick-Start** | ✅ done — Quick-Start generator + tree shelf with save-before-switch. See Completed This Phase. |
-| — | **Flower / Blossom & Fruit System** | ✅ core built 2026-06-14 — `FlowerManager` (flowers + fruit lifecycle), 14/17 species configured (all conifers cone). Showier blossom geometry ✅ (rounded cupped petals, 2026-06-15). Follow-ups: Azalea/Magnolia species, birch/willow catkins, ficus stylized bloom. See Completed This Phase. |
+| — | **Flower / Blossom & Fruit System** | 🔧 **Rebuilding on the bud system since 2026-10-29** (`FlowerVisuals`: swaying, saved, calendar-driven; step 1 maples built, see "Blossoms & fruit rebuild"). ✅ core built 2026-06-14 — `FlowerManager` (flowers + fruit lifecycle), 14/17 species configured (all conifers cone). Showier blossom geometry ✅ (rounded cupped petals, 2026-06-15). Follow-ups: Azalea/Magnolia species, birch/willow catkins, ficus stylized bloom. See Completed This Phase. |
 | — | **Needle Foliage (conifers)** | ✅ built 2026-06-14 — procedural needle-tuft meshes (`NeedleMesh`), one tuft per branch tip, 4 foliage types, evergreen persistence + deciduous-conifer drop. 10 species wired. See Completed This Phase. |
 | ✅ | **19 — Gamification & Tutorial Progression** | ✅ core complete 2026-06-14 (`Docs/PROGRESSION_DESIGN.md`) — all 4 slices built: economy + zen core, cosmetic shop, Career/Sandbox gating + mode toggle, and the Journal/Encyclopedia (Achievements + Techniques/Phenomena/Species) with real milestone hooks (trim/wire/repot/bloom/fruit/survival). Remaining = ongoing balance tuning + optional richer tutorials. |
 | ✅ | **21 — Decoration & Cosmetic Unlockables** | ✅ **done 2026-06-15** — all 4 cosmetic categories via the AP shop: Backgrounds, UI Themes (+ full game-UI theming), Music, and **Decoration placeables** (`DecorationManager` places a figurine/accent beside the tree; prefab or built-in procedural "Stone Lantern"; equipped-state persisted). `CustomizeManager` + ⚙ menu drive all four. See `Docs/PROGRESSION_DESIGN.md` §7. |
@@ -1183,6 +1183,29 @@ applies to opposite-budded broadleaf species (today only Japanese Maple):
 - ✅ **Saves now restore their species (bug, all species):** loading never set `skeleton.species`, so
   a save took whatever species the skeleton last had (on a fresh launch the scene default, Ficus).
   `SaveManager.RestoreSpecies` looks the saved name up (`TreeSpecies.FindLoaded`) before rebuilding.
+
+**Blossoms & fruit rebuild (raised 2026-10-29) — step 1 (maples) built, not yet play-tested:**
+Agreed plan: rebuild flowers and fruit the way the buds work, one species group at a time —
+1. maples, 2. cherry (winter flower-bud clusters, blossoms opening in a wave, petals drifting off
+before the leaves, cherries ripening in pairs), 3. the rest (wisteria racemes then pods, figs, juniper
+berries, cones that stay on for years, catkins for birch and willow), 4. later, gameplay (fruit costs
+energy, thinning, picking). The old `FlowerManager` keeps the species not yet moved: loose objects
+that don't sway, everything on the 1st of the month, lost on load, smooth-lit.
+- **`FlowerVisuals`** (one mesh on a `_Flowers` child; `Custom/TreeBud` drawn two-sided via its new
+  `_Cull` property, back faces lit with the flipped normal): flowers and fruit rebuilt from
+  `TreeNode.bloomYear` + `fruitMask` (both saved) and the calendar, so they sway with the bark
+  (hanging parts more), survive loads, and animate day by day. A flower bud (`hasFlowerBud`) is spent
+  at spring bud break (Mar–Aug); `fruitMask` rolls `fruitSetChance` × tree energy × twig health per flower.
+- **Maples** (new `BloomType.Corymb`): the cluster comes out of the opening bud around Mar 4–8 with
+  the leaves, a stalk that lengthens and droops over 14 days carrying tight flower buds
+  (`flowersPerCluster` 8 Japanese / 10 trident). Clusters open over Apr 1–7, each flower over 3 days
+  (five sepals spreading into a star, pale heart), hold 10 days, then wither; unfertilised ones drop
+  away. Fertilised flowers grow a pair of samaras until the end of May (`samaraSpread` 140° Japanese,
+  40° trident; Japanese summer samaras red), ripen to tan from mid-August (Japanese) / mid-September
+  (trident), then let go one at a time over ~7 weeks and spin down (`SamaraSpinner`: real-time
+  helicopter spin and wind drift; Reduced motion drops them gently); 20% hang on until next spring's
+  bud break. Care Log beats at bloom, fruit set and ripening (skipped in Quick Start, but the state
+  still advances so Quick Start hands over the right stage). `flowerBudChance` 0.5 / 0.4 → 0.35.
 
 **Open from these sessions**
 - Mac click failure: needs a session log from a Mac build.

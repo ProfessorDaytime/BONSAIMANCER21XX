@@ -1157,6 +1157,8 @@ public partial class TreeSkeleton : MonoBehaviour
             node.branchVigor        = sn.branchVigor;
             node.hasBud             = sn.hasBud;
             node.hasFlowerBud       = sn.hasFlowerBud;
+            node.bloomYear          = sn.bloomYear;
+            node.fruitMask          = sn.fruitMask;
             node.backBudStimulated  = sn.backBudStimulated;
             node.preferredLateralAzimuth = sn.preferredLateralAzimuth;
             node.isTrimCutPoint     = sn.isTrimCutPoint;
@@ -1450,6 +1452,7 @@ public partial class TreeSkeleton : MonoBehaviour
 
         leafMgr = GetComponent<LeafManager>();
         if (GetComponent<BudVisuals>() == null) gameObject.AddComponent<BudVisuals>();   // maple buds (2026-10-29)
+        if (GetComponent<FlowerVisuals>() == null) gameObject.AddComponent<FlowerVisuals>();   // maple flowers + samaras (2026-10-29)
     }
 
     /// <summary>

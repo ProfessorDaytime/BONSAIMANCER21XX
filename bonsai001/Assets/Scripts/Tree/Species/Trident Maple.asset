@@ -69,13 +69,16 @@ MonoBehaviour:
   budColor: {r: 0.4, g: 0.21, b: 0.12, a: 1}
   budSwellColor: {r: 0.68, g: 0.4, b: 0.26, a: 1}
   budFormColor: {r: 0.42, g: 0.48, b: 0.18, a: 1}
-  bloomType: 3
+  bloomType: 4
+  flowersPerCluster: 10
+  fruitSetChance: 0.3
+  samaraSpread: 40
   bloomColor: {r: 0.78, g: 0.8, b: 0.42, a: 1}
   bloomMonth: 4
   bloomBeforeLeaves: 0
   bloomDurationDays: 10
   floweringStartAge: 4
-  flowerBudChance: 0.4
+  flowerBudChance: 0.35
   fruitType: 3
   fruitColor: {r: 0.58, g: 0.64, b: 0.32, a: 1}
   fruitRipeColor: {r: 0.66, g: 0.5, b: 0.32, a: 1}

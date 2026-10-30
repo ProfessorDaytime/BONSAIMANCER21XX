@@ -64,15 +64,18 @@ MonoBehaviour:
   leafBudBreakColor: {r: 0.7, g: 0.24, b: 0.16, a: 1}
   youngTintStrength: 0.9
   leafUnfold: 1
-  bloomType: 3
-  bloomColor: {r: 0.7, g: 0.2, b: 0.25, a: 1}
+  bloomType: 4
+  flowersPerCluster: 8
+  fruitSetChance: 0.3
+  samaraSpread: 140
+  bloomColor: {r: 0.66, g: 0.16, b: 0.24, a: 1}
   bloomMonth: 4
   bloomBeforeLeaves: 0
   bloomDurationDays: 10
   floweringStartAge: 3
-  flowerBudChance: 0.5
+  flowerBudChance: 0.35
   fruitType: 3
-  fruitColor: {r: 0.55, g: 0.65, b: 0.3, a: 1}
-  fruitRipeColor: {r: 0.72, g: 0.5, b: 0.3, a: 1}
+  fruitColor: {r: 0.7, g: 0.26, b: 0.2, a: 1}
+  fruitRipeColor: {r: 0.62, g: 0.46, b: 0.3, a: 1}
   fruitSetMonth: 5
   fruitRipeMonth: 9

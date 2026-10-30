@@ -315,8 +315,15 @@ public class TreeSpecies : ScriptableObject
 
     // ── Flowering & Fruit ───────────────────────────────────────────────────────
     [Header("Flowering & Fruit")]
-    [Tooltip("What this species blooms as. None = no flowers. (Fruit follows in a later pass.)")]
+    [Tooltip("What this species blooms as. None = no flowers. Corymb (the maples) is drawn with its " +
+             "fruit by FlowerVisuals; the others by FlowerManager.")]
     public BloomType bloomType = BloomType.None;
+    [Tooltip("Flowers in each Corymb cluster, give or take 30%.")]
+    [Range(2, 16)] public int flowersPerCluster = 8;
+    [Tooltip("Share of a Corymb cluster's flowers that set fruit, less on a tree short of energy.")]
+    [Range(0f, 1f)] public float fruitSetChance = 0.3f;
+    [Tooltip("Angle between the two wings of a samara pair, in degrees: ~140 Japanese maple, ~40 trident.")]
+    [Range(0f, 180f)] public float samaraSpread = 120f;
     [Tooltip("Blossom / petal colour.")]
     public Color bloomColor = new Color(1f, 0.78f, 0.86f);   // cherry pink
     [Tooltip("Calendar month flowers open (1–12). Cherry/plum ~3–4.")]
@@ -356,8 +363,9 @@ public class TreeSpecies : ScriptableObject
 /// <summary>Foliage geometry. BroadLeaf spawns leaf prefabs; the rest build procedural needle tufts (NeedleMesh).</summary>
 public enum FoliageType { BroadLeaf, PineFascicle, SpruceRadial, FeatheryFrond, Scale }
 
-/// <summary>Flower geometry for a species' bloom (FlowerManager). Showy, transient (bloom → petal drop).</summary>
-public enum BloomType { None, Blossom, Raceme, Catkin }
+/// <summary>Flower geometry for a species' bloom. Showy, transient (bloom → petal drop). Corymb: small
+/// flowers on drooping stalks that come out of the bud with the leaves (maples; FlowerVisuals).</summary>
+public enum BloomType { None, Blossom, Raceme, Catkin, Corymb }
 
 /// <summary>Fruit geometry for a species (FlowerManager). Sets after bloom, ripens, then drops.</summary>
 public enum FruitType { None, Berry, Fig, Samara, Cone, Pome }

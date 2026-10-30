@@ -239,11 +239,13 @@ public class BudVisuals : MonoBehaviour
     // ── Bud placement ─────────────────────────────────────────────────────────
 
     // Same per-node base angle as LeafManager's leaf pairs: pair 0 at base, pair 1 at base + 90°.
-    static float BaseAzimuth(TreeNode n) => Mathf.Repeat(n.id * 137.508f, 360f);
+    internal static float BaseAzimuth(TreeNode n) => Mathf.Repeat(n.id * 137.508f, 360f);
 
     static Vector3 Side(TreeNode n, float azimuthDeg) => Side(n.growDirection.normalized, azimuthDeg);
 
-    static Vector3 Side(Vector3 axis, float azimuthDeg)
+    /// <summary>A unit vector perpendicular to <paramref name="axis"/>, turned
+    /// <paramref name="azimuthDeg"/> around it (also used by FlowerVisuals).</summary>
+    internal static Vector3 Side(Vector3 axis, float azimuthDeg)
     {
         Vector3 perp = Vector3.Cross(axis, Vector3.up);
         if (perp.sqrMagnitude < 0.01f) perp = Vector3.Cross(axis, Vector3.right);

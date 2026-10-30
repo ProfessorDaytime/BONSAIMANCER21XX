@@ -53,6 +53,8 @@ public class TreeNode
 
     public bool hasBud;              // terminal bud set; will activate next spring
     public bool hasFlowerBud;        // flower bud set last autumn; opens into blossoms at bloomMonth
+    public int  bloomYear;           // year this tip's flower bud opened (0 = never); FlowerVisuals draws that year's flowers and fruit from it
+    public int  fruitMask;           // which of that year's flowers set fruit, a bit per flower
     public bool backBudStimulated;   // tip ancestry was trimmed; boosted lateral chance next spring
 
     /// <summary>World-space compass azimuth (degrees, 0=+Z, 90=+X) the next lateral spawned

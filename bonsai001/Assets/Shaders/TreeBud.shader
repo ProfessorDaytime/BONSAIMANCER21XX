@@ -1,6 +1,7 @@
 // Buds on opposite-budded broadleaf trees (Japanese maple), drawn as one combined mesh by
-// BudVisuals (2026-10-29). Colour comes from the vertex colour; UV1 carries the sway data of the
-// twig each bud sits on (x = isRoot, y = GrowthColor alpha), so buds bend with the bark exactly.
+// BudVisuals (2026-10-29); also their flowers and fruit (FlowerVisuals), two-sided via _Cull.
+// Colour comes from the vertex colour; UV1 carries the sway data of the twig each bud sits on
+// (x = isRoot, y = GrowthColor alpha), so buds bend with the bark exactly.
 // Lighting matches the bark's three cel bands.
 Shader "Custom/TreeBud"
 {
@@ -10,6 +11,8 @@ Shader "Custom/TreeBud"
         _MidThreshold    ("Mid Threshold",    Range(0,1)) = 0.55
         _ShadowTint      ("Shadow Tint",      Color)      = (0.25,0.22,0.28,1)
         _MidTint         ("Mid Tint",         Color)      = (0.78,0.75,0.72,1)
+        // Off for single-sheet geometry (sepals, samara wings): back faces light with the flipped normal.
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
     }
 
     SubShader
@@ -75,7 +78,7 @@ Shader "Custom/TreeBud"
         {
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
-            Cull Back
+            Cull [_Cull]
 
             HLSLPROGRAM
             #pragma vertex   BudVert
@@ -110,10 +113,11 @@ Shader "Custom/TreeBud"
                 return OUT;
             }
 
-            half4 BudFrag(BudVary IN) : SV_Target
+            half4 BudFrag(BudVary IN, FRONT_FACE_TYPE face : FRONT_FACE_SEMANTIC) : SV_Target
             {
+                float3 nrm      = normalize(IN.nrmWS) * IS_FRONT_VFACE(face, 1.0, -1.0);
                 Light mainLight = GetMainLight(TransformWorldToShadowCoord(IN.posWS));
-                float litVal    = saturate(dot(normalize(IN.nrmWS), normalize(mainLight.direction)))
+                float litVal    = saturate(dot(nrm, normalize(mainLight.direction)))
                                   * mainLight.shadowAttenuation;
                 half3 tint = litVal < _ShadowThreshold ? _ShadowTint.rgb
                            : litVal < _MidThreshold    ? _MidTint.rgb
@@ -127,7 +131,7 @@ Shader "Custom/TreeBud"
         {
             Name "DepthOnly"
             Tags { "LightMode" = "DepthOnly" }
-            ZWrite On ColorMask R Cull Back
+            ZWrite On ColorMask R Cull [_Cull]
 
             HLSLPROGRAM
             #pragma vertex   DepthVert

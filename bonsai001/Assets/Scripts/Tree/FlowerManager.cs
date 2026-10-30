@@ -39,7 +39,7 @@ public class FlowerManager : MonoBehaviour
     void OnMonth(int month)
     {
         var sp = skeleton != null ? skeleton.species : null;
-        if (sp == null) return;
+        if (sp == null || FlowerVisuals.Handles(sp)) return;   // the maples moved to FlowerVisuals (2026-10-29)
 
         if (sp.bloomType != BloomType.None && month == sp.bloomMonth && GameManager.year != lastBloomYear)
             Bloom(sp);
