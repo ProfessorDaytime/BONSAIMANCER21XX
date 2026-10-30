@@ -117,6 +117,7 @@ public class WeatherManager : MonoBehaviour
         Instance = this;
         Sheltered = false;   // a static outlives the scene
         spellDaysLeft = averageSpellDays;
+        if (GetComponent<WeatherVisuals>() == null) gameObject.AddComponent<WeatherVisuals>();
     }
 
     void TopUpForecast()

@@ -375,13 +375,16 @@ public static class MenuTreeCapture
         foreach (var l in Object.FindObjectsByType<Light>())
         {
             if (l.type != LightType.Directional || !l.isActiveAndEnabled) continue;
+            Color color = l.color;
+            float intensity = l.intensity, shadowStrength = l.shadowStrength;
+            WeatherVisuals.ClearSky(l, ref color, ref intensity, ref shadowStrength);   // not the storm's dimming
             s.lights.Add(new MenuTreeShowcase.BakedLight
             {
                 localRotation  = invRot * l.transform.rotation,
-                color          = l.color,
-                intensity      = l.intensity,
+                color          = color,
+                intensity      = intensity,
                 shadows        = l.shadows,
-                shadowStrength = l.shadowStrength,
+                shadowStrength = shadowStrength,
             });
         }
 

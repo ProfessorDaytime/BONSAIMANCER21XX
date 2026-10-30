@@ -35,6 +35,8 @@ public class AudioManager : MonoBehaviour
         PlayMusic("SpringSong");
     }
     public void PlayMusic(string name){
+        // No music added yet (2026-10-30): stay quiet rather than warn at every season change.
+        if (musicSounds == null || musicSounds.Length == 0) return;
         Sound s = Array.Find(musicSounds, x=> x.name==name);
 
         if(s == null){
