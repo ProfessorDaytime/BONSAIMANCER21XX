@@ -62,6 +62,17 @@ public class QuickStartManager : MonoBehaviour
 
     /// <summary>Progress through the grow by date, down to the day — smooth enough to drive the
     /// camera, unlike <see cref="Progress"/> which steps once a year.</summary>
+    /// <summary>Where the final year starts, as grow progress (0–1).</summary>
+    float LastYearProgress
+    {
+        get
+        {
+            float start = startYear * 12f + (startMonth - 1) + (startDay - 1) / 30f;
+            float end   = targetEndYear * 12f + (EndMonth - 1);
+            return Mathf.Clamp01((end - 12f - start) / Mathf.Max(1f, end - start));
+        }
+    }
+
     float FineProgress
     {
         get
@@ -143,7 +154,8 @@ public class QuickStartManager : MonoBehaviour
         Time.timeScale = 1f;
         gm.UpdateGameState(gm.StateForMonth(GameManager.month));
         cameraOrbit?.SetCinematicMode(true);
-        cameraOrbit?.BeginOrbitOnce();   // one full turn over the whole grow
+        // Constant-speed orbit: a full turn done before the final year, ending on the front view.
+        cameraOrbit?.BeginOrbitOnce(LastYearProgress);
 
         var pm = PlayModeManager.Instance;
         if (pm != null)

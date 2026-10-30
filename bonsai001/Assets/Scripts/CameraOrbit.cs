@@ -110,6 +110,7 @@ public class CameraOrbit : MonoBehaviour
     // Negative = off, the normal constant-speed orbit.
     float orbitOnceProgress = -1f;
     float orbitOnceStartYaw;
+    float orbitOnceTotal = 360f;    // degrees over the whole run, ending on the home (front) view
     float cinematicElevPhase;
     float cinematicBasePitch;  // pitch captured when cinematic mode was entered
     float cinematicSavedPanY;  // panY to restore when cinematic mode exits
@@ -363,7 +364,7 @@ public class CameraOrbit : MonoBehaviour
             {
                 // Glide toward the angle for the grow's progress, so a jump in the calendar
                 // doesn't jerk the camera.
-                float target = orbitOnceStartYaw + 360f * orbitOnceProgress;
+                float target = OrbitOnceYaw(orbitOnceProgress);
                 yaw = Mathf.Lerp(yaw, target, 1f - Mathf.Exp(-3f * Time.unscaledDeltaTime));
             }
             else
@@ -483,11 +484,20 @@ public class CameraOrbit : MonoBehaviour
     /// Start): call <see cref="BeginOrbitOnce"/> when it starts, feed 0→1 progress to
     /// <see cref="SetOrbitOnceProgress"/> while it runs, and <see cref="EndOrbitOnce"/> at the end.
     /// </summary>
-    public void BeginOrbitOnce()
+    /// <summary>Starts a run with a known length (Quick Start). The camera turns at a constant
+    /// speed and stops on the home view — the tree's front, what Reset Camera returns to
+    /// (2026-10-29) — having made at least one full turn by <paramref name="fullTurnBy"/>
+    /// (progress 0–1; Quick Start passes the start of its final year).</summary>
+    public void BeginOrbitOnce(float fullTurnBy = 1f)
     {
         orbitOnceStartYaw = yaw;
         orbitOnceProgress = 0f;
+        float need = 360f / Mathf.Clamp(fullTurnBy, 0.05f, 1f);   // total so 360° is done by then
+        orbitOnceTotal = 360f + Mathf.Repeat(homeYaw - yaw, 360f);
+        while (orbitOnceTotal < need - 0.01f) orbitOnceTotal += 360f;
     }
+
+    float OrbitOnceYaw(float p) => orbitOnceStartYaw + orbitOnceTotal * Mathf.Clamp01(p);
 
     public void SetOrbitOnceProgress(float progress01)
     {
