@@ -102,6 +102,60 @@ public class LeafManager : MonoBehaviour
         if (srcRenderer == null)
             Debug.LogWarning("LeafManager: leaf prefab has no Renderer — using fallback unlit material.");
         leafMatSource = src;
+        FindMidrib(leafMat, src);
+    }
+
+    static readonly int IdFoldOrigin = Shader.PropertyToID("_FoldOrigin");
+    static readonly int IdFoldAxis   = Shader.PropertyToID("_FoldAxis");
+    static readonly int IdFoldUp     = Shader.PropertyToID("_FoldUp");
+    static readonly int IdFoldAngle  = Shader.PropertyToID("_FoldAngle");
+
+    /// <summary>For the leaf shader's spring fold (2026-10-30): finds the blade's midrib in the leaf
+    /// model's mesh space — from where the stalk meets the blade to the blade point farthest from
+    /// there, the main lobe's tip — and the way the blade's top faces. The blade is submesh 0 (the
+    /// slot leafMat takes) and the stalk, if any, submesh 1. Needs Read/Write on the model; without
+    /// it the fold is switched off (_FoldAngle 0) and the leaf unfolds by width alone.</summary>
+    static void FindMidrib(Material mat, GameObject prefab)
+    {
+        if (!mat.HasProperty(IdFoldAxis)) return;
+        var mf   = prefab.GetComponentInChildren<MeshFilter>();
+        var mesh = mf != null ? mf.sharedMesh : null;
+        if (mesh == null || !mesh.isReadable || mesh.normals.Length == 0) { mat.SetFloat(IdFoldAngle, 0f); return; }
+
+        var verts   = mesh.vertices;
+        var normals = mesh.normals;
+        var blade   = mesh.GetTriangles(0);
+
+        // The model's origin is the stalk's twig end, so the stalk's far end is the junction;
+        // with no stalk, the blade point nearest the origin.
+        Vector3 junction = Vector3.zero;
+        if (mesh.subMeshCount > 1)
+        {
+            float best = -1f;
+            foreach (int i in mesh.GetTriangles(1))
+                if (verts[i].sqrMagnitude > best) { best = verts[i].sqrMagnitude; junction = verts[i]; }
+        }
+        else
+        {
+            float best = float.MaxValue;
+            foreach (int i in blade)
+                if (verts[i].sqrMagnitude < best) { best = verts[i].sqrMagnitude; junction = verts[i]; }
+        }
+
+        Vector3 tip = junction, up = Vector3.zero;
+        float   far = 0f;
+        foreach (int i in blade)
+        {
+            float d = (verts[i] - junction).sqrMagnitude;
+            if (d > far) { far = d; tip = verts[i]; }
+            up += normals[i];
+        }
+        Vector3 axis = Vector3.ProjectOnPlane(tip - junction, up);
+        if (up.sqrMagnitude < 1e-12f || axis.sqrMagnitude < 1e-12f) { mat.SetFloat(IdFoldAngle, 0f); return; }
+
+        mat.SetVector(IdFoldOrigin, junction);
+        mat.SetVector(IdFoldAxis,   axis.normalized);
+        mat.SetVector(IdFoldUp,     up.normalized);
     }
 
     // ── Needle foliage (conifers) ─────────────────────────────────────────────
@@ -711,10 +765,13 @@ public class LeafManager : MonoBehaviour
         float lv = Random.Range(0.90f, 1.07f);
         leaf.tint = new Color(lv * Random.Range(0.96f, 1.04f), lv, lv * Random.Range(0.95f, 1.03f));
 
-        leaf.ApplyDeformation(
-            twistDeg:     Random.Range(-28f, 28f),
-            curlFraction: Random.Range(0.05f, 0.30f)
-        );
+        // Unfolding leaves fold in the leaf shader instead, and their model is Read/Write only so
+        // FindMidrib can read it — a per-leaf mesh copy here would be thousands of meshes.
+        if (!leaf.unfold)
+            leaf.ApplyDeformation(
+                twistDeg:     Random.Range(-28f, 28f),
+                curlFraction: Random.Range(0.05f, 0.30f)
+            );
 
         return go;
     }

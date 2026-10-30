@@ -72,7 +72,10 @@ public class Leaf : MonoBehaviour
     // Unfolding (2026-10-29, maple leaf-out): the folded leaf first pushes straight out of the bud
     // along the shoot, then swings down to hang limp, spreads its fingers, and lifts to its resting
     // angle. Phases are fractions of growProgress.
+    // A leaf whose material folds (TreeLeaf with a midrib found, 2026-10-30) emerges folded nearly
+    // in half along its midrib and opens out instead of being squeezed to FOLDED_WIDTH.
     [HideInInspector] public bool unfold;
+    bool        folds;
     const float FOLDED_WIDTH   = 0.2f;    // blade width when it emerges, as a fraction of open
     const float EMERGE_UNTIL   = 0.15f;   // pointing out of the bud along the shoot until here
     const float HANG_BY        = 0.4f;    // then swung down to hang by here
@@ -139,6 +142,8 @@ public class Leaf : MonoBehaviour
     {
         leafRenderer = GetComponentInChildren<Renderer>();
         propBlock    = new MaterialPropertyBlock();
+        var mat      = leafRenderer != null ? leafRenderer.sharedMaterial : null;
+        folds        = unfold && mat != null && mat.HasProperty(IdFold) && mat.GetFloat(IdFoldAngle) > 0f;
 
         windPhase         = Random.value;
         baseLocalRotation = transform.localRotation;
@@ -295,6 +300,8 @@ public class Leaf : MonoBehaviour
 
     static readonly int IdColor     = Shader.PropertyToID("_Color");
     static readonly int IdBaseColor = Shader.PropertyToID("_BaseColor");
+    static readonly int IdFold      = Shader.PropertyToID("_Fold");
+    static readonly int IdFoldAngle = Shader.PropertyToID("_FoldAngle");
 
     // ── Colour ────────────────────────────────────────────────────────────────
 
@@ -361,6 +368,8 @@ public class Leaf : MonoBehaviour
         leafRenderer.GetPropertyBlock(propBlock);
         propBlock.SetColor(IdColor, color);       // Standard / Unlit shaders
         propBlock.SetColor(IdBaseColor, color);   // URP shaders
+        // The fold rides the colour's repaint steps: both follow growProgress.
+        if (folds) propBlock.SetFloat(IdFold, 1f - Mathf.SmoothStep(0f, 1f, Opened(growProgress)));
         leafRenderer.SetPropertyBlock(propBlock);
     }
 
@@ -392,19 +401,19 @@ public class Leaf : MonoBehaviour
         }
     }
 
-    /// <summary>Size for the grow-in: uniform, except an unfolding leaf stays narrow — its blade
-    /// width (local Y) at <see cref="FOLDED_WIDTH"/> — until <see cref="OPEN_FROM"/>, and is fully
-    /// spread by <see cref="OPEN_BY"/>.</summary>
+    /// <summary>Size for the grow-in: uniform, except an unfolding leaf that can't fold stays
+    /// narrow — its blade width (local Y) at <see cref="FOLDED_WIDTH"/> — until the spread.</summary>
     Vector3 GrowScale(float s, float progress)
     {
         var v = targetScale * s;
-        if (unfold)
-        {
-            float open = Mathf.Clamp01((progress - OPEN_FROM) / (OPEN_BY - OPEN_FROM));
-            v.y *= Mathf.Lerp(FOLDED_WIDTH, 1f, Mathf.SmoothStep(0f, 1f, open));
-        }
+        if (unfold && !folds)
+            v.y *= Mathf.Lerp(FOLDED_WIDTH, 1f, Mathf.SmoothStep(0f, 1f, Opened(progress)));
         return v;
     }
+
+    /// <summary>How far an unfolding leaf has spread, 0 before <see cref="OPEN_FROM"/> to 1 by
+    /// <see cref="OPEN_BY"/>.</summary>
+    static float Opened(float progress) => Mathf.Clamp01((progress - OPEN_FROM) / (OPEN_BY - OPEN_FROM));
 
     /// <summary>The angle a new unfolding leaf pushes out of its bud at: the blade (local +Z) turned
     /// to point along the shoot it grows from, keeping its roll about the blade.</summary>
