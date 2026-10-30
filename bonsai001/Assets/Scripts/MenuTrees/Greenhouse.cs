@@ -49,7 +49,7 @@ public class Greenhouse : MonoBehaviour
     bool  syncToDate;
     Slider seasonSlider;
     VisualElement seasonBox;
-    readonly MaterialPropertyBlock seasonMpb = new MaterialPropertyBlock();
+    MaterialPropertyBlock seasonMpb;   // made in Start: Unity forbids creating one in a field initializer
 
     readonly List<Entry> entries = new List<Entry>();
     readonly Dictionary<Collider, Entry> byCollider = new Dictionary<Collider, Entry>();
@@ -84,6 +84,7 @@ public class Greenhouse : MonoBehaviour
         foreach (var l in FindObjectsByType<Light>())
             if (l.type == LightType.Directional) l.enabled = false;
 
+        seasonMpb = new MaterialPropertyBlock();
         cam = Camera.main;
         SetUpLighting();
         PlaceCameraOverview();
