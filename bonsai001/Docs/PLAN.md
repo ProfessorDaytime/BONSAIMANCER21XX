@@ -1196,11 +1196,13 @@ that don't sway, everything on the 1st of the month, lost on load, smooth-lit.
   `TreeNode.bloomYear` + `fruitMask` (both saved) and the calendar, so they sway with the bark
   (hanging parts more), survive loads, and animate day by day. A flower bud (`hasFlowerBud`) is spent
   at spring bud break (Mar–Aug); `fruitMask` rolls `fruitSetChance` × tree energy × twig health per flower.
-- **Maples** (new `BloomType.Corymb`): the cluster comes out of the opening bud around Mar 4–8 with
-  the leaves, a stalk that lengthens and droops over 14 days carrying tight flower buds
-  (`flowersPerCluster` 8 Japanese / 10 trident). Clusters open over Apr 1–7, each flower over 3 days
-  (five sepals spreading into a star, pale heart), hold 10 days, then wither; unfertilised ones drop
-  away. Fertilised flowers grow a pair of samaras until the end of May (`samaraSpread` 140° Japanese,
+- **Maples** (new `BloomType.Corymb`): the cluster comes out of the opening bud on Mar 2–5 as the
+  scales part, its stalk lengthening over 8 days and held out among the unfolding leaves (it droops
+  as the fruit gains weight), carrying tight flower buds (`flowersPerCluster` 8 Japanese / 10
+  trident). The flowers open Mar 7–16 while the leaves unfold, each over 3 days (five sepals
+  spreading into a star, pale heart), hold 10 days, then wither; unfertilised ones drop away.
+  (First play-test: opening in April put them under a full-grown canopy in a dark red nobody could
+  see; now `bloomMonth` 3 and brighter `bloomColor`, flowers ~2× a bud's length across.) Fertilised flowers grow a pair of samaras until the end of May (`samaraSpread` 140° Japanese,
   40° trident; Japanese summer samaras red), ripen to tan from mid-August (Japanese) / mid-September
   (trident), then let go one at a time over ~7 weeks and spin down (`SamaraSpinner`: real-time
   helicopter spin and wind drift; Reduced motion drops them gently); 20% hang on through winter and

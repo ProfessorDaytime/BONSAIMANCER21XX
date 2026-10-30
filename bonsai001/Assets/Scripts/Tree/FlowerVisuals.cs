@@ -30,9 +30,11 @@ using UnityEngine.Rendering;
 public class FlowerVisuals : MonoBehaviour
 {
     // ── Calendar (in-game days) ───────────────────────────────────────────────
-    const float EmergeDelay     = 3f;     // after bud break (Mar 1), once the bud scales have parted
-    const float EmergeStagger   = 4f;
-    const float EmergeDays      = 14f;
+    // Maples flower while their leaves unfold (2026-10-29: opening in April put the flowers under a
+    // full-grown canopy, and nobody saw them).
+    const float EmergeDelay     = 1f;     // after bud break (Mar 1), as the bud scales part
+    const float EmergeStagger   = 3f;
+    const float EmergeDays      = 8f;
     const float OpenStagger     = 6f;     // clusters open over the first week of bloomMonth…
     const float FlowerStagger   = 3f;     // …the flowers in a cluster over a few days…
     const float OpenDays        = 3f;     // …each taking this long to open
@@ -45,9 +47,9 @@ public class FlowerVisuals : MonoBehaviour
                                           // gone before the tip's next flower bud is spent on Mar 1
 
     // ── Sizes (tree units) ────────────────────────────────────────────────────
-    const float PeduncleLength = 0.055f, PeduncleRadius = 0.0014f;
-    const float PedicelLength  = 0.024f, PedicelRadius  = 0.0008f;
-    const float SepalLength    = 0.016f, SepalWidth     = 0.0095f;   // a flower ~1.5× a bud's length across
+    const float PeduncleLength = 0.06f,  PeduncleRadius = 0.0014f;
+    const float PedicelLength  = 0.026f, PedicelRadius  = 0.0008f;
+    const float SepalLength    = 0.02f,  SepalWidth     = 0.012f;    // a flower ~2× a bud's length across
     const float SeedLength     = 0.012f, SeedWidth      = 0.0075f;
     const float WingLength     = 0.05f,  WingWidth      = 0.017f;
     const float HangFlex       = 0.6f;    // the hanging end sways this much more freely than its twig
@@ -265,8 +267,10 @@ public class FlowerVisuals : MonoBehaviour
         int y  = GameManager.year;
         bool Crossed(float day) => prev < day && day <= now;
 
-        float bloom = MonthStart(sp.bloomMonth, y) + 1f;
-        float set   = MonthStart(sp.bloomMonth, y) + OpenStagger + OpenDays + sp.bloomDurationDays;
+        // A typical cluster's flowers are open on `bloom` (see TimesFor) and setting fruit by `set`.
+        float bloom = Mathf.Max(MonthStart(3, y) + EmergeDelay + EmergeStagger * 0.5f + EmergeDays * 0.6f,
+                                MonthStart(sp.bloomMonth, y) + OpenStagger * 0.5f) + OpenDays;
+        float set   = bloom + FlowerStagger + sp.bloomDurationDays;
         float ripe  = MonthStart(sp.fruitRipeMonth, y);
         if (!Crossed(bloom) && !Crossed(set) && !Crossed(ripe)) return;
 
@@ -284,6 +288,7 @@ public class FlowerVisuals : MonoBehaviour
         {
             CareLog.Add("Bloom", $"{sp.speciesName} is in flower: {clusters} clusters among the new leaves.");
             ProgressionManager.Instance?.ReachMilestone("first_bloom");
+            Debug.Log($"[Flowers] {sp.speciesName} in flower: {clusters} clusters | {GameManager.month}/{GameManager.day}/{y}");
         }
         if (Crossed(set) && fruit > 0)
         {
@@ -369,7 +374,7 @@ public class FlowerVisuals : MonoBehaviour
         Vector3 a     = n.tipPosition + side * (n.radius * 0.5f);
         Vector3 out0  = (axis * 0.55f + side * 0.45f).normalized;
         float   len   = PeduncleLength * Mathf.Lerp(0.15f, 1f, e);
-        float   droop = Mathf.Lerp(0.15f, 0.85f, e) + 0.3f * g;
+        float   droop = Mathf.Lerp(0.1f, 0.5f, e) + 0.5f * g;   // held out among the leaves; fruit pulls it down
         Vector3 p1    = a + out0 * (len * 0.5f);
         Vector3 p2    = a + out0 * (len * 0.55f) + down * (len * droop);
         Vector2 fx    = FlexOf(n);
@@ -413,8 +418,8 @@ public class FlowerVisuals : MonoBehaviour
             {
                 float size  = e * (fruit ? Mathf.Lerp(1f, 0.45f, w) : 1f - w);
                 float theta = Mathf.Lerp(12f, 75f, o) + 25f * w;   // opens, then folds back as it withers
-                Color sepal = Color.Lerp(Color.Lerp(sp.bloomColor * 0.8f, sp.bloomColor, o), Withered, w);
-                Color heart = Color.Lerp(sepal, FlowerHeart, 0.6f * o * (1f - w));
+                Color sepal = Color.Lerp(Color.Lerp(sp.bloomColor * 0.9f, sp.bloomColor, o), Withered, w);
+                Color heart = Color.Lerp(sepal, FlowerHeart, 0.8f * o * (1f - w));
                 AddFlower(geo, f, ped, theta, SepalLength * size, SepalWidth * size, heart, sepal, fxEnd, az);
             }
             if (show0 || show1 || spawn0 || spawn1)

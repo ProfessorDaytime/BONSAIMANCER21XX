@@ -73,8 +73,8 @@ MonoBehaviour:
   flowersPerCluster: 10
   fruitSetChance: 0.3
   samaraSpread: 40
-  bloomColor: {r: 0.78, g: 0.8, b: 0.42, a: 1}
-  bloomMonth: 4
+  bloomColor: {r: 0.88, g: 0.9, b: 0.48, a: 1}
+  bloomMonth: 3
   bloomBeforeLeaves: 0
   bloomDurationDays: 10
   floweringStartAge: 4
