@@ -14,6 +14,7 @@ using UnityEngine.Rendering;
 public static class MenuTreeBuilder
 {
     const int MaxColoursPerMaterial = 16;
+    const int ExposureBands = 5;   // leaf groups kept apart by canopy exposure, so they can turn in order
 
     static readonly int IdBaseColor = Shader.PropertyToID("_BaseColor");
     static readonly int IdColor     = Shader.PropertyToID("_Color");
@@ -74,10 +75,13 @@ public static class MenuTreeBuilder
         if (pieces.Count > 0)
         {
             var clusters = ClusterTints(pieces.ConvertAll(x => (x.mat, x.tint)), out var centres);
-            var groups = new Dictionary<(int, int), List<int>>();
+            var exposure = LeafExposure(pieces.ConvertAll(x => (x.tint.HasValue, (Vector3)x.ci.transform.GetColumn(3))));
+            var groups = new Dictionary<(int, int, int), List<int>>();
             for (int i = 0; i < pieces.Count; i++)
             {
-                var key = (pieces[i].mat, clusters[i]);
+                int band = pieces[i].tint.HasValue
+                    ? Mathf.Min(ExposureBands - 1, Mathf.FloorToInt(exposure[i] * ExposureBands)) : -1;
+                var key = (pieces[i].mat, clusters[i], band);
                 if (!groups.TryGetValue(key, out var l)) groups[key] = l = new List<int>();
                 l.Add(i);
             }
@@ -90,8 +94,10 @@ public static class MenuTreeBuilder
                 combined.CombineMeshes(cis, mergeSubMeshes: true, useMatrices: true);
                 var first = pieces[idx[0]];
                 Color? tint = kv.Key.Item2 >= 0 ? centres[(kv.Key.Item1, kv.Key.Item2)] : (Color?)null;
-                AddPart(go.transform, combined, Matrix4x4.identity, new[] { Mat(mats, kv.Key.Item1) },
-                        tint, first.cast, first.receive, mpb);
+                var part = AddPart(go.transform, combined, Matrix4x4.identity, new[] { Mat(mats, kv.Key.Item1) },
+                                   tint, first.cast, first.receive, mpb);
+                if (kv.Key.Item3 >= 0)
+                    part.AddComponent<MenuTreeLeaf>().exposure = (kv.Key.Item3 + 0.5f) / ExposureBands;
                 built++;
             }
         }
@@ -102,8 +108,34 @@ public static class MenuTreeBuilder
 
     // ── Parts ─────────────────────────────────────────────────────────────────
 
-    static void AddPart(Transform parent, Mesh mesh, Matrix4x4 local, Material[] materials, Color? tint,
-                        ShadowCastingMode cast, bool receive, MaterialPropertyBlock mpb)
+    /// <summary>
+    /// 0–1 exposure per piece: height in the canopy and distance out from the trunk axis, both
+    /// normalised over the leaf pieces (tree-root space; the trunk base is the origin). Sun reaches
+    /// the top and the outer shell first — that's where autumn colour starts (2026-10-29).
+    /// </summary>
+    static float[] LeafExposure(List<(bool leaf, Vector3 pos)> items)
+    {
+        var result = new float[items.Count];
+        float minY = float.MaxValue, maxY = float.MinValue, maxR = 0f;
+        foreach (var (leaf, p) in items)
+        {
+            if (!leaf) continue;
+            minY = Mathf.Min(minY, p.y); maxY = Mathf.Max(maxY, p.y);
+            maxR = Mathf.Max(maxR, new Vector2(p.x, p.z).magnitude);
+        }
+        for (int i = 0; i < items.Count; i++)
+        {
+            var (leaf, p) = items[i];
+            if (!leaf) continue;
+            float h = maxY > minY ? (p.y - minY) / (maxY - minY) : 0.5f;
+            float r = maxR > 0f ? new Vector2(p.x, p.z).magnitude / maxR : 0.5f;
+            result[i] = Mathf.Clamp01(0.55f * h + 0.45f * r);
+        }
+        return result;
+    }
+
+    static GameObject AddPart(Transform parent, Mesh mesh, Matrix4x4 local, Material[] materials, Color? tint,
+                              ShadowCastingMode cast, bool receive, MaterialPropertyBlock mpb)
     {
         var part = new GameObject("Part");
         part.transform.SetParent(parent, false);
@@ -123,6 +155,7 @@ public static class MenuTreeBuilder
             mpb.SetColor(IdColor, c);
             mr.SetPropertyBlock(mpb);
         }
+        return part;
     }
 
     static Material Mat(Material[] mats, int i) => i >= 0 && i < mats.Length ? mats[i] : null;

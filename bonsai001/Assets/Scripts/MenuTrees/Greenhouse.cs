@@ -36,7 +36,7 @@ public class Greenhouse : MonoBehaviour
         public float      height;
         public bool       hasSave;
         public Collider   pick;
-        public List<(MeshRenderer r, Color summer)> leaves = new List<(MeshRenderer, Color)>();
+        public List<(MeshRenderer r, Color summer, float exposure)> leaves = new List<(MeshRenderer, Color, float)>();
     }
 
     static readonly int IdBaseColor = Shader.PropertyToID("_BaseColor");
@@ -213,7 +213,10 @@ public class Greenhouse : MonoBehaviour
             if (!r.HasPropertyBlock()) continue;
             r.GetPropertyBlock(seasonMpb);
             if (mpbHas(seasonMpb, IdBaseColor, out var c) || mpbHas(seasonMpb, IdColor, out c))
-                e.leaves.Add((r, c));
+            {
+                var ml = r.GetComponent<MenuTreeLeaf>();
+                e.leaves.Add((r, c, ml != null ? ml.exposure : 0.5f));
+            }
         }
 
         static bool mpbHas(MaterialPropertyBlock b, int id, out Color c)
@@ -244,22 +247,34 @@ public class Greenhouse : MonoBehaviour
     /// autumn colour, keeping each leaf group's lightness so the variety survives. Evergreens stay
     /// green. Past <see cref="BareFrom"/> every tree's leaves are hidden, evergreens included.
     /// Trees saved before autumn colours were stored use a generic orange-red.</summary>
+    // Staggering (2026-10-29): colour starts on the sunniest leaves — top and outer canopy — and
+    // works inward and down; the shaded interior turns last and duller, more yellow-orange than red
+    // (anthocyanin, the red, needs light). Leaves drop in the same order before full winter.
+    const float TurnSpread = 0.7f;                        // how far behind the interior lags
+    static readonly Color ShadeFall = new Color(0.86f, 0.62f, 0.16f);
+
     void ApplySeason()
     {
         bool bare = season >= BareFrom;
         float t = Mathf.Clamp01(season / AutumnFull);
+        // Between AutumnFull and BareFrom, the most exposed leaves drop first.
+        float drop = Mathf.Clamp01((season - AutumnFull) / (BareFrom - AutumnFull));
         foreach (var e in entries)
         {
-            foreach (var (r, _) in e.leaves)
-                if (r != null) r.enabled = !bare;
+            foreach (var (r, _, exp) in e.leaves)
+                if (r != null) r.enabled = !bare && !(drop > 0f && !e.meta.evergreen && drop >= 1f - exp);
             if (bare || e.meta.evergreen) continue;
             Color fall = e.meta.autumnColor.a > 0f ? e.meta.autumnColor : new Color(0.85f, 0.35f, 0.10f);
-            foreach (var (r, summerTint) in e.leaves)
+            foreach (var (r, summerTint, exp) in e.leaves)
             {
                 if (r == null) continue;
                 float k = Mathf.Clamp(Luma(summerTint) / 0.45f, 0.6f, 1.4f);
-                var target = new Color(fall.r * k, fall.g * k, fall.b * k, summerTint.a);
-                var c = Color.Lerp(summerTint, target, t);
+                Color own = Color.Lerp(ShadeFall, fall, Mathf.Lerp(0.35f, 1f, exp));   // shaded = duller
+                var target = new Color(own.r * k, own.g * k, own.b * k, summerTint.a);
+                // Exposed leaves start at t = 0; the deepest start TurnSpread later; all done by t = 1.
+                float lag = (1f - exp) * TurnSpread;
+                float lt  = Mathf.Clamp01((t - lag) / Mathf.Max(0.0001f, 1f - lag));
+                var c = Color.Lerp(summerTint, target, Mathf.SmoothStep(0f, 1f, lt));
                 r.GetPropertyBlock(seasonMpb);
                 seasonMpb.SetColor(IdBaseColor, c);
                 seasonMpb.SetColor(IdColor, c);
@@ -658,18 +673,42 @@ public class Greenhouse : MonoBehaviour
         bottom.Add(card);
         bottom.Add(Btn("▶", th.cardBg, th.textMain, () => Focus(focus + 1)));
 
+        // Name row with a minimise button (2026-10-29): collapsed, the card shows only the name.
+        var nameRow = new VisualElement();
+        nameRow.style.flexDirection = FlexDirection.Row;
+        nameRow.style.alignItems = Align.Center;
         nameLabel = new Label();
         nameLabel.style.fontSize = 20;
         nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
         nameLabel.style.color = new StyleColor(th.accent);
-        card.Add(nameLabel);
+        nameLabel.style.flexGrow = 1;
+        nameRow.Add(nameLabel);
+        var cardMin = Btn("–", th.cardBg, th.textMain, null);
+        cardMin.style.marginTop = 0;
+        nameRow.Add(cardMin);
+        card.Add(nameRow);
+
+        var cardBody = new VisualElement();
+        card.Add(cardBody);
+        bool cardCollapsed = false;
+        try { cardCollapsed = PlayerPrefs.GetInt("GreenhouseCardMin", 0) == 1; } catch { }
+        void SetCardCollapsed(bool v)
+        {
+            cardCollapsed = v;
+            cardBody.style.display = v ? DisplayStyle.None : DisplayStyle.Flex;
+            card.style.width = v ? StyleKeyword.Auto : 640;
+            cardMin.text = v ? "+" : "–";
+            try { PlayerPrefs.SetInt("GreenhouseCardMin", v ? 1 : 0); } catch { }
+        }
+        cardMin.clicked += () => SetCardCollapsed(!cardCollapsed);
+
         detailLabel = new Label();
         detailLabel.style.color = new StyleColor(th.textMain);
-        card.Add(detailLabel);
+        cardBody.Add(detailLabel);
         badgeLabel = new Label();
         badgeLabel.style.color = new StyleColor(th.textSub);
         badgeLabel.style.marginBottom = 8;
-        card.Add(badgeLabel);
+        cardBody.Add(badgeLabel);
 
         actions = new VisualElement();
         actions.style.flexDirection = FlexDirection.Row;
@@ -682,7 +721,7 @@ public class Greenhouse : MonoBehaviour
         actions.Add(favBtn);
         actions.Add(Btn("EXPORT 3D MODEL", th.cardBg, th.textMain, Export));
         actions.Add(Btn("DELETE", th.cardBg, th.negative, AskDelete));
-        card.Add(actions);
+        cardBody.Add(actions);
 
         confirm = new VisualElement();
         confirm.style.display = DisplayStyle.None;
@@ -696,13 +735,14 @@ public class Greenhouse : MonoBehaviour
         confirm.Add(q);
         confirm.Add(Btn("DELETE", th.negative, th.ink, ConfirmDelete));
         confirm.Add(Btn("CANCEL", th.cardBg, th.textMain, CancelDelete));
-        card.Add(confirm);
+        cardBody.Add(confirm);
 
         statusLabel = new Label();
         statusLabel.style.color = new StyleColor(th.textSub);
         statusLabel.style.fontSize = 11;
         statusLabel.style.whiteSpace = WhiteSpace.Normal;
-        card.Add(statusLabel);
+        cardBody.Add(statusLabel);
+        SetCardCollapsed(cardCollapsed);
 
         var hint = new Label("Drag to look around  ·  scroll to zoom  ·  click a tree, or A / D, to move between them  ·  Esc to go back");
         hint.style.position = Position.Absolute;
@@ -733,7 +773,14 @@ public class Greenhouse : MonoBehaviour
         seasonBox.style.borderBottomLeftRadius = seasonBox.style.borderBottomRightRadius = 6;
         seasonBox.style.paddingLeft = seasonBox.style.paddingRight = 10;
         seasonBox.style.paddingTop = seasonBox.style.paddingBottom = 4;
+        var seasonParts = new List<VisualElement>();
+        var seasonMin = Btn("–", th.cardBg, th.textMain, null);
+        seasonMin.style.height = 22;
+        seasonMin.style.marginTop = 0;
+        seasonMin.style.paddingLeft = seasonMin.style.paddingRight = 8;
+        seasonBox.Add(seasonMin);
         var summer = new Label("Summer");
+        seasonParts.Add(summer);
         summer.style.color = new StyleColor(th.textSub);
         summer.style.fontSize = 11;
         seasonBox.Add(summer);
@@ -749,7 +796,9 @@ public class Greenhouse : MonoBehaviour
         });
         seasonSlider.SetEnabled(!syncToDate);
         seasonBox.Add(seasonSlider);
+        seasonParts.Add(seasonSlider);
         var winter = new Label("Autumn · Winter");
+        seasonParts.Add(winter);
         winter.style.color = new StyleColor(th.textSub);
         winter.style.fontSize = 11;
         seasonBox.Add(winter);
@@ -770,6 +819,21 @@ public class Greenhouse : MonoBehaviour
             try { PlayerPrefs.SetInt(SyncPrefKey, syncToDate ? 1 : 0); } catch { }
         });
         seasonBox.Add(sync);
+        seasonParts.Add(sync);
+
+        // Minimise (2026-10-29): collapsed, only a "Season" button remains.
+        bool seasonCollapsed = false;
+        try { seasonCollapsed = PlayerPrefs.GetInt("GreenhouseSeasonMin", 0) == 1; } catch { }
+        void SetSeasonCollapsed(bool v)
+        {
+            seasonCollapsed = v;
+            foreach (var el in seasonParts) el.style.display = v ? DisplayStyle.None : DisplayStyle.Flex;
+            seasonBox.style.width = v ? StyleKeyword.Auto : 380;
+            seasonMin.text = v ? "Season +" : "–";
+            try { PlayerPrefs.SetInt("GreenhouseSeasonMin", v ? 1 : 0); } catch { }
+        }
+        seasonMin.clicked += () => SetSeasonCollapsed(!seasonCollapsed);
+        SetSeasonCollapsed(seasonCollapsed);
         hud.Add(seasonBox);
 
         uiRoot.Add(hud);
