@@ -695,7 +695,7 @@ public class AutoStyler : MonoBehaviour
     /// fires in early spring so Repot's good-timing window applies.</summary>
     void AdvancePotPhase()
     {
-        if (!autoRepot || !skeleton.autoRepot) return;   // the player's Auto-repot checkbox
+        if (!autoRepot) return;   // the Auto-repot checkbox (set by PlayModeManager / QuickStartManager)
         var potSoil = GetComponent<PotSoil>();
         if (potSoil == null || skeleton.plantingYear < 0) return;
 

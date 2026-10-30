@@ -138,7 +138,7 @@ public partial class TreeSkeleton : MonoBehaviour
     {
         var potSoilReset = GetComponent<PotSoil>();
         if (potSoilReset == null) return;
-        potSoilReset.potSize = PotSoil.PotSize.XS;   // design start: smallest pot
+        potSoilReset.potSize = StartingPotSize;   // XS unless the new-game screen chose another
         potSoilReset.ApplyPotSize(GetRootAreaTransform());
         potSoilReset.soilDegradation   = 0f;
         potSoilReset.saturationLevel   = 0f;
@@ -146,7 +146,7 @@ public partial class TreeSkeleton : MonoBehaviour
         potSoilReset.seasonsSinceRepot = 0;
         potSoilReset.ComputeDerivedProperties();
         potSoilReset.RefreshDrainageHoles();
-        Debug.Log($"[Tree] Pot/soil reset to XS fresh | year={GameManager.year}");
+        Debug.Log($"[Tree] Pot/soil reset to {StartingPotSize} fresh | year={GameManager.year}");
     }
 
     // Root Planting

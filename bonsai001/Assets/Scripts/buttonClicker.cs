@@ -162,7 +162,7 @@ public class ButtonClicker : MonoBehaviour
     Button        calAddRuleButton, calModeResetButton, calRuleConfirmButton, calRuleCancelButton;
     Toggle        calModeAutoWater, calModeAutoFert, calModeIdleOrbit, calRuleIdleToggle;
     Toggle        calModeAutoStyle;   // added in code, beside Auto-fertilize (2026-10-27)
-    Toggle        calModeAutoRepot;   // added in code, after Auto-style (2026-10-29); per TREE, not per mode
+    Toggle        calModeAutoRepot;   // added in code, after Auto-style (2026-10-29); only live while Auto-style is on
     UnityEngine.UIElements.IntegerField calModeOrbitDelay;
     UnityEngine.UIElements.DropdownField calRuleTriggerDropdown;
     VisualElement calRuleParamRow, calRuleSpeedChips;
@@ -3406,6 +3406,29 @@ public class ButtonClicker : MonoBehaviour
         return box;
     }
 
+    /// <summary>
+    /// "Starting pot" dropdown for the new-game screen (2026-10-29). Sets
+    /// <see cref="TreeSkeleton.StartingPotSize"/> and swaps the pot on the bench straight away. A
+    /// bigger start grows faster and thickens the trunk sooner; auto-repot only ever sizes up.
+    /// </summary>
+    VisualElement StartingPotField(UiTheme th)
+    {
+        var sizes = new List<string> { "XS", "S", "M", "L", "XL" };
+        var dd = new DropdownField("Starting pot", sizes, Mathf.Clamp((int)TreeSkeleton.StartingPotSize, 0, sizes.Count - 1));
+        dd.style.marginTop = 8;
+        dd.labelElement.style.color = new StyleColor(th.textSub);
+        dd.labelElement.style.fontSize = 10;
+        dd.labelElement.style.unityFontStyleAndWeight = FontStyle.Bold;
+        dd.RegisterValueChangedCallback(e =>
+        {
+            int i = sizes.IndexOf(e.newValue);
+            if (i < 0) return;
+            TreeSkeleton.StartingPotSize = (PotSoil.PotSize)i;
+            if (skeleton != null && skeleton.root == null) skeleton.ResetPotForNewTree();
+        });
+        return dd;
+    }
+
     void BeginPreStart()
     {
         if (speciesSelectOverlay != null) speciesSelectOverlay.style.display = DisplayStyle.None;
@@ -3417,7 +3440,7 @@ public class ButtonClicker : MonoBehaviour
         if (qsSection != null && modes != null) modes.Insert(0, qsSection);
 
         // A new tree starts unnamed; name it here or later in Settings ▸ Game.
-        if (skeleton != null) { skeleton.treeName = ""; skeleton.autoRepot = true; }
+        if (skeleton != null) skeleton.treeName = "";
         // Show the new tree's pot from the start, not the last game's until the first watering.
         if (skeleton != null && skeleton.root == null) skeleton.ResetPotForNewTree();
 
@@ -3425,6 +3448,7 @@ public class ButtonClicker : MonoBehaviour
         WeatherManager.Sheltered = false;
         preStartNameField?.RemoveFromHierarchy();
         preStartNameField = TreeNameField(UiTheme.Current);
+        preStartNameField.Add(StartingPotField(UiTheme.Current));
         if (modes != null) modes.Insert(0, preStartNameField);
 
         settingsPanel.Open(SettingsPanel.Context.PreStart, "modes");
@@ -4604,20 +4628,36 @@ public class ButtonClicker : MonoBehaviour
             if (m == null) return;
             m.autoStyle = evt.newValue;
             PlayModeManager.Instance.SaveModes();
+            RefreshAutoRepotToggle(m);
         });
 
-        // Auto-repot sits with the other auto-care boxes but belongs to the TREE (saved with it),
-        // so a tree kept in one pot stays that way whichever play mode is active.
+        // Auto-repot is part of auto-style: it only does anything while Auto-style is on, so it's
+        // greyed out and shown off otherwise (2026-10-29).
         label.style.marginRight = 16;
         calModeAutoRepot = new Toggle();
         calModeAutoRepot.style.marginRight = 6;
-        calModeAutoRepot.SetValueWithoutNotify(skeleton == null || skeleton.autoRepot);
         row.Add(calModeAutoRepot);
-        var repotLabel = new UnityEngine.UIElements.Label("Auto-repot");
-        repotLabel.style.color    = new StyleColor(new Color(180f / 255f, 180f / 255f, 180f / 255f));
-        repotLabel.style.fontSize = 11;
-        row.Add(repotLabel);
-        calModeAutoRepot.RegisterValueChangedCallback(evt => { if (skeleton != null) skeleton.autoRepot = evt.newValue; });
+        autoRepotLabel = new UnityEngine.UIElements.Label("Auto-repot");
+        autoRepotLabel.style.color    = new StyleColor(new Color(180f / 255f, 180f / 255f, 180f / 255f));
+        autoRepotLabel.style.fontSize = 11;
+        row.Add(autoRepotLabel);
+        calModeAutoRepot.RegisterValueChangedCallback(evt =>
+        {
+            var m = PlayModeManager.Instance?.ActiveMode;
+            if (m == null || !m.autoStyle) return;
+            m.autoRepot = evt.newValue;
+            PlayModeManager.Instance.SaveModes();
+        });
+    }
+
+    UnityEngine.UIElements.Label autoRepotLabel;
+
+    void RefreshAutoRepotToggle(PlayMode m)
+    {
+        if (calModeAutoRepot == null || m == null) return;
+        calModeAutoRepot.SetEnabled(m.autoStyle);
+        autoRepotLabel?.SetEnabled(m.autoStyle);
+        calModeAutoRepot.SetValueWithoutNotify(m.autoStyle && m.autoRepot);
     }
 
     void RefreshModesTab()
@@ -4666,7 +4706,7 @@ public class ButtonClicker : MonoBehaviour
         if (calModeAutoWater  != null) calModeAutoWater.SetValueWithoutNotify(m.autoWater);
         if (calModeAutoFert   != null) calModeAutoFert.SetValueWithoutNotify(m.autoFertilize);
         if (calModeAutoStyle  != null) calModeAutoStyle.SetValueWithoutNotify(m.autoStyle);
-        if (calModeAutoRepot  != null) calModeAutoRepot.SetValueWithoutNotify(skeleton == null || skeleton.autoRepot);
+        RefreshAutoRepotToggle(m);
         if (calModeIdleOrbit  != null) calModeIdleOrbit.SetValueWithoutNotify(m.idleOrbit);
         if (calModeOrbitDelay != null) calModeOrbitDelay.SetValueWithoutNotify((int)m.idleOrbitDelaySecs);
 

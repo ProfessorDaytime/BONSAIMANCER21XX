@@ -57,6 +57,7 @@ public class QuickStartManager : MonoBehaviour
         ? Mathf.Clamp01((GameManager.year - startYear) / (float)totalYears) : 0f;
 
     bool  generating;
+    bool  repotDuringGrow = true;   // the setup mode's Auto-repot, held for the whole grow
     int   startYear, totalYears, targetEndYear;
     float savedFastTimescale = -1f;   // >0 while we've overridden TIMESCALE_FAST for the grow
     System.Action onComplete;
@@ -96,11 +97,16 @@ public class QuickStartManager : MonoBehaviour
         // Ishitsuki/loaded origin from a prior tree would make InitTree set up the wrong way).
         if (species != null) { skeleton.species = species; skeleton.ApplySpecies(); }
         skeleton.treeOrigin = TreeOrigin.Seedling;
+        // Auto-repot follows the checkbox of the mode the player set the tree up in, read before
+        // the switch to Hands-Off below (2026-10-29).
+        var setupMode = PlayModeManager.Instance != null ? PlayModeManager.Instance.ActiveMode : null;
+        repotDuringGrow = setupMode == null || setupMode.autoRepot;
         if (style != null && AutoStyler.Instance != null)
         {
             AutoStyler.Instance.style            = style;
             AutoStyler.Instance.autoStyleEnabled = true;
         }
+        if (AutoStyler.Instance != null) AutoStyler.Instance.autoRepot = repotDuringGrow;
 
         // Fresh tree — clear any existing, then re-init via the Water state (the path AutoRun uses).
         if (skeleton.root != null) skeleton.ClearForRestart();
@@ -191,11 +197,13 @@ public class QuickStartManager : MonoBehaviour
             // Mirrors the AutoStyler's XS→S→M→L phase thresholds (6 / 13 / 26 yr) in case its
             // spring pot-advance didn't fire during the fast-grow, and clears the soil degradation
             // that built up over the decade.
-            var size = !skeleton.autoRepot ? potSoil.potSize     // Auto-repot off: keep the pot it grew in
-                     : totalYears >= 26 ? PotSoil.PotSize.L
-                     : totalYears >= 13 ? PotSoil.PotSize.M
-                     : totalYears >= 6  ? PotSoil.PotSize.S
-                     :                    PotSoil.PotSize.XS;
+            var byAge = totalYears >= 26 ? PotSoil.PotSize.L
+                      : totalYears >= 13 ? PotSoil.PotSize.M
+                      : totalYears >= 6  ? PotSoil.PotSize.S
+                      :                    PotSoil.PotSize.XS;
+            // Auto-repot off: hand it over in the pot it grew in. On: the age-based pot, but never
+            // smaller than the pot it started in.
+            var size = !repotDuringGrow || (int)potSoil.potSize > (int)byAge ? potSoil.potSize : byAge;
             ProgressionManager.AutomationActive = true;   // generated tree's repot isn't the player's "first repot"
             // Force the pot size to re-apply so the rootArea scale is reset to `size` (the fast-grow
             // pot advancement can leave it oversized → a giant rake soil ball otherwise).

@@ -47,6 +47,10 @@ public class PlayMode
     // generating. Added 2026-10-27: before this, the AutoStyler ran in every mode whenever its
     // component was enabled, including Active Play.
     public bool   autoStyle;
+    // Whether the auto-styler repots (bigger pots at its phase years, periodic soil refresh).
+    // Part of auto-style: it only applies while autoStyle is on. Added 2026-10-29; saved modes
+    // without it keep the initializer, on.
+    public bool   autoRepot = true;
     public bool   idleOrbit;
     public float  idleOrbitDelaySecs;
     public List<SpeedRule> rules = new List<SpeedRule>();
@@ -236,6 +240,8 @@ public class PlayModeManager : MonoBehaviour
         bool quickStarting = QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating;
         if (styler != null && !quickStarting && styler.autoStyleEnabled != mode.autoStyle)
             styler.autoStyleEnabled = mode.autoStyle;
+        if (styler != null && !quickStarting)
+            styler.autoRepot = mode.autoStyle && mode.autoRepot;
 
         // Idle orbit
         if (mode.idleOrbit && mode.idleOrbitDelaySecs > 0)
