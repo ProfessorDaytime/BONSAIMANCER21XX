@@ -40,12 +40,16 @@ public class MiniPlayer : MonoBehaviour
     // is just clearing that. Hiding the panels inside instead meant restoring their display, and
     // the ones hidden by an inline UXML display:none came back open (the old pause menu and the
     // calendar over Settings, 2026-10-31).
+    // The host document (the HUD) can't go: the Max button lives in it. It turns invisible
+    // instead, which children inherit and the button overrides; nothing else uses visibility.
+    // (A button in the panel's own root, outside every document, never drew.)
     readonly List<VisualElement> hidden = new List<VisualElement>();
+    VisualElement invisibleHost;
     readonly List<Canvas> hiddenCanvases = new List<Canvas>();
     Button exitButton;
 
-    /// <summary>Shrinks to the mini window. <paramref name="host"/> is any element of the UI panel;
-    /// the exit button goes in that panel's own root, outside every document.</summary>
+    /// <summary>Shrinks to the mini window. <paramref name="host"/> is the root of the document the
+    /// Max button goes in.</summary>
     public static void Enter(VisualElement host)
     {
         if (instance != null || host?.panel == null) return;
@@ -78,7 +82,7 @@ public class MiniPlayer : MonoBehaviour
         foreach (var doc in FindObjectsByType<UIDocument>())
         {
             var root = doc.rootVisualElement;
-            if (root == null || root.resolvedStyle.display == DisplayStyle.None) continue;
+            if (root == null || root == host || root.resolvedStyle.display == DisplayStyle.None) continue;
             root.style.display = DisplayStyle.None;
             hidden.Add(root);
         }
@@ -105,7 +109,10 @@ public class MiniPlayer : MonoBehaviour
         b.borderTopWidth = b.borderBottomWidth = b.borderLeftWidth = b.borderRightWidth = 1;
         b.borderTopLeftRadius = b.borderTopRightRadius =
         b.borderBottomLeftRadius = b.borderBottomRightRadius = 4;
-        host.panel.visualTree.Add(exitButton);
+        b.visibility = Visibility.Visible;
+        host.style.visibility = Visibility.Hidden;
+        invisibleHost = host;
+        host.Add(exitButton);
 
         savedMode = Screen.fullScreenMode;
         savedW    = Screen.width;
@@ -131,6 +138,7 @@ public class MiniPlayer : MonoBehaviour
 
         exitButton?.RemoveFromHierarchy();
         foreach (var el in hidden) el.style.display = StyleKeyword.Null;
+        if (invisibleHost != null) invisibleHost.style.visibility = StyleKeyword.Null;
         foreach (var c in hiddenCanvases) if (c != null) c.enabled = true;
         hidden.Clear();
         hiddenCanvases.Clear();
