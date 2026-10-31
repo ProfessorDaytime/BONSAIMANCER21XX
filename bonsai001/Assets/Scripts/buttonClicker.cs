@@ -385,6 +385,19 @@ public class ButtonClicker : MonoBehaviour
                 c.planeDistance = c.worldCamera.nearClipPlane + 0.01f;
     }
 
+    /// <summary>The game HUD's document. Overlays that attach to the HUD use this; a bare
+    /// FindFirstObjectByType&lt;UIDocument&gt; can return any document, such as the mini player's,
+    /// which is destroyed on exit and took the AP chip with it (2026-10-31).</summary>
+    public static UIDocument HudDocument
+    {
+        get
+        {
+            var bc = FindFirstObjectByType<ButtonClicker>();
+            var doc = bc != null ? bc.GetComponent<UIDocument>() : null;
+            return doc != null ? doc : FindFirstObjectByType<UIDocument>();
+        }
+    }
+
     void OnEnable()
     {
         KeepUiInFrontOfScene();

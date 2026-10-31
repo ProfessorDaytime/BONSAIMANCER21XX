@@ -58,7 +58,7 @@ public class ProgressionHUD : MonoBehaviour
 
     void TryBuild()
     {
-        var doc = FindFirstObjectByType<UIDocument>();
+        var doc = ButtonClicker.HudDocument;
         root = doc != null ? doc.rootVisualElement : null;
         if (root == null) return;
 

@@ -42,7 +42,7 @@ public class CustomizeManager : MonoBehaviour
     VisualElement Root()
     {
         if (root != null) return root;
-        var doc = FindFirstObjectByType<UIDocument>();
+        var doc = ButtonClicker.HudDocument;
         root = doc != null ? doc.rootVisualElement : null;
         if (root != null && catalogPanel == null) catalogPanel = new ItemCatalogPanel(root, catalog);
         return root;
