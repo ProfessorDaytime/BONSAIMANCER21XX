@@ -11,65 +11,93 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
   m_Name: Ficus
-  m_EditorClassIdentifier:
-  stressLeafDrop: 2.0
-  evergreen: 1
+  m_EditorClassIdentifier: 
   speciesName: Ficus
   scientificName: Ficus retusa
-  baseGrowSpeed: 0.30
+  baseGrowSpeed: 0.3
   depthSpeedDecay: 0.86
   depthsPerYear: 2
+  growthSlowDay: 205
+  growthStopDay: 232
   baseElongation: 0.06
   elongationDepthDecay: 0.72
   branchSegmentLength: 2.4
   segmentLengthDecay: 0.85
   rootSegmentLength: 0.21
   baseBranchChance: 0.25
-  branchChanceDepthDecay: 0.80
+  branchChanceDepthDecay: 0.8
   springLateralChance: 0.08
   oldWoodBudChance: 0.08
-  backBudBaseChance: 0.20
+  backBudBaseChance: 0.2
   budType: 0
-  apicalDominance: 0.20
+  oppositeForkChance: 0.6
+  apicalDominance: 0.2
   apicalVigorBonus: 0.17
   vigorDecayRate: 0.16
   wireDaysToSet: 130
   woundDrainRate: 0.04
   seasonsToHealPerUnit: 14
   trimTraumaDamage: 0.04
-  trimTraumaRecoveryPerSeason: 0.10
+  trimTraumaRecoveryPerSeason: 0.1
   drainRatePerDay: 0.12
-  droughtThreshold: 0.30
+  droughtThreshold: 0.3
   droughtDamagePerDay: 0.008
   nutrientDrainPerSeason: 0.45
   fungalSpreadChance: 0.18
   fungalRecoveryRate: 0.15
   maxEnergyMultiplier: 1.6
+  canDefoliate: 1
   preferredWaterRetention: 0.55
   preferredDrainageRate: 0.55
   preferredAerationScore: 0.45
   soilToleranceRange: 0.28
   soilMismatchPenalty: 0.02
-  growthSlowDay: 205
-  growthStopDay: 232
-  repotTolerance: 0.80
+  repotTolerance: 0.8
   barkType: 1
-  youngBarkColor: {r: 0.52, g: 0.55, b: 0.40, a: 1}
+  youngBarkTexture: {fileID: 0}
+  matureBarkTexture: {fileID: 0}
+  barkVTiling: 0.4
+  barkTexelRes: 64
+  barkNoiseMode: 0
+  youngBarkColor: {r: 0.52, g: 0.55, b: 0.4, a: 1}
   matureBarkColor: {r: 0.48, g: 0.45, b: 0.38, a: 1}
-  rootNewGrowthColor: {r: 0.82, g: 0.75, b: 0.60, a: 1}
+  rootNewGrowthColor: {r: 0.82, g: 0.75, b: 0.6, a: 1}
   leafSpringColor: {r: 0.12, g: 0.52, b: 0.08, a: 1}
-  leafAutumnColor: {r: 0.60, g: 0.62, b: 0.25, a: 1}
+  leafPrefab: {fileID: 4747134863569358961, guid: b96df0c618c1a574cb77d948a436579a, type: 3}
+  leafVariants:
+  - {fileID: 1370205579572960020, guid: e88cc7c94704c36479f521134ec38775, type: 3}
+  leafModelScale: 0.0098
   leafGrowDays: 18
   leafBudBreakColor: {r: 0.65, g: 0.82, b: 0.45, a: 1}
+  youngTintStrength: 0.65
+  leafUnfold: 0
+  leafAutumnColor: {r: 0.6, g: 0.62, b: 0.25, a: 1}
+  budColor: {r: 0.42, g: 0.09, b: 0.11, a: 1}
+  budSwellColor: {r: 0.78, g: 0.3, b: 0.34, a: 1}
+  budFormColor: {r: 0.4, g: 0.47, b: 0.16, a: 1}
+  leafShape: 0
+  foliageType: 0
+  evergreen: 1
+  stressLeafDrop: 2
+  needlesPerTuft: 14
+  needleLength: 0.5
+  bloomType: 0
+  flowersPerCluster: 2
+  fruitSetChance: 0.75
+  samaraSpread: 120
+  flowerSpurs: 3
+  fruitName: figs
+  bloomColor: {r: 1, g: 0.78, b: 0.86, a: 1}
+  bloomMonth: 4
+  bloomBeforeLeaves: 0
+  bloomDurationDays: 14
+  floweringStartAge: 3
+  flowerBudChance: 0.5
   fruitType: 2
   fruitColor: {r: 0.5, g: 0.65, b: 0.35, a: 1}
   fruitRipeColor: {r: 0.4, g: 0.18, b: 0.3, a: 1}
   fruitSetMonth: 6
   fruitRipeMonth: 9
-  floweringStartAge: 3
-  flowerBudChance: 0.5
-  flowersPerCluster: 2
-  flowerSpurs: 3
-  fruitSetChance: 0.75
-  fruitSize: 0.6
-  fruitName: figs
+  fruitPersist: 0
+  fruitSize: 0.75
+  coneShape: 0

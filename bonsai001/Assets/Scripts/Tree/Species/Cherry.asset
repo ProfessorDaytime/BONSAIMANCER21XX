@@ -11,15 +11,16 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1c80d1e19909001449cc158d5211d5c2, type: 3}
   m_Name: Cherry
-  m_EditorClassIdentifier:
-  stressLeafDrop: 1.1
+  m_EditorClassIdentifier: 
   speciesName: Cherry
   scientificName: Prunus serrulata
   baseGrowSpeed: 0.25
   depthSpeedDecay: 0.85
   depthsPerYear: 3
+  growthSlowDay: 140
+  growthStopDay: 166
   baseElongation: 0.07
-  elongationDepthDecay: 0.70
+  elongationDepthDecay: 0.7
   branchSegmentLength: 2.5
   segmentLengthDecay: 0.82
   rootSegmentLength: 0.2
@@ -29,6 +30,7 @@ MonoBehaviour:
   oldWoodBudChance: 0.05
   backBudBaseChance: 0.16
   budType: 0
+  oppositeForkChance: 0.6
   apicalDominance: 0.35
   apicalVigorBonus: 0.15
   vigorDecayRate: 0.15
@@ -44,27 +46,46 @@ MonoBehaviour:
   fungalSpreadChance: 0.35
   fungalRecoveryRate: 0.07
   maxEnergyMultiplier: 1.5
+  canDefoliate: 1
   preferredWaterRetention: 0.52
   preferredDrainageRate: 0.58
   preferredAerationScore: 0.48
-  soilToleranceRange: 0.20
+  soilToleranceRange: 0.2
   soilMismatchPenalty: 0.04
-  growthSlowDay: 140
-  growthStopDay: 166
   repotTolerance: 0.45
   barkType: 16
+  youngBarkTexture: {fileID: 0}
+  matureBarkTexture: {fileID: 0}
+  barkVTiling: 0.4
+  barkTexelRes: 64
+  barkNoiseMode: 0
   youngBarkColor: {r: 0.55, g: 0.42, b: 0.38, a: 1}
   matureBarkColor: {r: 0.38, g: 0.28, b: 0.25, a: 1}
   rootNewGrowthColor: {r: 0.78, g: 0.68, b: 0.55, a: 1}
   leafSpringColor: {r: 0.22, g: 0.58, b: 0.14, a: 1}
-  leafAutumnColor: {r: 0.85, g: 0.38, b: 0.15, a: 1}
+  leafPrefab: {fileID: 507159711215920577, guid: e1ebb697294fdd244a92d59f036ad9a1, type: 3}
+  leafVariants:
+  - {fileID: 5273654417525207044, guid: c00fc37a23b4c5546819a71e64fae6c5, type: 3}
+  - {fileID: 4407580684031688233, guid: 7ff72d4de71a46945af05cfcf4c91605, type: 3}
+  leafModelScale: 0.0102
   leafGrowDays: 15
   leafBudBreakColor: {r: 0.78, g: 0.62, b: 0.45, a: 1}
+  youngTintStrength: 0.65
+  leafUnfold: 0
+  leafAutumnColor: {r: 0.85, g: 0.38, b: 0.15, a: 1}
   budColor: {r: 0.42, g: 0.24, b: 0.17, a: 1}
   budSwellColor: {r: 0.58, g: 0.64, b: 0.34, a: 1}
+  budFormColor: {r: 0.4, g: 0.47, b: 0.16, a: 1}
+  leafShape: 0
+  foliageType: 0
+  evergreen: 0
+  stressLeafDrop: 1.1
+  needlesPerTuft: 14
+  needleLength: 0.5
   bloomType: 1
   flowersPerCluster: 3
   fruitSetChance: 0.2
+  samaraSpread: 120
   flowerSpurs: 3
   fruitName: cherries
   bloomColor: {r: 1, g: 0.78, b: 0.86, a: 1}
@@ -78,3 +99,6 @@ MonoBehaviour:
   fruitRipeColor: {r: 0.62, g: 0.06, b: 0.12, a: 1}
   fruitSetMonth: 4
   fruitRipeMonth: 5
+  fruitPersist: 0
+  fruitSize: 1
+  coneShape: 0

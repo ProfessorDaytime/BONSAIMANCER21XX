@@ -23,15 +23,15 @@ public class WeatherVisuals : MonoBehaviour
     static Look LookOf(WeatherState s) => s switch
     {
         WeatherState.Overcast => new Look { light = 0.72f, shadow = 0.45f, rain = 0f,    tint = new Color(0.92f, 0.95f, 1f) },
-        WeatherState.Rain     => new Look { light = 0.60f, shadow = 0.35f, rain = 650f,  tint = new Color(0.88f, 0.92f, 1f) },
-        WeatherState.Storm    => new Look { light = 0.45f, shadow = 0.30f, rain = 1800f, tint = new Color(0.85f, 0.90f, 1f) },
+        WeatherState.Rain     => new Look { light = 0.60f, shadow = 0.35f, rain = 2400f, tint = new Color(0.88f, 0.92f, 1f) },
+        WeatherState.Storm    => new Look { light = 0.45f, shadow = 0.30f, rain = 6600f, tint = new Color(0.85f, 0.90f, 1f) },
         WeatherState.Heat     => new Look { light = 1.12f, shadow = 1f,    rain = 0f,    tint = new Color(1f, 0.93f, 0.82f) },
         _                     => new Look { light = 1f,    shadow = 1f,    rain = 0f,    tint = Color.white },
     };
 
-    const float RainHeight   = 2.4f;    // drops start this far above the tree's base…
+    const float RainHeight   = 4f;      // drops start this far above the tree's base…
     const float RainDepth    = 0.6f;    // …and vanish this far below it
-    const float RainRadius   = 2.6f;
+    const float RainRadius   = 5f;      // wide enough to fill the view zoomed out (2026-10-30)
     const float RainSpeed    = 7f;      // units per second
     const float ShelterGap   = 0.5f;    // under cover, rain falls only in the outer half
     const float EaseSeconds  = 4f;
@@ -134,7 +134,7 @@ public class WeatherVisuals : MonoBehaviour
         main.startSize       = 0.01f;
         main.startColor      = new Color(0.78f, 0.84f, 0.95f, 0.45f);
         main.simulationSpace = ParticleSystemSimulationSpace.World;
-        main.maxParticles    = 3000;
+        main.maxParticles    = 6000;
 
         var emission = ps.emission;
         emission.rateOverTime = 0f;

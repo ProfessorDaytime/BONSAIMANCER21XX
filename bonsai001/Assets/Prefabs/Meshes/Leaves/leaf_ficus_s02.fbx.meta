@@ -3,7 +3,17 @@ guid: 6c04a1f93c49c5c4eaec8dfe6eb3008a
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Leaf Green
+    second: {fileID: 2100000, guid: 9ab17a0adf5437a4ab2be9eba6f3cbfc, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Stem
+    second: {fileID: 2100000, guid: 5d606447878f9934bae83cfd15545ca5, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
@@ -30,7 +40,7 @@ ModelImporter:
     extraExposedTransformPaths: []
     extraUserProperties: []
     clipAnimations: []
-    isReadable: 0
+    isReadable: 1
   meshes:
     lODScreenPercentages: []
     globalScale: 1
