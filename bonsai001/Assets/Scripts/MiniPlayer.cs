@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
 using System;
@@ -13,8 +12,8 @@ using System.Runtime.InteropServices;
 /// shrinks to a small resizable window that shows only the tree, for leaving it growing on a
 /// second screen.
 /// <list type="bullet">
-/// <item>Every UI document and screen canvas is hidden; only a small "exit mini" button shows,
-/// and only while the mouse is moving over the window.</item>
+/// <item>Every UI document and screen canvas is hidden; the only UI left is a "Max" button in
+/// the bottom-left corner, where Mini was.</item>
 /// <item>The tool is put down so clicks can't trim or water; dragging still orbits and the wheel
 /// still zooms.</item>
 /// <item>On Windows the window stays on top of other windows. Elsewhere it is a plain window.</item>
@@ -32,7 +31,6 @@ public class MiniPlayer : MonoBehaviour
     const string K_W = "MiniPlayer.Width";
     const string K_H = "MiniPlayer.Height";
     const int    DefaultW = 420, DefaultH = 520;
-    const float  ButtonShowSeconds = 2f;
 
     static MiniPlayer instance;
 
@@ -45,7 +43,6 @@ public class MiniPlayer : MonoBehaviour
     readonly List<VisualElement> hidden = new List<VisualElement>();
     readonly List<Canvas> hiddenCanvases = new List<Canvas>();
     Button exitButton;
-    float  lastMouseMove;
 
     /// <summary>Shrinks to the mini window. <paramref name="host"/> is any element of the UI panel;
     /// the exit button goes in that panel's own root, outside every document.</summary>
@@ -92,13 +89,13 @@ public class MiniPlayer : MonoBehaviour
             hiddenCanvases.Add(c);
         }
 
-        exitButton = new Button(Exit) { name = "MiniPlayerExit", text = "Exit mini", tooltip = "Back to the full game (Esc)" };
+        exitButton = new Button(Exit) { name = "MiniPlayerExit", text = "Max", tooltip = "Back to the full game (Esc)" };
         var b = exitButton.style;
         b.position = Position.Absolute;
-        b.top      = 8;
-        b.right    = 8;
-        b.width    = 72;
-        b.height   = 28;
+        b.left     = 10;
+        b.bottom   = 10;
+        b.width    = 48;
+        b.height   = 32;
         b.fontSize = 11;
         b.paddingLeft = b.paddingRight = b.paddingTop = b.paddingBottom = 0;
         b.backgroundColor = new StyleColor(new Color(20f / 255f, 20f / 255f, 20f / 255f, 0.85f));
@@ -109,7 +106,6 @@ public class MiniPlayer : MonoBehaviour
         b.borderTopLeftRadius = b.borderTopRightRadius =
         b.borderBottomLeftRadius = b.borderBottomRightRadius = 4;
         host.panel.visualTree.Add(exitButton);
-        lastMouseMove = Time.unscaledTime;
 
         savedMode = Screen.fullScreenMode;
         savedW    = Screen.width;
@@ -154,15 +150,6 @@ public class MiniPlayer : MonoBehaviour
     void OnStateChanged(GameState s)
     {
         if (NeedsFullGame(s)) Exit();
-    }
-
-    void Update()
-    {
-        var mouse = Mouse.current;
-        if (mouse != null && mouse.delta.ReadValue().sqrMagnitude > 0f) lastMouseMove = Time.unscaledTime;
-        if (exitButton != null)
-            exitButton.style.display = Time.unscaledTime - lastMouseMove < ButtonShowSeconds
-                ? DisplayStyle.Flex : DisplayStyle.None;
     }
 
     void OnDestroy()
