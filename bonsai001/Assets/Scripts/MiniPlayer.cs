@@ -87,6 +87,7 @@ public class MiniPlayer : MonoBehaviour
         foreach (var c in FindObjectsByType<Canvas>())
         {
             if (!c.enabled || !c.isRootCanvas || c.renderMode == RenderMode.WorldSpace) continue;
+            if (ShowsPanel(c, panelSettings)) continue;
             c.enabled = false;
             hiddenCanvases.Add(c);
         }
@@ -145,6 +146,18 @@ public class MiniPlayer : MonoBehaviour
         hiddenCanvases.Clear();
         FindAnyObjectByType<CameraOrbit>()?.ResetView();
         Debug.Log($"[MiniPlayer] Off | back to {savedW}×{savedH} {savedMode}");
+    }
+
+    /// <summary>The UI documents are drawn into a texture that a canvas's RawImage puts on screen
+    /// (with the CRT pass). That canvas has to stay, or the Max button is there to click but never
+    /// seen; everything else it shows is already hidden.</summary>
+    static bool ShowsPanel(Canvas c, PanelSettings panelSettings)
+    {
+        var rt = panelSettings.targetTexture;
+        if (rt == null) return false;
+        foreach (var img in c.GetComponentsInChildren<UnityEngine.UI.RawImage>(true))
+            if (img.texture == rt) return true;
+        return false;
     }
 
     /// <summary>The new size lands at the end of the frame; frame the tree for it after that.</summary>
