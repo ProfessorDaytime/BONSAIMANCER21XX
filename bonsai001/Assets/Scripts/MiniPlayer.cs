@@ -40,26 +40,24 @@ public class MiniPlayer : MonoBehaviour
     // is just clearing that. Hiding the panels inside instead meant restoring their display, and
     // the ones hidden by an inline UXML display:none came back open (the old pause menu and the
     // calendar over Settings, 2026-10-31).
-    // The host document (the HUD) can't go: the Max button lives in it. It turns invisible
-    // instead, which children inherit and the button overrides; nothing else uses visibility.
-    // (A button in the panel's own root, outside every document, never drew.)
+    // The Max button has a document of its own, on top, in the HUD's panel. (Added straight to the
+    // panel's root, or kept in the invisible HUD with visibility overridden, it never drew.)
     readonly List<VisualElement> hidden = new List<VisualElement>();
-    VisualElement invisibleHost;
     readonly List<Canvas> hiddenCanvases = new List<Canvas>();
     Button exitButton;
 
-    /// <summary>Shrinks to the mini window. <paramref name="host"/> is the root of the document the
-    /// Max button goes in.</summary>
-    public static void Enter(VisualElement host)
+    /// <summary>Shrinks to the mini window. <paramref name="hud"/> lends its panel settings to the
+    /// Max button's document.</summary>
+    public static void Enter(UIDocument hud)
     {
-        if (instance != null || host?.panel == null) return;
+        if (instance != null || hud == null || hud.panelSettings == null) return;
         var s = GameManager.Instance != null ? GameManager.Instance.state : GameState.Idle;
         if (NeedsFullGame(s) || s == GameState.TipPause) return;
         if (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating) return;
 
         var go = new GameObject("_MiniPlayer");
         instance = go.AddComponent<MiniPlayer>();
-        instance.Begin(host);
+        instance.Begin(hud.panelSettings);
     }
 
     public static void Exit()
@@ -75,14 +73,14 @@ public class MiniPlayer : MonoBehaviour
         (GameManager.IsOverlayState(s) && s != GameState.TipPause) ||
         s == GameState.TreeDead || s == GameState.Menu || s == GameState.SpeciesSelect;
 
-    void Begin(VisualElement host)
+    void Begin(PanelSettings panelSettings)
     {
         ToolManager.Instance?.ClearTool();
 
         foreach (var doc in FindObjectsByType<UIDocument>())
         {
             var root = doc.rootVisualElement;
-            if (root == null || root == host || root.resolvedStyle.display == DisplayStyle.None) continue;
+            if (root == null || root.resolvedStyle.display == DisplayStyle.None) continue;
             root.style.display = DisplayStyle.None;
             hidden.Add(root);
         }
@@ -109,10 +107,14 @@ public class MiniPlayer : MonoBehaviour
         b.borderTopWidth = b.borderBottomWidth = b.borderLeftWidth = b.borderRightWidth = 1;
         b.borderTopLeftRadius = b.borderTopRightRadius =
         b.borderBottomLeftRadius = b.borderBottomRightRadius = 4;
-        b.visibility = Visibility.Visible;
-        host.style.visibility = Visibility.Hidden;
-        invisibleHost = host;
-        host.Add(exitButton);
+        var own = gameObject.AddComponent<UIDocument>();
+        own.panelSettings = panelSettings;
+        own.sortingOrder  = 1000;
+        var r = own.rootVisualElement.style;
+        r.position = Position.Absolute;
+        r.top = r.left = r.right = r.bottom = 0;
+        own.rootVisualElement.pickingMode = PickingMode.Ignore;
+        own.rootVisualElement.Add(exitButton);
 
         savedMode = Screen.fullScreenMode;
         savedW    = Screen.width;
@@ -138,7 +140,6 @@ public class MiniPlayer : MonoBehaviour
 
         exitButton?.RemoveFromHierarchy();
         foreach (var el in hidden) el.style.display = StyleKeyword.Null;
-        if (invisibleHost != null) invisibleHost.style.visibility = StyleKeyword.Null;
         foreach (var c in hiddenCanvases) if (c != null) c.enabled = true;
         hidden.Clear();
         hiddenCanvases.Clear();
@@ -153,6 +154,10 @@ public class MiniPlayer : MonoBehaviour
         yield return null;
         SetTopmost(topmost);
         FindAnyObjectByType<CameraOrbit>()?.ResetView();
+        if (exitButton != null)
+            Debug.Log($"[MiniPlayer] Max button | panel={(exitButton.panel != null)} rect={exitButton.worldBound} " +
+                      $"display={exitButton.resolvedStyle.display} visibility={exitButton.resolvedStyle.visibility} " +
+                      $"screen={Screen.width}×{Screen.height}");
     }
 
     void OnStateChanged(GameState s)

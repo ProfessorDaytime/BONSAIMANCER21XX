@@ -3401,7 +3401,7 @@ public class ButtonClicker : MonoBehaviour
     void SetupMiniPlayerButton()
     {
         if (calendarButton == null || calendarButton.parent == null) return;
-        var b = new Button(() => MiniPlayer.Enter(buttonDocument.rootVisualElement))
+        var b = new Button(() => MiniPlayer.Enter(buttonDocument))
             { name = "MiniPlayerButton", text = "Mini", tooltip = "Mini player: just the tree, in a small window" };
         b.style.position = Position.Absolute;
         b.style.left     = 10;
