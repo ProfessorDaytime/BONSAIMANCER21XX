@@ -389,6 +389,7 @@ public class ButtonClicker : MonoBehaviour
     {
         KeepUiInFrontOfScene();
         buttonDocument = GetComponent<UIDocument>();
+        GameSettings.MapRenderTextureInput(buttonDocument.panelSettings);
 
         if(buttonDocument == null){
             Debug.LogError("No button document found");

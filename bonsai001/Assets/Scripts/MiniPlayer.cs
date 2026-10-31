@@ -44,6 +44,7 @@ public class MiniPlayer : MonoBehaviour
     // panel's root, or kept in the invisible HUD with visibility overridden, it never drew.)
     readonly List<VisualElement> hidden = new List<VisualElement>();
     readonly List<Canvas> hiddenCanvases = new List<Canvas>();
+    readonly List<GameObject> hiddenObjects = new List<GameObject>();
     Button exitButton;
 
     /// <summary>Shrinks to the mini window. <paramref name="hud"/> lends its panel settings to the
@@ -87,7 +88,22 @@ public class MiniPlayer : MonoBehaviour
         foreach (var c in FindObjectsByType<Canvas>())
         {
             if (!c.enabled || !c.isRootCanvas || c.renderMode == RenderMode.WorldSpace) continue;
-            if (ShowsPanel(c, panelSettings)) continue;
+            if (ShowsPanel(c, panelSettings))
+            {
+                // It also holds the uGUI HUD (the date) and the old calendar: those go.
+                var rt = panelSettings.targetTexture;
+                foreach (Transform child in c.transform)
+                {
+                    if (!child.gameObject.activeSelf) continue;
+                    bool carriesUi = false;
+                    foreach (var img in child.GetComponentsInChildren<UnityEngine.UI.RawImage>(true))
+                        if (img.texture == rt) carriesUi = true;
+                    if (carriesUi) continue;
+                    child.gameObject.SetActive(false);
+                    hiddenObjects.Add(child.gameObject);
+                }
+                continue;
+            }
             c.enabled = false;
             hiddenCanvases.Add(c);
         }
@@ -142,6 +158,8 @@ public class MiniPlayer : MonoBehaviour
         exitButton?.RemoveFromHierarchy();
         foreach (var el in hidden) el.style.display = StyleKeyword.Null;
         foreach (var c in hiddenCanvases) if (c != null) c.enabled = true;
+        foreach (var go in hiddenObjects) if (go != null) go.SetActive(true);
+        hiddenObjects.Clear();
         hidden.Clear();
         hiddenCanvases.Clear();
         FindAnyObjectByType<CameraOrbit>()?.ResetView();

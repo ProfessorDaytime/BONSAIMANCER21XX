@@ -396,6 +396,7 @@ public static class GameSettings
         {
             var ps = doc.panelSettings;
             if (ps == null) continue;
+            MapRenderTextureInput(ps);
 
             if (!copyBaseScale.ContainsKey(ps))
             {
@@ -407,11 +408,28 @@ public static class GameSettings
                     scaledCopyOf[ps]    = copy;
                     copyBaseScale[copy] = ps.scale;
                 }
+                MapRenderTextureInput(copy);   // a delegate, so Instantiate doesn't carry it over
                 doc.panelSettings = copy;
                 ps = copy;
             }
             ps.scale = copyBaseScale[ps] * k;
         }
+    }
+
+    /// <summary>
+    /// A panel drawn into a render texture (the in-game UI: UIToolkitRT, 1920×1080, stretched
+    /// over the window by a canvas RawImage) takes screen positions as texture pixels by default,
+    /// so clicks only landed right while the window was exactly the texture's size. Resizing the
+    /// window, or the mini player, put every button somewhere else (2026-10-31). Scales the
+    /// position from the window to the texture.
+    /// </summary>
+    public static void MapRenderTextureInput(PanelSettings ps)
+    {
+        if (ps == null || ps.targetTexture == null) return;
+        var rt = ps.targetTexture;
+        ps.SetScreenToPanelSpaceFunction(p => new Vector2(
+            p.x * rt.width  / Mathf.Max(1, Screen.width),
+            p.y * rt.height / Mathf.Max(1, Screen.height)));
     }
 
     /// <summary>Per-tool cursors (trimmer, watering can). Off = the system arrow everywhere.</summary>
