@@ -44,7 +44,7 @@ public class MiniPlayer : MonoBehaviour
     // panel's root, or kept in the invisible HUD with visibility overridden, it never drew.)
     readonly List<VisualElement> hidden = new List<VisualElement>();
     readonly List<Canvas> hiddenCanvases = new List<Canvas>();
-    readonly List<GameObject> hiddenObjects = new List<GameObject>();
+    readonly List<UnityEngine.UI.Graphic> hiddenGraphics = new List<UnityEngine.UI.Graphic>();
     Button exitButton;
 
     /// <summary>Shrinks to the mini window. <paramref name="hud"/> lends its panel settings to the
@@ -90,17 +90,16 @@ public class MiniPlayer : MonoBehaviour
             if (!c.enabled || !c.isRootCanvas || c.renderMode == RenderMode.WorldSpace) continue;
             if (ShowsPanel(c, panelSettings))
             {
-                // It also holds the uGUI HUD (the date) and the old calendar: those go.
+                // It also draws uGUI (the date, the old calendar): switch off just those graphics.
+                // Not their objects: MainUI under it carries the HUD's UIDocument and
+                // ButtonClicker, and deactivating it rebuilt the HUD from scratch, losing the
+                // AP chip and the theme (2026-10-31).
                 var rt = panelSettings.targetTexture;
-                foreach (Transform child in c.transform)
+                foreach (var g in c.GetComponentsInChildren<UnityEngine.UI.Graphic>())
                 {
-                    if (!child.gameObject.activeSelf) continue;
-                    bool carriesUi = false;
-                    foreach (var img in child.GetComponentsInChildren<UnityEngine.UI.RawImage>(true))
-                        if (img.texture == rt) carriesUi = true;
-                    if (carriesUi) continue;
-                    child.gameObject.SetActive(false);
-                    hiddenObjects.Add(child.gameObject);
+                    if (!g.enabled || (g is UnityEngine.UI.RawImage ri && ri.texture == rt)) continue;
+                    g.enabled = false;
+                    hiddenGraphics.Add(g);
                 }
                 continue;
             }
@@ -158,8 +157,8 @@ public class MiniPlayer : MonoBehaviour
         exitButton?.RemoveFromHierarchy();
         foreach (var el in hidden) el.style.display = StyleKeyword.Null;
         foreach (var c in hiddenCanvases) if (c != null) c.enabled = true;
-        foreach (var go in hiddenObjects) if (go != null) go.SetActive(true);
-        hiddenObjects.Clear();
+        foreach (var g in hiddenGraphics) if (g != null) g.enabled = true;
+        hiddenGraphics.Clear();
         hidden.Clear();
         hiddenCanvases.Clear();
         FindAnyObjectByType<CameraOrbit>()?.ResetView();
