@@ -3395,7 +3395,7 @@ public class ButtonClicker : MonoBehaviour
     }
 
     /// <summary>
-    /// Pop-out button (2026-10-31), above Shelter in the right-hand column: shrinks the game to the
+    /// Pop-out button (2026-10-31), in the bottom-left corner: shrinks the game to the
     /// tree-only mini window (<see cref="MiniPlayer"/>).
     /// </summary>
     void SetupMiniPlayerButton()
@@ -3404,8 +3404,8 @@ public class ButtonClicker : MonoBehaviour
         var b = new Button(() => MiniPlayer.Enter(buttonDocument.rootVisualElement))
             { name = "MiniPlayerButton", text = "Mini", tooltip = "Mini player: just the tree, in a small window" };
         b.style.position = Position.Absolute;
-        b.style.right    = 10;
-        b.style.bottom   = 250;
+        b.style.left     = 10;
+        b.style.bottom   = 10;
         b.style.width    = 48;
         b.style.height   = 32;
         b.style.fontSize = 11;
