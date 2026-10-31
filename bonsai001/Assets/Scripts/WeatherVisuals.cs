@@ -34,7 +34,11 @@ public class WeatherVisuals : MonoBehaviour
     const float RainRadius   = 5f;      // wide enough to fill the view zoomed out (2026-10-30)
     const float RainSpeed    = 7f;      // units per second
     const float ShelterGap   = 0.5f;    // under cover, rain falls only in the outer half
-    const float EaseSeconds  = 4f;
+    // Weather eases in and out over half a second, or a tenth of an in-game day if that's sooner:
+    // at Fast speed a whole rain spell passes in under a second, and a 4-second ease kept it
+    // raining through the dry spells between (play test 2026-10-31).
+    const float EaseSeconds  = 0.5f;
+    const float EaseDays     = 0.1f;
 
     class Lit { public Light light; public float intensity, shadow; public Color color; }
     static readonly List<Lit> lit = new List<Lit>();
@@ -75,7 +79,8 @@ public class WeatherVisuals : MonoBehaviour
         if (wm == null) return;
 
         var   look = LookOf(wm.state);
-        float k    = 1f - Mathf.Exp(-3f * Time.unscaledDeltaTime / EaseSeconds);
+        float k    = 1f - Mathf.Exp(-3f * Mathf.Max(Time.unscaledDeltaTime / EaseSeconds,
+                                                   GameManager.InGameDaysThisFrame / EaseDays));
         lightNow   = Mathf.Lerp(lightNow,  look.light,  k);
         shadowNow  = Mathf.Lerp(shadowNow, look.shadow, k);
         rainNow    = Mathf.Lerp(rainNow,   look.rain,   k);
@@ -110,7 +115,7 @@ public class WeatherVisuals : MonoBehaviour
         if (tree != null) rain.transform.position = tree.transform.position + Vector3.up * RainHeight;
 
         var emission = rain.emission;
-        emission.rateOverTime = rainNow < 1f ? 0f : rainNow;
+        emission.rateOverTime = rainNow < 50f ? 0f : rainNow;   // cut the last thin drizzle of the ease
         var shape = rain.shape;
         shape.radiusThickness = WeatherManager.Sheltered ? ShelterGap : 1f;
     }
