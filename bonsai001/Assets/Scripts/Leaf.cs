@@ -55,7 +55,7 @@ public class Leaf : MonoBehaviour
     bool  isInFallSeason    = false;
 
     // Number of in-game days for a speed-1 leaf to go fully green→brown.
-    const float FALL_COLOR_DAYS = 25f;
+    internal const float FALL_COLOR_DAYS = 25f;
 
     // ── Grow-in ───────────────────────────────────────────────────────────────
     // Leaves emerge at GROW_START_FRACTION of full size in a paler green and expand

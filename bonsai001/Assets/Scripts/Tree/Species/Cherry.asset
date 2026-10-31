@@ -67,7 +67,7 @@ MonoBehaviour:
   leafVariants:
   - {fileID: 5273654417525207044, guid: c00fc37a23b4c5546819a71e64fae6c5, type: 3}
   - {fileID: 4407580684031688233, guid: 7ff72d4de71a46945af05cfcf4c91605, type: 3}
-  leafModelScale: 0.0102
+  leafModelScale: 0.0085
   leafGrowDays: 15
   leafBudBreakColor: {r: 0.78, g: 0.62, b: 0.45, a: 1}
   youngTintStrength: 0.65

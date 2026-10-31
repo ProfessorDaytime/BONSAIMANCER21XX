@@ -13,6 +13,10 @@ Shader "Custom/TreeBud"
         _MidTint         ("Mid Tint",         Color)      = (0.78,0.75,0.72,1)
         // Off for single-sheet geometry (sepals, samara wings): back faces light with the flipped normal.
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
+        // Thin sheets lit from behind glow with this share of the light (petals; 0 for buds).
+        _Translucency    ("Translucency",     Range(0,1)) = 0
+        // Lifts the shadow and mid bands toward full colour (flowers read bright in shade).
+        _ShadowLift      ("Shadow Lift",      Range(0,1)) = 0
     }
 
     SubShader
@@ -71,6 +75,8 @@ Shader "Custom/TreeBud"
             float  _MidThreshold;
             float4 _ShadowTint;
             float4 _MidTint;
+            float  _Translucency;
+            float  _ShadowLift;
         CBUFFER_END
         ENDHLSL
 
@@ -117,11 +123,12 @@ Shader "Custom/TreeBud"
             {
                 float3 nrm      = normalize(IN.nrmWS) * IS_FRONT_VFACE(face, 1.0, -1.0);
                 Light mainLight = GetMainLight(TransformWorldToShadowCoord(IN.posWS));
-                float litVal    = saturate(dot(nrm, normalize(mainLight.direction)))
-                                  * mainLight.shadowAttenuation;
+                float ndl       = dot(nrm, normalize(mainLight.direction));
+                float litVal    = saturate(max(ndl, -ndl * _Translucency)) * mainLight.shadowAttenuation;
                 half3 tint = litVal < _ShadowThreshold ? _ShadowTint.rgb
                            : litVal < _MidThreshold    ? _MidTint.rgb
                            :                             half3(1, 1, 1);
+                tint = lerp(tint, half3(1, 1, 1), _ShadowLift);
                 return half4(IN.color.rgb * mainLight.color.rgb * tint, 1);
             }
             ENDHLSL

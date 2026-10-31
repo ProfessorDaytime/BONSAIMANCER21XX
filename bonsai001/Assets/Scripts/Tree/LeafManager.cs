@@ -374,6 +374,7 @@ public class LeafManager : MonoBehaviour
             ProcessUnfurls();
         }
         UpdateOpeningBuds();
+        UpdateRetiring();
 
         // Evergreens shed a trickle of old needles all year — not just in autumn.
         if (IsNeedleSpecies && IsEvergreen)
@@ -1082,6 +1083,9 @@ public class LeafManager : MonoBehaviour
         nodeLeaves.Clear();
         allLeaves.Clear();
         listDirty = false;
+        foreach (var (go, _) in retiring)
+            if (go != null) Destroy(go);
+        retiring.Clear();
 
         pendingUnfurls.Clear();
         foreach (var b in openingBuds.Values)
@@ -1166,6 +1170,9 @@ public class LeafManager : MonoBehaviour
         nodeLeaves.Clear();
         allLeaves.Clear();
         listDirty = false;
+        foreach (var (go, _) in retiring)
+            if (go != null) Destroy(go);
+        retiring.Clear();
 
         pendingUnfurls.Clear();
         foreach (var ob in openingBuds.Values)
@@ -1216,14 +1223,56 @@ public class LeafManager : MonoBehaviour
         }
 
         var toRemove = new List<int>();
+        var toRetire = new List<int>();
         foreach (var kvp in nodeLeaves)
         {
             if (!liveUntrimmed.Contains(kvp.Key)) { toRemove.Add(kvp.Key); continue; }
-            if (liveTerminals != null && !liveTerminals.Contains(kvp.Key)) toRemove.Add(kvp.Key);
+            if (liveTerminals != null && !liveTerminals.Contains(kvp.Key)) toRetire.Add(kvp.Key);
         }
 
         foreach (int id in toRemove)
             StartFallingCluster(id);
+        foreach (int id in toRetire)
+            RetireCluster(id);
+    }
+
+    // Evergreen foliage on tips that grew on, dropping over the weeks after spring (2026-10-31).
+    const float RetireMinDays = 10f, RetireMaxDays = 75f;
+    readonly List<(GameObject go, float day)> retiring = new List<(GameObject, float)>();
+
+    /// <summary>
+    /// An evergreen tip that grew a new shoot hands its foliage on: its old leaves yellow and drop
+    /// one by one over the next couple of months (needle tufts simply drop), as an evergreen's do.
+    /// Dropping them all on the first day of spring shed a third of a ficus at once (play test
+    /// 2026-10-31).
+    /// </summary>
+    void RetireCluster(int nodeId)
+    {
+        if (!nodeLeaves.TryGetValue(nodeId, out var list)) return;
+        float now = DayNow();
+        foreach (var go in list)
+        {
+            if (go == null) continue;
+            float days = Random.Range(RetireMinDays, RetireMaxDays);
+            if (!IsNeedleSpecies) go.GetComponent<Leaf>()?.StartLeafFallSeason(Leaf.FALL_COLOR_DAYS / days);
+            retiring.Add((go, now + days));
+        }
+        nodeLeaves.Remove(nodeId);
+        listDirty = true;
+    }
+
+    void UpdateRetiring()
+    {
+        if (retiring.Count == 0) return;
+        float now = DayNow();
+        for (int i = retiring.Count - 1; i >= 0; i--)
+        {
+            var (go, day) = retiring[i];
+            if (go == null) { retiring.RemoveAt(i); continue; }   // fell by itself, fully yellowed
+            if (now < day) continue;
+            go.GetComponent<Leaf>()?.StartFalling();
+            retiring.RemoveAt(i);
+        }
     }
 
     static bool HasLiveLeaf(List<GameObject> list)

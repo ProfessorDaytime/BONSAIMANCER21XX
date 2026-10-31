@@ -254,6 +254,9 @@ public partial class FlowerVisuals : MonoBehaviour
         {
             material = new Material(budMat) { name = "TreeFlowers" };
             material.SetFloat("_Cull", (float)CullMode.Off);
+            // Petals are thin: they glow when lit from behind and stay bright in shade (2026-10-31).
+            material.SetFloat("_Translucency", 0.75f);
+            material.SetFloat("_ShadowLift", 0.4f);
             mr.sharedMaterial = material;
         }
         else Debug.LogWarning("[Flowers] Resources/TreeBudMaterial is missing; flowers and fruit won't draw.");
