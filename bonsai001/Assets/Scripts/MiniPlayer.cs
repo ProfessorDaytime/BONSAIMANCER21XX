@@ -38,18 +38,20 @@ public class MiniPlayer : MonoBehaviour
 
     FullScreenMode savedMode;
     int            savedW, savedH;
-    // The inline style as it was, keyword included: most panels have no inline display and are
-    // shown or hidden by their USS, so restoring the bare value (Flex) would force them all open.
-    readonly List<(VisualElement el, StyleEnum<DisplayStyle> display)> hidden = new List<(VisualElement, StyleEnum<DisplayStyle>)>();
+    // Whole documents are hidden at their root, which nothing else styles, so showing them again
+    // is just clearing that. Hiding the panels inside instead meant restoring their display, and
+    // the ones hidden by an inline UXML display:none came back open (the old pause menu and the
+    // calendar over Settings, 2026-10-31).
+    readonly List<VisualElement> hidden = new List<VisualElement>();
     readonly List<Canvas> hiddenCanvases = new List<Canvas>();
     Button exitButton;
     float  lastMouseMove;
 
-    /// <summary>Shrinks to the mini window. <paramref name="host"/> is the panel root the exit
-    /// button goes in.</summary>
+    /// <summary>Shrinks to the mini window. <paramref name="host"/> is any element of the UI panel;
+    /// the exit button goes in that panel's own root, outside every document.</summary>
     public static void Enter(VisualElement host)
     {
-        if (instance != null || host == null) return;
+        if (instance != null || host?.panel == null) return;
         var s = GameManager.Instance != null ? GameManager.Instance.state : GameState.Idle;
         if (NeedsFullGame(s) || s == GameState.TipPause) return;
         if (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating) return;
@@ -79,12 +81,9 @@ public class MiniPlayer : MonoBehaviour
         foreach (var doc in FindObjectsByType<UIDocument>())
         {
             var root = doc.rootVisualElement;
-            if (root == null) continue;
-            foreach (var child in root.Children())
-            {
-                hidden.Add((child, child.style.display));
-                child.style.display = DisplayStyle.None;
-            }
+            if (root == null || root.resolvedStyle.display == DisplayStyle.None) continue;
+            root.style.display = DisplayStyle.None;
+            hidden.Add(root);
         }
         foreach (var c in FindObjectsByType<Canvas>())
         {
@@ -109,7 +108,7 @@ public class MiniPlayer : MonoBehaviour
         b.borderTopWidth = b.borderBottomWidth = b.borderLeftWidth = b.borderRightWidth = 1;
         b.borderTopLeftRadius = b.borderTopRightRadius =
         b.borderBottomLeftRadius = b.borderBottomRightRadius = 4;
-        host.Add(exitButton);
+        host.panel.visualTree.Add(exitButton);
         lastMouseMove = Time.unscaledTime;
 
         savedMode = Screen.fullScreenMode;
@@ -135,7 +134,7 @@ public class MiniPlayer : MonoBehaviour
         Screen.SetResolution(savedW, savedH, savedMode);
 
         exitButton?.RemoveFromHierarchy();
-        foreach (var (el, display) in hidden) el.style.display = display;
+        foreach (var el in hidden) el.style.display = StyleKeyword.Null;
         foreach (var c in hiddenCanvases) if (c != null) c.enabled = true;
         hidden.Clear();
         hiddenCanvases.Clear();
