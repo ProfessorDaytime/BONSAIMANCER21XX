@@ -499,6 +499,7 @@ public class ButtonClicker : MonoBehaviour
 
         calendarButton?.RegisterCallback<ClickEvent>(_ => OpenCalendar());
         SetupResetCameraButton(root);
+        SetupMiniPlayerButton();
         SetupForecastAndShelter(root);
         SetupQuickStartStopButton(root);
         calCloseButton?.RegisterCallback<ClickEvent>(_ => CloseCalendar());
@@ -1048,7 +1049,10 @@ public class ButtonClicker : MonoBehaviour
         }
 
         // While Settings waits for a key to rebind, Esc cancels that instead of closing the menu.
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame && !KeyBindings.Capturing)
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame && !KeyBindings.Capturing
+            && MiniPlayer.Active)
+            MiniPlayer.Exit();
+        else if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame && !KeyBindings.Capturing)
         {
             var s = GameManager.Instance?.state ?? GameState.Idle;
             // Settings sits above everything, so it consumes Esc first. In pre-start it is the
@@ -1332,6 +1336,8 @@ public class ButtonClicker : MonoBehaviour
         // fast-grow waiting for a click the player isn't there to give — and the tip
         // burns its one-time id on a moment the player never saw (2026-07-02).
         if (QuickStartManager.Instance != null && QuickStartManager.Instance.IsGenerating) return false;
+        // Nor in the mini player, where the tip would be hidden and the pause would look like a hang.
+        if (MiniPlayer.Active) return false;
         if (shownTooltips == null || shownTooltips.Contains(id)) return false;
         if (GameManager.Instance == null) return false;
         // Don't clobber an active tooltip — ShowTooltip would return early anyway,
@@ -3378,6 +3384,31 @@ public class ButtonClicker : MonoBehaviour
         b.style.width    = 48;
         b.style.height   = 32;
         b.style.fontSize = 16;
+        b.style.backgroundColor = new StyleColor(new Color(20f / 255f, 20f / 255f, 20f / 255f, 0.85f));
+        b.style.color           = new StyleColor(new Color(229f / 255f, 162f / 255f, 16f / 255f));
+        b.style.borderTopColor = b.style.borderBottomColor =
+        b.style.borderLeftColor = b.style.borderRightColor = new StyleColor(new Color(80f / 255f, 80f / 255f, 80f / 255f));
+        b.style.borderTopWidth = b.style.borderBottomWidth = b.style.borderLeftWidth = b.style.borderRightWidth = 1;
+        b.style.borderTopLeftRadius = b.style.borderTopRightRadius =
+        b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 4;
+        calendarButton.parent.Add(b);
+    }
+
+    /// <summary>
+    /// Pop-out button (2026-10-31), above Shelter in the right-hand column: shrinks the game to the
+    /// tree-only mini window (<see cref="MiniPlayer"/>).
+    /// </summary>
+    void SetupMiniPlayerButton()
+    {
+        if (calendarButton == null || calendarButton.parent == null) return;
+        var b = new Button(() => MiniPlayer.Enter(buttonDocument.rootVisualElement))
+            { name = "MiniPlayerButton", text = "Mini", tooltip = "Mini player: just the tree, in a small window" };
+        b.style.position = Position.Absolute;
+        b.style.right    = 10;
+        b.style.bottom   = 250;
+        b.style.width    = 48;
+        b.style.height   = 32;
+        b.style.fontSize = 11;
         b.style.backgroundColor = new StyleColor(new Color(20f / 255f, 20f / 255f, 20f / 255f, 0.85f));
         b.style.color           = new StyleColor(new Color(229f / 255f, 162f / 255f, 16f / 255f));
         b.style.borderTopColor = b.style.borderBottomColor =

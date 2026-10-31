@@ -408,6 +408,10 @@ public partial class TreeSkeleton : MonoBehaviour
                 float targetR = (node.isRoot ? rootTerminalRadius : terminalRadius) * globalSegmentScale;
                 float rampedR = targetR * Mathf.Clamp01(node.length / node.targetLength);
                 node.radius = Mathf.Max(rampedR, targetR * 0.1f);
+                // The ramp only climbs, so ratchet it: a growing node with only root children
+                // (the seedling trunk) otherwise reads as zero in the daily RecalculateRadii,
+                // which skips roots, and the sprout blinked out until the next step (2026-10-31).
+                node.minRadius = Mathf.Max(node.minRadius, node.radius);
             }
         }
 
