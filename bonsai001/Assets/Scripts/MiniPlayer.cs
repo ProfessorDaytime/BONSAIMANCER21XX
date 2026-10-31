@@ -38,7 +38,9 @@ public class MiniPlayer : MonoBehaviour
 
     FullScreenMode savedMode;
     int            savedW, savedH;
-    readonly List<(VisualElement el, DisplayStyle display)> hidden = new List<(VisualElement, DisplayStyle)>();
+    // The inline style as it was, keyword included: most panels have no inline display and are
+    // shown or hidden by their USS, so restoring the bare value (Flex) would force them all open.
+    readonly List<(VisualElement el, StyleEnum<DisplayStyle> display)> hidden = new List<(VisualElement, StyleEnum<DisplayStyle>)>();
     readonly List<Canvas> hiddenCanvases = new List<Canvas>();
     Button exitButton;
     float  lastMouseMove;
@@ -80,7 +82,7 @@ public class MiniPlayer : MonoBehaviour
             if (root == null) continue;
             foreach (var child in root.Children())
             {
-                hidden.Add((child, child.style.display.value));
+                hidden.Add((child, child.style.display));
                 child.style.display = DisplayStyle.None;
             }
         }
