@@ -342,7 +342,27 @@ public class BudVisuals : MonoBehaviour
             AddTipPair(n, 0f, sp.budColor, Lighter(sp.budColor), 1f);
             AddLateralPair(n, 0f, sp.budColor, Lighter(sp.budColor), 1f);
         }
-        var m = new Mesh { name = opening ? "BudOpening" : "BudsDormant" };
+        return ReferenceMesh(opening ? "BudOpening" : "BudsDormant");
+    }
+
+    /// <summary>Editor export: one dormant tip bud, or one bud scale at full spread, base at the
+    /// origin along +Z, sized for a typical tip (r = 0.006).</summary>
+    internal Mesh BuildReferencePart(TreeSpecies sp, bool scale)
+    {
+        verts.Clear(); normals.Clear(); colors.Clear(); flex.Clear(); tris.Clear();
+        const float r = 0.006f;
+        if (scale)
+            AddBud(Vector3.zero, Vector3.forward, BudLength(r, 1f) * 1.3f, BudWidth(r, 1f) * 0.8f,
+                   sp.budSwellColor, Lighter(sp.budSwellColor), Vector2.one);
+        else
+            AddBud(Vector3.zero, Vector3.forward, BudLength(r, 0f), BudWidth(r, 0f),
+                   sp.budColor, Lighter(sp.budColor), Vector2.one);
+        return ReferenceMesh(scale ? "BudScale" : "LeafBud");
+    }
+
+    Mesh ReferenceMesh(string name)
+    {
+        var m = new Mesh { name = name };
         m.SetVertices(verts);
         m.SetNormals(normals);
         m.SetColors(colors);

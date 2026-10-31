@@ -142,6 +142,11 @@ public partial class FlowerVisuals
         AddKite(geo, Vector3.zero, Vector3.forward, Vector3.right, ConeLength * 0.22f, 0.012f, Color.gray * 0.75f, Color.gray, fx);
         Take("part_cone_scale", "One cone scale, along +Z. The game rings six per tier round a cone's core; they tilt out as a pine or spruce cone opens.");
 
+        TakeMesh("part_leaf_bud", "One dormant maple leaf bud, base at the origin, along +Z, sized for a typical tip. The game sets a V-pair at each tip, 25° either side of the shoot, and a smaller pair (0.7×) halfway back; they swell 1.7× longer in February.",
+                 buds.BuildReferencePart(jm, false));
+        TakeMesh("part_bud_scale", "One bud scale at full size, base at the origin, along +Z. A breaking bud splits into four round the new shoot, spreading from 20° to 70°, then shrinking away. Today it's the bud's spindle shape; a curved shell (the inner face toward the shoot, +Y here) would look truer.",
+                 buds.BuildReferencePart(jm, true));
+
         foreach (var (file, name) in new[] { ("pine", "Japanese Black Pine"), ("spruce", "Ezo Spruce"),
                                              ("cedar", "Atlas Cedar"), ("round", "Japanese Cedar") })
         {
