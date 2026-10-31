@@ -69,10 +69,12 @@ public partial class FlowerVisuals
                 float theta = Mathf.Lerp(12f, 75f, o) + 25f * w;   // opens, then folds back as it withers
                 Color sepal = Color.Lerp(Color.Lerp(sp.bloomColor * 0.9f, sp.bloomColor, o), Withered, w);
                 Color heart = Color.Lerp(sepal, FlowerHeart, 0.8f * o * (1f - w));
-                AddFlower(geo, f, ped, theta, SepalLength * size, SepalWidth * size, heart, sepal, fxEnd, az);
+                AddFlower(geo, f, ped, theta, SepalLength * size, SepalWidth * size, heart, sepal, fxEnd, az,
+                          "part_maple_sepal", FlowerParts.Key(n.id, n.bloomYear, 10 * i));
             }
             if (show0 || show1 || spawn0 || spawn1)
-                AddSamaraPair(sp, f, down, az, g, ripe, show0, show1, spawn0, spawn1, fxEnd);
+                AddSamaraPair(sp, f, down, az, g, ripe, show0, show1, spawn0, spawn1, fxEnd,
+                              FlowerParts.Key(n.id, n.bloomYear, 700 + 2 * i));
         }
 
         if (!any) return;
@@ -83,7 +85,7 @@ public partial class FlowerVisuals
     /// <summary>A pair of samaras joined at <paramref name="joint"/>, wings spread
     /// <c>samaraSpread</c> apart in one plane, across the pedicel's swing.</summary>
     void AddSamaraPair(TreeSpecies sp, Vector3 joint, Vector3 down, float az, float g, float ripe,
-                       bool show0, bool show1, bool spawn0, bool spawn1, Vector2 fx)
+                       bool show0, bool show1, bool spawn0, bool spawn1, Vector2 fx, int key)
     {
         Vector3 h     = BudVisuals.Side(down, az + 90f);
         Vector3 plane = Vector3.Cross(h, down).normalized;
@@ -98,7 +100,11 @@ public partial class FlowerVisuals
             Vector3 dir   = (down * Mathf.Cos(half) + h * (s * Mathf.Sin(half))).normalized;
             Vector3 outer = Vector3.Cross(plane, dir).normalized;
             if (Vector3.Dot(outer, h * s) < 0f) outer = -outer;
-            if (k == 0 ? show0 : show1)
+            // A model grows as a whole; the code shape grows its seed first, then the wing.
+            if ((k == 0 ? show0 : show1)
+                && !geo.Model("part_maple_samara", key + k, joint, Quaternion.LookRotation(dir, Vector3.Cross(dir, outer)),
+                              (SeedLength * 0.7f + WingLength) * Mathf.Lerp(0.3f, 1f, g),
+                              wing * 0.8f, Color.Lerp(wing, Color.white, 0.15f), seed, fx))
             {
                 AddSpindle(geo, joint, dir, sLen, sWid, seed, fx);
                 if (wLen > 0.0005f && wWid > 0.0002f)
@@ -219,17 +225,30 @@ public partial class FlowerVisuals
         {
             float pd = fall + Hash01(c.n.id, c.n.bloomYear, 100 + c.i * 5 + p) * PetalDrift;
             if (c.now < pd)
-                AddPetal(geo, fpos, ped, az0 + 72f * p, theta, cup, PetalLength * c.e, PetalWidth * c.e, blush, edge, fxEnd);
+                AddPetal(geo, fpos, ped, az0 + 72f * p, theta, cup, PetalLength * c.e, PetalWidth * c.e, blush, edge, fxEnd,
+                         FlowerParts.Key(c.n.id, c.n.bloomYear, 100 + c.i * 5 + p));
             else if (c.spawn && lastBuildNow < pd)
                 QueuePetal(fpos, ped, az0 + 72f * p, theta, sp);
         }
         // Heart: stamens while in flower, withering once the petals have gone.
         if (heartOn && o > 0f)
-            AddStar(geo, fpos + ped * 0.002f, ped, 0.007f * c.e * (1f - wither) * Mathf.Clamp01(o * 2f),
-                    Color.Lerp(Stamens, Withered, wither), fxEnd, az0);
+        {
+            Vector3 at  = fpos + ped * 0.002f;
+            float   r   = 0.007f * c.e * (1f - wither) * Mathf.Clamp01(o * 2f);
+            Color   col = Color.Lerp(Stamens, Withered, wither);
+            if (!geo.Model("part_cherry_stamens", FlowerParts.Key(c.n.id, c.n.bloomYear, 300 + c.i),
+                           at, Quaternion.LookRotation(BudVisuals.Side(ped, az0), ped), r,
+                           Color.Lerp(col, Color.white, 0.2f), col, col, fxEnd))
+                AddStar(geo, at, ped, r, col, fxEnd, az0);
+        }
         if (fruitOn)
-            AddBerry(geo, fpos, c.down, CherryRadius * Mathf.Max(0.1f, sp.fruitSize) * Mathf.Lerp(0.15f, 1f, c.g),
-                     FruitColour(sp, c.ripe), fxEnd);
+        {
+            float r   = CherryRadius * Mathf.Max(0.1f, sp.fruitSize) * Mathf.Lerp(0.15f, 1f, c.g);
+            Color col = FruitColour(sp, c.ripe);
+            if (!geo.Model("part_cherry_fruit", FlowerParts.Key(c.n.id, c.n.bloomYear, 400 + c.i), fpos,
+                           HangRot(c.down, radial), r * 1.85f, Color.Lerp(col, Color.white, 0.15f), col * 0.9f, StalkGreen, fxEnd))
+                AddBerry(geo, fpos, c.down, r, col, fxEnd);
+        }
         if (letGo) QueuePiece(fpos, c.down, radial, Piece.Cherry, sp.fruitRipeColor, sp);
     }
 
@@ -272,7 +291,7 @@ public partial class FlowerVisuals
             Color sepal = Color.Lerp(sp.bloomColor, Withered, w);
             Color heart = Color.Lerp(sepal, FlowerHeart, 0.5f * o * (1f - w));
             AddFlower(geo, f, ped, Mathf.Lerp(15f, 70f, o) + 20f * w, ElmSepal * size, ElmSepal * 0.6f * size,
-                      heart, sepal, fxEnd, az);
+                      heart, sepal, fxEnd, az, "part_elm_sepal", FlowerParts.Key(c.n.id, c.n.bloomYear, 10 * c.i));
         }
         if (on || letGo)
         {
@@ -452,7 +471,9 @@ public partial class FlowerVisuals
             {
                 // Figs sit right on the twig, in pairs, pointing out.
                 Vector3 d = (radial + c.dir * 0.3f).normalized;
-                if (on)    AddLathe(geo, c.spur, d, FigLength * size, FigWidth * size, PearT, PearR, 6, col, col, c.fx, c.fx);
+                if (on && !geo.Model("part_fig", FlowerParts.Key(c.n.id, c.n.bloomYear, 500 + c.i), c.spur,
+                                     Quaternion.LookRotation(d, c.dir), FigLength * size, col, col, col, c.fx))
+                    AddLathe(geo, c.spur, d, FigLength * size, FigWidth * size, PearT, PearR, 6, col, col, c.fx, c.fx);
                 if (letGo) QueuePiece(c.spur, d, BudVisuals.Side(d, 0f), Piece.Fig, sp.fruitRipeColor, sp);
                 break;
             }

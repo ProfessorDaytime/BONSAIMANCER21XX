@@ -140,29 +140,34 @@ public partial class FlowerVisuals
     }
 
     /// <summary>A small flower facing along <paramref name="dir"/>: five sepals, closed into a
-    /// pointed bud at theta ≈ 12° and spread into a star at 75°, pale at the heart.</summary>
+    /// pointed bud at theta ≈ 12° and spread into a star at 75°, pale at the heart. Each sepal is
+    /// <paramref name="part"/>'s model if it has one, its inner face (+Y) toward the flower's front.</summary>
     static void AddFlower(Geo g, Vector3 at, Vector3 dir, float theta, float len, float wid,
-                          Color heart, Color sepal, Vector2 fx, float az)
+                          Color heart, Color sepal, Vector2 fx, float az, string part, int key)
     {
         if (len < 0.0004f) return;
         float c = Mathf.Cos(theta * Mathf.Deg2Rad), s = Mathf.Sin(theta * Mathf.Deg2Rad);
         for (int k = 0; k < 5; k++)
         {
             Vector3 radial = BudVisuals.Side(dir, az + 72f * k);
-            AddKite(g, at, dir * c + radial * s, Vector3.Cross(dir, radial).normalized, len, wid, heart, sepal, fx);
+            Vector3 along  = dir * c + radial * s;
+            if (!g.Model(part, key + k, at, Quaternion.LookRotation(along, dir), len, heart, sepal, sepal, fx))
+                AddKite(g, at, along, Vector3.Cross(dir, radial).normalized, len, wid, heart, sepal, fx);
         }
     }
 
     /// <summary>One petal on a flower facing along <paramref name="face"/>: turned
-    /// <paramref name="az"/> round it and opened <paramref name="theta"/> away from it.</summary>
+    /// <paramref name="az"/> round it and opened <paramref name="theta"/> away from it. The
+    /// cherry petal's model if it has one, its cupped face (+Y) toward the flower's front.</summary>
     static void AddPetal(Geo g, Vector3 at, Vector3 face, float az, float theta, float cup, float len, float wid,
-                         Color baseCol, Color edgeCol, Vector2 fx)
+                         Color baseCol, Color edgeCol, Vector2 fx, int key)
     {
         if (len < 0.0006f) return;
         Vector3 radial = BudVisuals.Side(face, az);
         float   c = Mathf.Cos(theta * Mathf.Deg2Rad), s = Mathf.Sin(theta * Mathf.Deg2Rad);
-        AddPetalBasis(g, at, face * c + radial * s, Vector3.Cross(face, radial).normalized, face,
-                      cup, len, wid, baseCol, edgeCol, fx);
+        Vector3 along  = face * c + radial * s;
+        if (g.Model("part_cherry_petal", key, at, Quaternion.LookRotation(along, face), len, baseCol, edgeCol, edgeCol, fx)) return;
+        AddPetalBasis(g, at, along, Vector3.Cross(face, radial).normalized, face, cup, len, wid, baseCol, edgeCol, fx);
     }
 
     /// <summary>A notched petal from <paramref name="at"/> along <paramref name="along"/>, curling
@@ -274,7 +279,10 @@ public partial class FlowerVisuals
         {
             Vector3 side = BudVisuals.Side(dir, az0 + b * 360f / count);
             Vector3 bdir = count == 1 ? dir : (dir + side * 0.45f).normalized;
-            AddSpindle(g, pos + side * (SpurBudWidth * 0.25f * size), bdir, SpurBudLength * size, SpurBudWidth * size, col, fx);
+            Vector3 root = pos + side * (SpurBudWidth * 0.25f * size);
+            if (!g.Model("part_flower_bud", FlowerParts.Key(n.id, 60 + k, b), root, Quaternion.LookRotation(bdir, side),
+                         SpurBudLength * size, col, Color.Lerp(col, Color.white, 0.1f), col, fx))
+                AddSpindle(g, root, bdir, SpurBudLength * size, SpurBudWidth * size, col, fx);
         }
     }
 

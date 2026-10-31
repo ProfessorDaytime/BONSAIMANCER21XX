@@ -103,6 +103,11 @@ public partial class FlowerVisuals : MonoBehaviour
 
         public void Vert(Vector3 p, Vector3 n, Color c, Vector2 f) { verts.Add(p); normals.Add(n); colors.Add(c); flex.Add(f); }
 
+        /// <summary>A modelled part (<see cref="FlowerParts.Append"/>); false if it has no models.</summary>
+        public bool Model(string id, int key, Vector3 at, Quaternion rot, float size,
+                          Color baseCol, Color tipCol, Color accent, Vector2 f) =>
+            FlowerParts.Append(id, key, at, rot, size, baseCol, tipCol, accent, f, verts, normals, colors, flex, tris);
+
         /// <summary>A triangle wound to face away from <paramref name="inside"/> (Unity's front face).</summary>
         public void TriOut(int a, int b, int c, Vector3 inside)
         {
@@ -217,6 +222,15 @@ public partial class FlowerVisuals : MonoBehaviour
     }
 
     static int CountBits(int x) { int n = 0; while (x != 0) { x &= x - 1; n++; } return n; }
+
+    /// <summary>A part hanging along <paramref name="down"/> (its -Y), turned toward
+    /// <paramref name="hint"/>.</summary>
+    static Quaternion HangRot(Vector3 down, Vector3 hint)
+    {
+        Vector3 fwd = Vector3.ProjectOnPlane(hint, down);
+        if (fwd.sqrMagnitude < 1e-6f) fwd = BudVisuals.Side(down, 0f);
+        return Quaternion.LookRotation(fwd.normalized, -down);
+    }
 
     static Vector3 Bezier(Vector3 a, Vector3 b, Vector3 c, float u) =>
         (1f - u) * (1f - u) * a + 2f * (1f - u) * u * b + u * u * c;
@@ -679,6 +693,24 @@ public partial class FlowerVisuals : MonoBehaviour
         scratch.Clear();
         switch (piece)
         {
+            // Modelled parts first: each guard adds the model, or fails through to the code shape.
+            case Piece.Samara when scratch.Model("part_maple_samara", 0, Vector3.zero, Quaternion.LookRotation(Vector3.right, Vector3.down),
+                                                 SeedLength * 0.7f + WingLength, col * 0.8f, Color.Lerp(col, Color.white, 0.15f),
+                                                 Color.Lerp(col, SeedTint, 0.35f), still):
+                break;
+            case Piece.Petal when sp.bloomType == BloomType.Blossom
+                                  && scratch.Model("part_cherry_petal", 0, Vector3.left * (PetalLength * 0.5f),
+                                                   Quaternion.LookRotation(Vector3.right, Vector3.up), PetalLength,
+                                                   Color.Lerp(col, PetalBlush, 0.55f), col, col, still):
+                break;
+            case Piece.Cherry when scratch.Model("part_cherry_fruit", 0, Vector3.zero, Quaternion.LookRotation(Vector3.forward, Vector3.left),
+                                                 CherryRadius * 1.85f, Color.Lerp(col, Color.white, 0.15f), col * 0.9f, StalkGreen, still):
+                seg[0] = Vector3.zero; seg[1] = Vector3.left * (CherryStalk * 0.6f);
+                AddTube(scratch, seg, 2, StalkRadius, StalkRadius * 0.8f, StalkGreen, still, still);
+                break;
+            case Piece.Fig when scratch.Model("part_fig", 0, Vector3.zero, Quaternion.LookRotation(Vector3.right, Vector3.up),
+                                              FigLength * size, col, col, col, still):
+                break;
             case Piece.Samara:
                 AddSpindle(scratch, Vector3.zero, Vector3.right, SeedLength, SeedWidth, Color.Lerp(col, SeedTint, 0.35f), still);
                 AddWing(scratch, Vector3.right * (SeedLength * 0.7f), Vector3.right, Vector3.forward, WingLength, WingWidth, col, still);

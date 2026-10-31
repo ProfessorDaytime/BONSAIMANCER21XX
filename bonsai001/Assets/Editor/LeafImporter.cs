@@ -95,7 +95,7 @@ public class LeafImporter : EditorWindow
 
     // ── Import ────────────────────────────────────────────────────────────────
 
-    static string Import(GameObject model, TreeSpecies sp, bool asVariant, bool matchSize)
+    internal static string Import(GameObject model, TreeSpecies sp, bool asVariant, bool matchSize)
     {
         string path = AssetDatabase.GetAssetPath(model);
         if (!PrepareModel(path, out string problem)) return problem;

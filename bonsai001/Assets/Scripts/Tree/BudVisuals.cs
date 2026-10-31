@@ -310,7 +310,8 @@ public class BudVisuals : MonoBehaviour
     }
 
     /// <summary>Four bud scales around <paramref name="axis"/>: closed at p = 0, spread open by
-    /// p = 0.4, shrinking away after p = 0.6, paling as they open.</summary>
+    /// p = 0.4, shrinking away after p = 0.6, paling as they open. Each is part_bud_scale's model
+    /// if it has one, its inner face (+Y) toward the new shoot.</summary>
     void AddScales(Vector3 at, Vector3 axis, float baseAz, float budRadius, float shootRadius,
                    float size, float p, Color col, Vector2 fx)
     {
@@ -325,7 +326,12 @@ public class BudVisuals : MonoBehaviour
             Vector3 side = Side(axis, baseAz + 90f + 90f * k);
             float   ang  = spread * (k % 2 == 0 ? 1f : 0.8f);
             Vector3 dir  = (axis * Mathf.Cos(ang * Mathf.Deg2Rad) + side * Mathf.Sin(ang * Mathf.Deg2Rad)).normalized;
-            AddBud(at + side * shootRadius * 0.3f, dir, len * (k % 2 == 0 ? 1f : 0.85f), wid, c, Lighter(c), fx);
+            Vector3 root = at + side * shootRadius * 0.3f;
+            float   l    = len * (k % 2 == 0 ? 1f : 0.85f);
+            if (!FlowerParts.Append("part_bud_scale", FlowerParts.Key((int)(baseAz * 10f), k, 0), root,
+                                    Quaternion.LookRotation(dir, -side), l, c, Lighter(c), c, fx,
+                                    verts, normals, colors, flex, tris))
+                AddBud(root, dir, l, wid, c, Lighter(c), fx);
         }
     }
 
